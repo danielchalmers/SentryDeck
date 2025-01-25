@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+﻿using Shouldly;
 using TeslaCam.Data;
 
 namespace TeslaCam.Tests;
@@ -24,13 +24,13 @@ public static class CamEventTests
         var camEvent = CamEvent.Deserialize(json);
 
         // Assert
-        camEvent.Should().NotBeNull();
-        camEvent.Timestamp.Should().Be(new DateTime(2023, 6, 3, 15, 54, 27));
-        camEvent.City.Should().Be("Taylor");
-        camEvent.EstLat.Should().Be(30.6075m);
-        camEvent.EstLon.Should().Be(-97.4812m);
-        camEvent.Reason.Should().Be("user_interaction_honk");
-        camEvent.Camera.Should().Be(0);
+        camEvent.ShouldNotBeNull();
+        camEvent.Timestamp.ShouldBe(new DateTime(2023, 6, 3, 15, 54, 27));
+        camEvent.City.ShouldBe("Taylor");
+        camEvent.EstLat.ShouldBe(30.6075m);
+        camEvent.EstLon.ShouldBe(-97.4812m);
+        camEvent.Reason.ShouldBe("user_interaction_honk");
+        camEvent.Camera.ShouldBe(0);
     }
 
     [Fact]
@@ -46,13 +46,13 @@ public static class CamEventTests
         var camEvent = CamEvent.Deserialize(json);
 
         // Assert
-        camEvent.Should().NotBeNull();
-        camEvent.Timestamp.Should().Be(default);
-        camEvent.City.Should().BeNull();
-        camEvent.EstLat.Should().Be(default);
-        camEvent.EstLon.Should().Be(default);
-        camEvent.Reason.Should().BeNull();
-        camEvent.Camera.Should().Be(default);
+        camEvent.ShouldNotBeNull();
+        camEvent.Timestamp.ShouldBe(default);
+        camEvent.City.ShouldBeNull();
+        camEvent.EstLat.ShouldBe(default);
+        camEvent.EstLon.ShouldBe(default);
+        camEvent.Reason.ShouldBeNull();
+        camEvent.Camera.ShouldBe(default);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public static class CamEventTests
         var camEvent = CamEvent.Deserialize(json);
 
         // Assert
-        camEvent.Should().BeNull();
+        camEvent.ShouldBeNull();
     }
 
     [Fact]
@@ -82,6 +82,6 @@ public static class CamEventTests
     {
         var camEvent = CamEvent.FromFile("Mocks/2023-02-23_14-16-15/event.json");
 
-        camEvent.Should().NotBeNull();
+        camEvent.ShouldNotBeNull();
     }
 }

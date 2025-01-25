@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+﻿using Shouldly;
 using TeslaCam.Data;
 
 namespace TeslaCam.Tests;
@@ -10,7 +10,7 @@ public static class CamStorageTests
     {
         var storage = CamStorage.Map(".");
 
-        storage.Clips.Count.Should().Be(3); // Ignores the "No Camera Files" folder.
+        storage.Clips.Count.ShouldBe(3); // Ignores the "No Camera Files" folder.
     }
 
     [Theory]
@@ -20,8 +20,8 @@ public static class CamStorageTests
     {
         var clip = CamClip.Map(path);
 
-        clip.Should().NotBeNull();
-        clip.Name.Should().Be(expectedName);
+        clip.ShouldNotBeNull();
+        clip.Name.ShouldBe(expectedName);
     }
 
     [Fact]
@@ -29,8 +29,8 @@ public static class CamStorageTests
     {
         var clip = CamClip.Map("Mocks/Custom Folder Name");
 
-        clip.Event.Should().NotBeNull();
-        clip.Timestamp.Should().Be(clip.Event.Timestamp);
+        clip.Event.ShouldNotBeNull();
+        clip.Timestamp.ShouldBe(clip.Event.Timestamp);
     }
 
     [Theory]
@@ -41,7 +41,7 @@ public static class CamStorageTests
     {
         var chunks = CamChunk.Map(path);
 
-        chunks.Count.Should().Be(expectedCount);
+        chunks.Count.ShouldBe(expectedCount);
     }
 
     [Theory]
@@ -56,7 +56,7 @@ public static class CamStorageTests
             var currentTimestamp = node.Value.Timestamp;
             var nextTimestamp = node.Next.Value.Timestamp;
 
-            nextTimestamp.Should().BeAfter(currentTimestamp, "each timestamp should be more recent than the previous one");
+            nextTimestamp.ShouldBeGreaterThan(currentTimestamp, "each timestamp should be more recent than the previous one");
 
             node = node.Next;
         }
@@ -69,6 +69,6 @@ public static class CamStorageTests
     {
         var files = CamFile.FindFiles(path).ToList();
 
-        files.Count.Should().Be(expectedCount);
+        files.Count.ShouldBe(expectedCount);
     }
 }
