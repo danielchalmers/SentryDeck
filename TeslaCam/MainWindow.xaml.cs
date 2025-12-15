@@ -1,240 +1,565 @@
 ﻿using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Windows;
-using CommunityToolkit.Mvvm.ComponentModel;
+using System.Windows.Input;
 using Microsoft.Win32;
 using Serilog;
 using TeslaCam.Data;
 using Unosquare.FFME;
-using Unosquare.FFME.Common;
 
 namespace TeslaCam;
 
 /// <summary>
 /// Interaction logic for MainWindow.xaml
+/// A robust video player for TeslaCam footage with seamless playback.
 /// </summary>
-[ObservableObject]
-public partial class MainWindow : Window
+public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private readonly List<ClipStream> _clips = [];
+    private readonly List<CamClip> _allClips = [];
+    private VideoPlayerController _playerController;
+    private bool _isSeeking;
 
-    [ObservableProperty]
-    private ClipStream _currentStream;
-
-    [ObservableProperty]
-    private string _errorMessage;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Clips))]
     private string _filterText = string.Empty;
-
-    [ObservableProperty]
-    private int _busyCount;
+    private CamClip _selectedClip;
+    private string _errorMessage;
+    private bool _isLoading;
+    private bool _isRendering;
+    private double _renderProgress;
+    private double _seekPosition;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = this;
+    }
 
+    #region Bindable Properties
+
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            if (SetProperty(ref _filterText, value))
+            {
+                OnPropertyChanged(nameof(FilteredClips));
+            }
+        }
+    }
+
+    public IReadOnlyList<CamClip> FilteredClips => _allClips
+        .Where(c => string.IsNullOrWhiteSpace(FilterText) ||
+                    c.Name.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase) ||
+                    c.FullPath.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase))
+        .OrderByDescending(c => c.Timestamp)
+        .ThenBy(c => c.Name)
+        .ToList();
+
+    public CamClip SelectedClip
+    {
+        get => _selectedClip;
+        set
+        {
+            if (SetProperty(ref _selectedClip, value) && value is not null)
+            {
+                _ = PlaySelectedClipAsync();
+            }
+        }
+    }
+
+    public string ErrorMessage
+    {
+        get => _errorMessage;
+        set
+        {
+            SetProperty(ref _errorMessage, value);
+            OnPropertyChanged(nameof(HasError));
+        }
+    }
+
+    public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
+
+    public bool IsLoading
+    {
+        get => _isLoading;
+        set
+        {
+            SetProperty(ref _isLoading, value);
+            OnPropertyChanged(nameof(CanPlayPause));
+            OnPropertyChanged(nameof(LoadingStatus));
+            OnPropertyChanged(nameof(IsIndeterminateProgress));
+        }
+    }
+
+    public bool IsRendering
+    {
+        get => _isRendering;
+        set
+        {
+            SetProperty(ref _isRendering, value);
+            OnPropertyChanged(nameof(LoadingStatus));
+            OnPropertyChanged(nameof(IsIndeterminateProgress));
+        }
+    }
+
+    public double RenderProgress
+    {
+        get => _renderProgress;
+        set => SetProperty(ref _renderProgress, value);
+    }
+
+    public bool IsIndeterminateProgress => IsLoading && !IsRendering;
+
+    public string LoadingStatus => IsRendering
+        ? $"Rendering... {RenderProgress:P0}"
+        : "Loading...";
+
+    public bool HasNoClipSelected => SelectedClip is null && !IsLoading;
+
+    public double SeekPosition
+    {
+        get => _seekPosition;
+        set
+        {
+            if (SetProperty(ref _seekPosition, value))
+            {
+                OnPropertyChanged(nameof(PositionText));
+            }
+        }
+    }
+
+    public string PositionText
+    {
+        get
+        {
+            var duration = MediaElement?.NaturalDuration ?? TimeSpan.Zero;
+            var position = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
+            return FormatTimeSpan(position);
+        }
+    }
+
+    public string DurationText
+    {
+        get
+        {
+            var duration = MediaElement?.NaturalDuration ?? TimeSpan.Zero;
+            return FormatTimeSpan(duration);
+        }
+    }
+
+    public bool CanSeek => MediaElement?.IsOpen == true && !IsLoading;
+
+    public bool CanPlayPause => SelectedClip is not null && !IsLoading;
+
+    public bool CanGoNext => _playerController?.Playlist.HasNext == true;
+
+    public bool CanGoPrevious => _playerController?.Playlist.HasPrevious == true;
+
+    public string PlayPauseIcon => MediaElement?.IsPlaying == true ? "⏸" : "▶";
+
+    #endregion
+
+    #region Initialization
+
+    private async void Window_ContentRendered(object sender, EventArgs e)
+    {
+        // Try to load FFmpeg
+        var loaded = TryLoadFFmpeg();
+
+        if (!loaded)
+        {
+            var shouldInstall = MessageBox.Show(
+                this,
+                "FFmpeg is required to play clips. Download it now?\n\nThis will download about 80MB.",
+                App.Title,
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Question) == MessageBoxResult.OK;
+
+            if (shouldInstall)
+            {
+                IsLoading = true;
+                try
+                {
+                    await PackageManager.DownloadAndExtractFFmpeg();
+                    loaded = TryLoadFFmpeg();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to download FFmpeg");
+                    MessageBox.Show(this, $"Failed to download FFmpeg: {ex.Message}", App.Title, MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    IsLoading = false;
+                }
+            }
+
+            if (!loaded)
+            {
+                ErrorMessage = "FFmpeg is not available. Video playback disabled.";
+                return;
+            }
+        }
+
+        // Initialize player controller
+        _playerController = new VideoPlayerController(MediaElement);
+        _playerController.PropertyChanged += PlayerController_PropertyChanged;
+
+        // Wire up media element events for UI updates
+        MediaElement.PositionChanged += MediaElement_PositionChanged;
+        MediaElement.MediaOpened += MediaElement_MediaOpened;
+        MediaElement.MediaEnded += MediaElement_MediaEnded;
+        MediaElement.MediaFailed += MediaElement_MediaFailed;
+
+        // Load clips from common locations
         LoadClips(CamStorage.FindCommonRoots());
     }
 
-    /// <summary>
-    /// A proxy for the clips list that handles ordering and filtering.
-    /// </summary>
-    public IReadOnlyList<ClipStream> Clips => _clips
-        .Where(x => x.Clip.Summary.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase))
-        .OrderByDescending(x => x.Clip.Timestamp) // Order newest by timestamp, either from folder name or event data.
-        .ThenBy(x => x.Clip.Name) // If the timestamp couldn't be found the clip will go to the bottom where we then order by the folder name.
-        .ToList();
-
-    partial void OnCurrentStreamChanging(ClipStream oldValue, ClipStream newValue)
+    private bool TryLoadFFmpeg()
     {
-        BusyCount++;
-        ErrorMessage = null;
+        var directories = PackageManager.FindFFmpegDirectories();
 
-        Task.Run(async () =>
+        foreach (var directory in directories)
         {
+            Library.FFmpegDirectory = directory;
+            Log.Debug($"Trying to load FFmpeg from {directory}");
+
             try
             {
-                await MediaElement.Close();
-
-                if (oldValue is not null)
+                var loaded = Library.LoadFFmpeg();
+                if (loaded)
                 {
-                    await oldValue.StopStream();
-                }
-
-                if (CurrentStream is not null && Library.IsInitialized)
-                {
-                    ErrorMessage = await LoadClip(CurrentStream);
+                    Log.Information($"Loaded FFmpeg from {directory}");
+                    return true;
                 }
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to switch streams");
-            }
-            finally
-            {
-                BusyCount--;
-            }
-        });
-    }
-
-    partial void OnErrorMessageChanged(string value)
-    {
-        if (value is not null)
-        {
-            Log.Error(value);
-        }
-    }
-
-    private async Task<string> LoadClip(ClipStream stream)
-    {
-        Log.Debug($"Loading clip from {stream.Clip.FullPath}");
-        var result = await stream.StartStream();
-
-        if (!result)
-            return "Failed to render clip";
-
-        result = await MediaElement.Open(stream.Uri);
-
-        if (!result)
-            return "Failed to open clip";
-
-        result = await MediaElement.Play();
-
-        if (!result)
-            return "Failed to play clip";
-
-        return null;
-    }
-
-    private async void Window_ContentRendered(object sender, EventArgs e)
-    {
-        var loaded = ClipStream.TryLoadFFmpeg();
-
-        if (!loaded)
-        {
-            var shouldInstall = MessageBox.Show(this, "You need ffmpeg to play clips. Download it now?", App.Title, MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;
-
-            if (shouldInstall)
-            {
-                BusyCount++;
-
-                try
-                {
-                    await PackageManager.DownloadAndExtractFFmpeg();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(this, $"Failed to download ffmpeg: {ex.Message}", App.Title, MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-
-                loaded = ClipStream.TryLoadFFmpeg();
-
-                BusyCount--;
-
-                if (!loaded)
-                {
-                    MessageBox.Show(this, "Failed to load ffmpeg. You won't be able to play clips.", App.Title, MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-            else
-            {
-                Log.Error("User didn't want to download ffmpeg");
+                Log.Warning(ex, $"Failed to load FFmpeg from {directory}");
             }
         }
+
+        return Library.IsInitialized;
     }
 
-    private void LoadClips(params IEnumerable<string> roots)
+    private void LoadClips(IEnumerable<string> roots)
     {
         ErrorMessage = null;
-        CurrentStream = null;
-        _clips.Clear();
+        _allClips.Clear();
 
-        if (!roots.Any())
+        var rootList = roots.ToList();
+        if (!rootList.Any())
         {
-            Log.Information("No roots found");
-            ErrorMessage = "No TeslaCam folders found";
+            Log.Information("No TeslaCam roots found");
+            ErrorMessage = "No TeslaCam folders found. Click 'Select Folder' to choose one.";
+            OnPropertyChanged(nameof(FilteredClips));
+            OnPropertyChanged(nameof(HasNoClipSelected));
+            return;
         }
 
-        foreach (var root in roots)
+        foreach (var root in rootList)
         {
-            Log.Information($"Found root folder: {root}");
+            Log.Information($"Loading clips from: {root}");
 
             try
             {
                 var storage = CamStorage.Map(root);
-                _clips.AddRange(storage.Clips.Select(c => new ClipStream(c)));
+                _allClips.AddRange(storage.Clips);
+                Log.Information($"Found {storage.Clips.Count} clips in {root}");
             }
             catch (UnauthorizedAccessException ex)
             {
-                Log.Error(ex, "Access to folder was denied");
-                ErrorMessage = "Access to folder was denied";
+                Log.Error(ex, $"Access denied to {root}");
+                ErrorMessage = $"Access denied to folder: {root}";
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"Failed to load clips from {root}");
+                ErrorMessage = $"Error loading clips: {ex.Message}";
             }
         }
 
-        OnPropertyChanged(nameof(Clips));
-    }
-
-    private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
-    {
-        Log.Debug("User is selecting a folder");
-
-        var dialog = new OpenFolderDialog
+        // Update playlist in controller
+        if (_playerController is not null)
         {
-            Multiselect = true,
-            Title = "Select a folder containing dashcam footage",
-        };
-
-        var result = dialog.ShowDialog();
-
-        if (result != true)
-        {
-            Log.Debug("No folder was selected");
-            return;
+            _playerController.LoadClips(_allClips);
         }
 
-        LoadClips(dialog.FolderNames);
+        OnPropertyChanged(nameof(FilteredClips));
+        OnPropertyChanged(nameof(HasNoClipSelected));
+        Log.Information($"Total clips loaded: {_allClips.Count}");
     }
 
-    private void MediaElement_MediaInitializing(object sender, MediaInitializingEventArgs e)
+    #endregion
+
+    #region Playback
+
+    private async Task PlaySelectedClipAsync()
     {
+        if (SelectedClip is null || _playerController is null)
+            return;
+
+        ErrorMessage = null;
+        IsLoading = true;
+
+        try
+        {
+            await _playerController.GoToClipAsync(SelectedClip);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to play clip");
+            ErrorMessage = $"Failed to play clip: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+            UpdateAllPlaybackProperties();
+        }
     }
 
-    private void MediaElement_MediaOpening(object sender, MediaOpeningEventArgs e)
+    private void UpdateAllPlaybackProperties()
     {
-        Log.Debug($"Media Opening {e.Info.MediaSource}");
+        OnPropertyChanged(nameof(CanPlayPause));
+        OnPropertyChanged(nameof(CanGoNext));
+        OnPropertyChanged(nameof(CanGoPrevious));
+        OnPropertyChanged(nameof(PlayPauseIcon));
+        OnPropertyChanged(nameof(CanSeek));
+        OnPropertyChanged(nameof(DurationText));
+        OnPropertyChanged(nameof(HasNoClipSelected));
     }
 
-    private void MediaElement_MediaOpened(object sender, MediaOpenedEventArgs e)
+    #endregion
+
+    #region Event Handlers
+
+    private void PlayerController_PropertyChanged(object sender, PropertyChangedEventArgs e)
     {
+        Dispatcher.Invoke(() =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(VideoPlayerController.IsLoading):
+                    IsLoading = _playerController.IsLoading;
+                    break;
+                case nameof(VideoPlayerController.IsRendering):
+                    IsRendering = _playerController.IsRendering;
+                    break;
+                case nameof(VideoPlayerController.RenderProgress):
+                    RenderProgress = _playerController.RenderProgress;
+                    break;
+                case nameof(VideoPlayerController.ErrorMessage):
+                    if (_playerController.ErrorMessage is not null)
+                        ErrorMessage = _playerController.ErrorMessage;
+                    break;
+            }
+        });
+    }
+
+    private void MediaElement_PositionChanged(object sender, Unosquare.FFME.Common.PositionChangedEventArgs e)
+    {
+        if (_isSeeking)
+            return;
+
+        var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
+        if (duration.TotalSeconds > 0)
+        {
+            SeekPosition = e.Position.TotalSeconds / duration.TotalSeconds;
+        }
+    }
+
+    private void MediaElement_MediaOpened(object sender, Unosquare.FFME.Common.MediaOpenedEventArgs e)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            IsLoading = false;
+            UpdateAllPlaybackProperties();
+        });
     }
 
     private void MediaElement_MediaEnded(object sender, EventArgs e)
     {
-        Log.Debug("Media Ended");
+        Dispatcher.Invoke(() =>
+        {
+            OnPropertyChanged(nameof(PlayPauseIcon));
+        });
     }
 
-    private void MediaElement_MediaFailed(object sender, MediaFailedEventArgs e)
+    private void MediaElement_MediaFailed(object sender, Unosquare.FFME.Common.MediaFailedEventArgs e)
     {
-        Log.Error(e.ErrorException, "Media Failed");
+        Dispatcher.Invoke(() =>
+        {
+            IsLoading = false;
+            ErrorMessage = $"Playback error: {e.ErrorException?.Message}";
+            UpdateAllPlaybackProperties();
+        });
     }
 
-    private void MediaElement_BufferingStarted(object sender, EventArgs e)
+    private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
     {
+        Log.Debug("User selecting folder");
+
+        var dialog = new OpenFolderDialog
+        {
+            Multiselect = true,
+            Title = "Select a folder containing TeslaCam footage",
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            LoadClips(dialog.FolderNames);
+        }
     }
 
-    private void MediaElement_BufferingEnded(object sender, EventArgs e)
+    private async void PlayPauseButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_playerController is null)
+            return;
+
+        await _playerController.TogglePlayPauseAsync();
+        OnPropertyChanged(nameof(PlayPauseIcon));
+    }
+
+    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_playerController is null)
+            return;
+
+        await _playerController.StopAsync();
+        SeekPosition = 0;
+        UpdateAllPlaybackProperties();
+    }
+
+    private async void PreviousButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_playerController is null)
+            return;
+
+        await _playerController.PreviousAsync();
+        _selectedClip = _playerController.CurrentClip;
+        OnPropertyChanged(nameof(SelectedClip));
+        UpdateAllPlaybackProperties();
+    }
+
+    private async void NextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_playerController is null)
+            return;
+
+        await _playerController.NextAsync();
+        _selectedClip = _playerController.CurrentClip;
+        OnPropertyChanged(nameof(SelectedClip));
+        UpdateAllPlaybackProperties();
+    }
+
+    private async void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_playerController is null || !CanSeek)
+            return;
+
+        _isSeeking = true;
+        try
+        {
+            var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
+            var targetPosition = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
+            await _playerController.SeekAsync(targetPosition);
+        }
+        finally
+        {
+            _isSeeking = false;
+        }
+    }
+
+    private async void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (_playerController is null)
+            return;
+
+        switch (e.Key)
+        {
+            case Key.Space:
+                await _playerController.TogglePlayPauseAsync();
+                OnPropertyChanged(nameof(PlayPauseIcon));
+                e.Handled = true;
+                break;
+
+            case Key.Left:
+                if (Keyboard.Modifiers == ModifierKeys.Control && CanGoPrevious)
+                {
+                    await _playerController.PreviousAsync();
+                    _selectedClip = _playerController.CurrentClip;
+                    OnPropertyChanged(nameof(SelectedClip));
+                }
+                else if (CanSeek)
+                {
+                    var pos = MediaElement.Position - TimeSpan.FromSeconds(5);
+                    await _playerController.SeekAsync(pos < TimeSpan.Zero ? TimeSpan.Zero : pos);
+                }
+                e.Handled = true;
+                break;
+
+            case Key.Right:
+                if (Keyboard.Modifiers == ModifierKeys.Control && CanGoNext)
+                {
+                    await _playerController.NextAsync();
+                    _selectedClip = _playerController.CurrentClip;
+                    OnPropertyChanged(nameof(SelectedClip));
+                }
+                else if (CanSeek)
+                {
+                    var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
+                    var pos = MediaElement.Position + TimeSpan.FromSeconds(5);
+                    await _playerController.SeekAsync(pos > duration ? duration : pos);
+                }
+                e.Handled = true;
+                break;
+        }
+
+        UpdateAllPlaybackProperties();
     }
 
     private async void Window_Closing(object sender, CancelEventArgs e)
     {
-        await MediaElement.Close();
-
-        if (CurrentStream is not null)
+        if (_playerController is not null)
         {
-            await CurrentStream.DisposeAsync();
+            await _playerController.StopAsync();
+            _playerController.Dispose();
         }
+
+        await MediaElement.Close();
     }
+
+    #endregion
+
+    #region Helpers
+
+    private static string FormatTimeSpan(TimeSpan ts)
+    {
+        return ts.TotalHours >= 1
+            ? ts.ToString(@"h\:mm\:ss")
+            : ts.ToString(@"m\:ss");
+    }
+
+    #endregion
+
+    #region INotifyPropertyChanged
+
+    public event PropertyChangedEventHandler PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+            return false;
+
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+
+    #endregion
 }
