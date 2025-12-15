@@ -23,6 +23,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     private TimeSpan _streamStartPosition;
 
+    private long _activeRequestId;
+    private long _currentMediaRequestId;
+
     private bool _isPlaying;
     private bool _isLoading;
     private bool _isRendering;
@@ -121,9 +124,67 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     #region Playback Control
 
-    public async Task PlayAsync()
+    private long BeginNewRequest()
     {
-        if (CurrentClip is null)
+        return Interlocked.Increment(ref _activeRequestId);
+    }
+
+    private bool IsRequestActive(long requestId)
+    {
+        return requestId == Volatile.Read(ref _activeRequestId);
+    }
+
+    private async Task StopPlaybackInternalAsync(bool resetTimeline, CancellationToken cancellationToken = default)
+    {
+        Volatile.Write(ref _currentMediaRequestId, 0);
+
+        // Stop ffmpeg stream first so it releases the output file.
+        try
+        {
+            await _streamer.StopStreamAsync();
+        }
+        catch
+        {
+        }
+
+        // Stop and close media to ensure only one clip can play at a time.
+        try
+        {
+            await _mediaElement.Stop();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await _mediaElement.Close();
+        }
+        catch
+        {
+        }
+
+        // Small delay to allow file handles to release and avoid races on rapid switching.
+        try
+        {
+            await Task.Delay(50, cancellationToken);
+        }
+        catch
+        {
+        }
+
+        if (resetTimeline)
+        {
+            IsPlaying = false;
+            Position = TimeSpan.Zero;
+            Duration = TimeSpan.Zero;
+            _streamStartPosition = TimeSpan.Zero;
+        }
+    }
+
+    private async Task PlayInternalAsync(long requestId, CamClip clip)
+    {
+        if (clip is null)
             return;
 
         ErrorMessage = null;
@@ -136,6 +197,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             await _opLock.WaitAsync();
             acquired = true;
 
+            if (!IsRequestActive(requestId) || clip != CurrentClip)
+                return;
+
             _playbackCts?.Cancel();
             _playbackCts = new CancellationTokenSource();
             var ct = _playbackCts.Token;
@@ -144,16 +208,23 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             _seekCts?.Cancel();
             _seekCts = null;
 
-            // Mark this clip as currently playing so it won't be evicted (legacy render cache)
-            _renderCache.SetCurrentlyPlaying(CurrentClip);
+            // Always stop/close any currently playing media before opening the next clip.
+            await StopPlaybackInternalAsync(resetTimeline: false, cancellationToken: ct);
+
+            if (!IsRequestActive(requestId) || clip != CurrentClip || ct.IsCancellationRequested)
+                return;
+
+            // Mark this clip as currently playing so it won't be evicted
+            _renderCache.SetCurrentlyPlaying(clip);
 
             // Start realtime stream (fast start, no pre-render)
             IsRendering = false;
             RenderProgress = 0;
             _streamStartPosition = TimeSpan.Zero;
-            var streamedPath = await _streamer.StartStreamAsync(CurrentClip, seekPosition: null, cancellationToken: ct);
 
-            if (ct.IsCancellationRequested)
+            var streamedPath = await _streamer.StartStreamAsync(clip, seekPosition: null, cancellationToken: ct);
+
+            if (!IsRequestActive(requestId) || clip != CurrentClip || ct.IsCancellationRequested)
                 return;
 
             if (streamedPath is null)
@@ -164,8 +235,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
             Duration = _streamer.Duration;
 
-            // Open and play the streamed file
             var opened = await _mediaElement.Open(new Uri(streamedPath));
+            if (!IsRequestActive(requestId) || clip != CurrentClip || ct.IsCancellationRequested)
+                return;
 
             if (!opened)
             {
@@ -173,19 +245,21 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
                 return;
             }
 
-            // Give FFME a moment to initialize
-            await Task.Delay(50);
+            Volatile.Write(ref _currentMediaRequestId, requestId);
+
+            await Task.Delay(50, ct);
+            if (!IsRequestActive(requestId) || clip != CurrentClip || ct.IsCancellationRequested)
+                return;
 
             var played = await _mediaElement.Play();
-            
-            // FFME sometimes returns false even when playback starts successfully
-            // Check actual playback state after a brief delay
-            await Task.Delay(100);
-            
+
+            await Task.Delay(100, ct);
+            if (!IsRequestActive(requestId) || clip != CurrentClip || ct.IsCancellationRequested)
+                return;
+
             if (_mediaElement.IsPlaying || _mediaElement.IsOpen)
             {
                 IsPlaying = true;
-                // Keep legacy prerender disabled; streaming already minimizes waits
             }
             else if (!played)
             {
@@ -194,7 +268,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         }
         catch (OperationCanceledException)
         {
-            // Playback was cancelled - not an error
+            // Superseded/cancelled request
         }
         catch (Exception ex)
         {
@@ -203,12 +277,28 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         }
         finally
         {
-            if (acquired) _opLock.Release();
-            IsLoading = false;
-            OnPropertyChanged(nameof(CanPlayPause));
-            OnPropertyChanged(nameof(CanGoNext));
-            OnPropertyChanged(nameof(CanGoPrevious));
+            if (acquired)
+                _opLock.Release();
+
+            // Only the active request should own the loading flag.
+            if (IsRequestActive(requestId))
+            {
+                IsLoading = false;
+                OnPropertyChanged(nameof(CanPlayPause));
+                OnPropertyChanged(nameof(CanGoNext));
+                OnPropertyChanged(nameof(CanGoPrevious));
+            }
         }
+    }
+
+    public async Task PlayAsync()
+    {
+        var clip = CurrentClip;
+        if (clip is null)
+            return;
+
+        var requestId = BeginNewRequest();
+        await PlayInternalAsync(requestId, clip);
     }
 
     public async Task PauseAsync()
@@ -234,6 +324,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     public async Task StopAsync()
     {
+        BeginNewRequest();
+
         var acquired = false;
 
         try
@@ -244,26 +336,15 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             _seekCts?.Cancel();
             _playbackCts?.Cancel();
 
-            await _streamer.StopStreamAsync();
-
-            // Close media element to release file handles
-            await _mediaElement.Stop();
-            await _mediaElement.Close();
+            await StopPlaybackInternalAsync(resetTimeline: true);
 
             // Clear the currently playing marker so the file can be cleaned up
             _renderCache.SetCurrentlyPlaying(null);
-
-            // Small delay to ensure file handles are released
-            await Task.Delay(100);
-
-            IsPlaying = false;
-            Position = TimeSpan.Zero;
-            Duration = TimeSpan.Zero;
-            _streamStartPosition = TimeSpan.Zero;
         }
         finally
         {
-            if (acquired) _opLock.Release();
+            if (acquired)
+                _opLock.Release();
         }
     }
 
@@ -279,6 +360,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _seekCts?.Cancel();
         _seekCts = new CancellationTokenSource();
         var ct = _seekCts.Token;
+
+        // Invalidate any pending play requests
+        var requestId = BeginNewRequest();
 
         // Clamp using controller duration (stream duration is estimated)
         var max = Duration;
@@ -302,6 +386,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             if (ct.IsCancellationRequested)
                 return;
 
+            if (!IsRequestActive(requestId) || CurrentClip is null)
+                return;
+
             // If not open yet, ignore; PlayAsync will start from 0.
             if (!_mediaElement.IsOpen)
                 return;
@@ -309,8 +396,17 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             // Preserve play state
             var shouldPlay = IsPlaying;
 
+            // Stop current media before opening the new stream segment.
+            await StopPlaybackInternalAsync(resetTimeline: false, cancellationToken: ct);
+
+            if (!IsRequestActive(requestId) || ct.IsCancellationRequested)
+                return;
+
             var streamedPath = await _streamer.SeekAsync(position, ct);
             if (ct.IsCancellationRequested)
+                return;
+
+            if (!IsRequestActive(requestId))
                 return;
 
             if (streamedPath is null)
@@ -329,6 +425,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
                 ErrorMessage = "Seek failed to open stream.";
                 return;
             }
+
+            Volatile.Write(ref _currentMediaRequestId, requestId);
 
             if (shouldPlay)
             {
@@ -354,7 +452,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         }
         finally
         {
-            if (acquired) _opLock.Release();
+            if (acquired)
+                _opLock.Release();
         }
     }
 
@@ -381,6 +480,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         if (clip == CurrentClip)
             return;
 
+        BeginNewRequest();
+
         // Cancel any in-progress render before switching
         _renderCache.CancelCurrentRender();
         
@@ -392,6 +493,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     {
         if (index == _playlist.CurrentIndex)
             return;
+
+        BeginNewRequest();
 
         await StopAsync();
         _playlist.MoveTo(index);
@@ -422,7 +525,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     #region Event Handlers
 
-    private async void OnCurrentClipChanged(object sender, CamClip clip)
+    private void OnCurrentClipChanged(object sender, CamClip clip)
     {
         OnPropertyChanged(nameof(CurrentClip));
         OnPropertyChanged(nameof(CanGoNext));
@@ -430,8 +533,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
         if (clip is not null)
         {
-            // Auto-play the new clip
-            await PlayAsync();
+            // Auto-play the new clip (latest request wins)
+            var requestId = BeginNewRequest();
+            _ = PlayInternalAsync(requestId, clip);
         }
     }
 
@@ -472,6 +576,11 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     {
         Log.Debug($"Media ended: {CurrentClip?.Name}");
         IsPlaying = false;
+
+        // Ignore ended events from stale/closed media during clip switching.
+        var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
+        if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId) || IsLoading)
+            return;
 
         // Auto-advance to next clip
         if (_playlist.HasNext)

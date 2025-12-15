@@ -212,7 +212,7 @@
                     <!-- HW3 = 1280x960, HW4 = 2896x1876 -->
                     <ffme:MediaElement x:Name="MediaElement"
                                        Height="960"
-                                       LoadedBehavior="Play"
+                                       LoadedBehavior="Manual"
                                        UnloadedBehavior="Manual" />
                 </Viewbox>
 
