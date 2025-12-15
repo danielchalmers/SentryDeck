@@ -49,15 +49,10 @@ public sealed class ClipPlaylist : IDisposable
     {
         _clips.Clear();
         _clips.AddRange(clips);
-        _currentIndex = _clips.Count > 0 ? 0 : -1;
+        _currentIndex = -1; // Don't auto-select first clip
 
         Log.Information($"Playlist set with {_clips.Count} clips");
         PlaylistChanged?.Invoke(this, EventArgs.Empty);
-
-        if (CurrentClip is not null)
-        {
-            CurrentClipChanged?.Invoke(this, CurrentClip);
-        }
     }
 
     public void Clear()

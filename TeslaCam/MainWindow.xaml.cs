@@ -300,8 +300,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         ErrorMessage = null;
-        IsLoading = true;
-
+        
+        // Don't manage IsLoading here - let the controller do it
         try
         {
             await _playerController.GoToClipAsync(SelectedClip);
@@ -311,11 +311,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Log.Error(ex, "Failed to play clip");
             ErrorMessage = $"Failed to play clip: {ex.Message}";
         }
-        finally
-        {
-            IsLoading = false;
-            UpdateAllPlaybackProperties();
-        }
+        
+        UpdateAllPlaybackProperties();
     }
 
     private void UpdateAllPlaybackProperties()
@@ -395,7 +392,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
     }
 
-    private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
+    private async void OpenFolderButton_Click(object sender, RoutedEventArgs e)
     {
         Log.Debug("User selecting folder");
 
@@ -407,6 +404,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (dialog.ShowDialog() == true)
         {
+            // Stop any current playback before loading new clips
+            if (_playerController is not null)
+            {
+                await _playerController.StopAsync();
+            }
+            
             LoadClips(dialog.FolderNames);
         }
     }

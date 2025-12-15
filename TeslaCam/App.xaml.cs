@@ -24,7 +24,7 @@ public partial class App : Application
 
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console()
-            .MinimumLevel.Verbose()
+            .MinimumLevel.Information() // Reduced from Verbose
             .WriteTo.Debug()
             .CreateLogger();
 

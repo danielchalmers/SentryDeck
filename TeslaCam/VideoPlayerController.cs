@@ -30,7 +30,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     {
         _mediaElement = mediaElement ?? throw new ArgumentNullException(nameof(mediaElement));
         _playlist = new ClipPlaylist();
-        _renderCache = new RenderCache(maxConcurrentRenders: 2, maxCacheSize: 5);
+        _renderCache = new RenderCache(maxConcurrentRenders: 1, maxCacheSize: 5);
 
         // Wire up playlist events
         _playlist.CurrentClipChanged += OnCurrentClipChanged;
@@ -210,8 +210,17 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     public async Task StopAsync()
     {
         _playbackCts?.Cancel();
+        
+        // Close media element to release file handles
         await _mediaElement.Stop();
         await _mediaElement.Close();
+        
+        // Clear the currently playing marker so the file can be cleaned up
+        _renderCache.SetCurrentlyPlaying(null);
+        
+        // Small delay to ensure file handles are released
+        await Task.Delay(100);
+        
         IsPlaying = false;
         Position = TimeSpan.Zero;
     }
@@ -264,8 +273,19 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     #region Playlist Management
 
+    public async Task LoadClipsAsync(IEnumerable<CamClip> clips)
+    {
+        // Stop current playback and close media first
+        await StopAsync();
+        
+        // Now safe to clear cache
+        _renderCache.Clear();
+        _playlist.SetClips(clips);
+    }
+
     public void LoadClips(IEnumerable<CamClip> clips)
     {
+        // Sync version for initial load (no media playing yet)
         _renderCache.Clear();
         _playlist.SetClips(clips);
     }

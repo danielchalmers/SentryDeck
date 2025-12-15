@@ -19,7 +19,7 @@ public sealed class RenderCache : IDisposable
     private CamClip _currentlyPlaying;
     private bool _isDisposed;
 
-    public RenderCache(int maxConcurrentRenders = 2, int maxCacheSize = 10)
+    public RenderCache(int maxConcurrentRenders = 1, int maxCacheSize = 10)
     {
         _maxConcurrentRenders = maxConcurrentRenders;
         _maxCacheSize = maxCacheSize;

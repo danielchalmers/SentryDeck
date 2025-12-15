@@ -8,7 +8,7 @@ namespace TeslaCam;
 
 /// <summary>
 /// Renders a single clip's video chunks into a combined video using ffmpeg.
-/// Uses the concat demuxer for reliable multi-chunk playback.
+/// Composites all camera angles (front, back, left, right) into a Tesla-style layout.
 /// </summary>
 public sealed class ClipRenderer : IDisposable
 {
@@ -16,14 +16,20 @@ public sealed class ClipRenderer : IDisposable
     private CancellationTokenSource _cts;
     private bool _isDisposed;
     private readonly string _outputPath;
-    private readonly string _concatListPath;
+    private readonly string _tempDir;
+    private TimeSpan _estimatedDuration;
+
+    // Camera layout settings (Tesla-style)
+    private const int OverlayWidth = 280;
+    private const int OverlayHeight = 210;
+    private const int OverlayPadding = 15;
 
     public ClipRenderer(CamClip clip)
     {
         Clip = clip;
         var id = Guid.NewGuid().ToString("N")[..8];
+        _tempDir = Path.Combine(Path.GetTempPath(), $"TeslaCam-{id}");
         _outputPath = Path.Combine(Path.GetTempPath(), $"TeslaCam-{id}.mp4");
-        _concatListPath = Path.Combine(Path.GetTempPath(), $"TeslaCam-{id}.txt");
     }
 
     public CamClip Clip { get; }
@@ -41,8 +47,7 @@ public sealed class ClipRenderer : IDisposable
     public event EventHandler<string> RenderFailed;
 
     /// <summary>
-    /// Starts rendering the clip to a temporary file for playback.
-    /// Uses concat demuxer for reliable chunk concatenation.
+    /// Starts rendering the clip with all camera angles composited.
     /// </summary>
     public async Task<bool> RenderAsync(CancellationToken cancellationToken = default)
     {
@@ -54,29 +59,44 @@ public sealed class ClipRenderer : IDisposable
 
         if (IsRendering)
         {
-            Log.Warning($"Clip is already being rendered: {Clip.Name}");
+            Log.Warning($"Clip already rendering: {Clip.Name}");
             return false;
         }
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _estimatedDuration = TimeSpan.FromSeconds(Clip.Chunks.Count * 60); // ~1 min per chunk
 
         try
         {
-            // Build concat file list for the primary camera (front)
-            var concatList = BuildConcatList("front");
-            
-            if (string.IsNullOrEmpty(concatList))
+            Directory.CreateDirectory(_tempDir);
+
+            // Build concat file lists for each camera
+            var cameras = new[] { "front", "back", "left_repeater", "right_repeater" };
+            var concatFiles = new Dictionary<string, string>();
+            var availableCameras = new List<string>();
+
+            foreach (var camera in cameras)
             {
-                RenderFailed?.Invoke(this, "No valid video files found");
+                var concatList = BuildConcatList(camera);
+                if (!string.IsNullOrWhiteSpace(concatList))
+                {
+                    var concatPath = Path.Combine(_tempDir, $"{camera}.txt");
+                    await File.WriteAllTextAsync(concatPath, concatList, _cts.Token);
+                    concatFiles[camera] = concatPath;
+                    availableCameras.Add(camera);
+                }
+            }
+
+            if (!concatFiles.ContainsKey("front"))
+            {
+                Log.Error("No front camera footage found");
+                RenderFailed?.Invoke(this, "No front camera footage found");
                 return false;
             }
 
-            // Write concat list to temp file
-            await File.WriteAllTextAsync(_concatListPath, concatList, _cts.Token);
-            Log.Debug($"Concat list:\n{concatList}");
+            Log.Information($"Rendering {Clip.Name} with cameras: {string.Join(", ", availableCameras)}");
 
-            // Simple ffmpeg concat command - just concatenate the front camera clips
-            var args = $"-y -f concat -safe 0 -i \"{_concatListPath}\" -c copy \"{_outputPath}\"";
+            var args = BuildFFmpegArgs(concatFiles, availableCameras);
 
             _ffmpegProcess = new Process
             {
@@ -91,84 +111,172 @@ public sealed class ClipRenderer : IDisposable
                 EnableRaisingEvents = true
             };
 
-            var totalDuration = TimeSpan.FromMinutes(Clip.Chunks.Count); // Estimate ~1 min per chunk
+            _ffmpegProcess.ErrorDataReceived += OnFFmpegOutput;
 
-            _ffmpegProcess.ErrorDataReceived += (_, e) =>
-            {
-                if (string.IsNullOrEmpty(e.Data))
-                    return;
-
-                Log.Verbose($"[ffmpeg] {e.Data}");
-
-                // Parse time progress
-                if (e.Data.Contains("time="))
-                {
-                    var timeMatch = System.Text.RegularExpressions.Regex.Match(e.Data, @"time=(\d+):(\d+):(\d+)\.(\d+)");
-                    if (timeMatch.Success)
-                    {
-                        var hours = int.Parse(timeMatch.Groups[1].Value);
-                        var minutes = int.Parse(timeMatch.Groups[2].Value);
-                        var seconds = int.Parse(timeMatch.Groups[3].Value);
-                        var elapsed = new TimeSpan(hours, minutes, seconds);
-
-                        if (totalDuration.TotalSeconds > 0)
-                        {
-                            RenderProgress = Math.Min(0.99, elapsed.TotalSeconds / totalDuration.TotalSeconds);
-                            ProgressChanged?.Invoke(this, RenderProgress);
-                        }
-                    }
-                }
-            };
-
-            Log.Information($"Starting render: ffmpeg {args}");
+            Log.Debug($"ffmpeg {args}");
             _ffmpegProcess.Start();
             _ffmpegProcess.BeginErrorReadLine();
 
             await _ffmpegProcess.WaitForExitAsync(_cts.Token);
 
             var exitCode = _ffmpegProcess.ExitCode;
-            Log.Debug($"FFmpeg exited with code {exitCode}");
 
             if (exitCode == 0 && IsRendered)
             {
                 RenderProgress = 1.0;
                 ProgressChanged?.Invoke(this, RenderProgress);
                 RenderCompleted?.Invoke(this, EventArgs.Empty);
-                Log.Information($"Render completed: {Clip.Name} -> {_outputPath}");
+                Log.Information($"Render completed: {Clip.Name}");
                 return true;
             }
             else
             {
-                var error = $"FFmpeg exited with code {exitCode}";
-                RenderFailed?.Invoke(this, error);
-                Log.Error($"Render failed: {error}");
+                Log.Error($"Render failed with exit code {exitCode}");
+                RenderFailed?.Invoke(this, $"FFmpeg failed (code {exitCode})");
                 return false;
             }
         }
         catch (OperationCanceledException)
         {
-            Log.Information($"Render cancelled: {Clip.Name}");
+            Log.Debug($"Render cancelled: {Clip.Name}");
             return false;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Render failed: {Clip.Name}");
+            Log.Error(ex, $"Render error: {Clip.Name}");
             RenderFailed?.Invoke(this, ex.Message);
             return false;
         }
         finally
         {
-            _ffmpegProcess?.Dispose();
-            _ffmpegProcess = null;
-            
-            // Clean up concat list file
-            TryDeleteFile(_concatListPath);
+            await CleanupProcessAsync();
         }
     }
 
+    private void OnFFmpegOutput(object sender, DataReceivedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Data))
+            return;
+
+        // Only log errors and important info, not every frame
+        if (e.Data.Contains("Error") || e.Data.Contains("error"))
+        {
+            Log.Warning($"[ffmpeg] {e.Data}");
+        }
+
+        // Parse time progress
+        if (e.Data.Contains("time=") && _estimatedDuration.TotalSeconds > 0)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(e.Data, @"time=(\d+):(\d+):(\d+)");
+            if (match.Success)
+            {
+                var hours = int.Parse(match.Groups[1].Value);
+                var minutes = int.Parse(match.Groups[2].Value);
+                var seconds = int.Parse(match.Groups[3].Value);
+                var elapsed = new TimeSpan(hours, minutes, seconds);
+
+                var progress = Math.Min(0.99, elapsed.TotalSeconds / _estimatedDuration.TotalSeconds);
+                if (Math.Abs(progress - RenderProgress) > 0.01) // Only update if changed significantly
+                {
+                    RenderProgress = progress;
+                    ProgressChanged?.Invoke(this, RenderProgress);
+                }
+            }
+        }
+    }
+
+    private async Task CleanupProcessAsync()
+    {
+        if (_ffmpegProcess is not null)
+        {
+            try
+            {
+                if (!_ffmpegProcess.HasExited)
+                {
+                    _ffmpegProcess.Kill();
+                    await Task.Run(() => _ffmpegProcess.WaitForExit(3000));
+                }
+            }
+            catch { }
+
+            _ffmpegProcess.Dispose();
+            _ffmpegProcess = null;
+        }
+
+        // Wait for file handles to release
+        await Task.Delay(200);
+
+        // Clean up concat list files only
+        TryDeleteDirectory(_tempDir);
+    }
+
     /// <summary>
-    /// Builds the concat demuxer file list for the specified camera.
+    /// Builds ffmpeg arguments for multi-camera composite - optimized for speed.
     /// </summary>
+    private string BuildFFmpegArgs(Dictionary<string, string> concatFiles, List<string> availableCameras)
+    {
+        var sb = new StringBuilder();
+        sb.Append("-y ");
+
+        // Add inputs for each camera
+        var inputIndex = 0;
+        var cameraInputs = new Dictionary<string, int>();
+
+        foreach (var camera in availableCameras)
+        {
+            sb.Append($"-f concat -safe 0 -i \"{concatFiles[camera]}\" ");
+            cameraInputs[camera] = inputIndex++;
+        }
+
+        // Build filter complex
+        var filters = new List<string>();
+        var frontInput = cameraInputs["front"];
+
+        // Scale front camera to base resolution
+        filters.Add($"[{frontInput}:v]scale=1280:960,setsar=1[main]");
+
+        var currentOutput = "[main]";
+        var overlayIndex = 0;
+
+        // Overlay positions
+        var positions = new (string camera, string x, string y, string label)[]
+        {
+            ("back", $"W-{OverlayWidth}-{OverlayPadding}", $"{OverlayPadding}", "Back"),
+            ("left_repeater", $"{OverlayPadding}", $"H-{OverlayHeight}-{OverlayPadding}", "Left"),
+            ("right_repeater", $"W-{OverlayWidth}-{OverlayPadding}", $"H-{OverlayHeight}-{OverlayPadding}", "Right"),
+        };
+
+        foreach (var (camera, x, y, label) in positions)
+        {
+            if (!cameraInputs.TryGetValue(camera, out var camInput))
+                continue;
+
+            var scaled = $"s{overlayIndex}";
+            var labeled = $"l{overlayIndex}";
+            var output = $"o{overlayIndex}";
+
+            filters.Add($"[{camInput}:v]scale={OverlayWidth}:{OverlayHeight},setsar=1[{scaled}]");
+            filters.Add($"[{scaled}]drawtext=text='{label}':x=5:y=h-22:fontsize=16:fontcolor=white:shadowx=1:shadowy=1[{labeled}]");
+            filters.Add($"{currentOutput}[{labeled}]overlay={x}:{y}[{output}]");
+
+            currentOutput = $"[{output}]";
+            overlayIndex++;
+        }
+
+        // Add front label
+        filters.Add($"{currentOutput}drawtext=text='Front':x={OverlayPadding}:y={OverlayPadding}:fontsize=20:fontcolor=white:shadowx=1:shadowy=1[final]");
+
+        sb.Append($"-filter_complex \"{string.Join(";", filters)}\" ");
+        sb.Append("-map \"[final]\" ");
+
+        // Fast encoding settings - prioritize speed over quality
+        sb.Append("-c:v libx264 -preset ultrafast -crf 28 -tune fastdecode ");
+        sb.Append("-threads 0 "); // Auto thread count
+        sb.Append($"\"{_outputPath}\"");
+
+        return sb.ToString();
+    }
+
     private string BuildConcatList(string camera)
     {
         var sb = new StringBuilder();
@@ -178,7 +286,6 @@ public sealed class ClipRenderer : IDisposable
             var file = chunk.Files.GetValueOrDefault(camera);
             if (file is not null && File.Exists(file.FullPath))
             {
-                // Escape single quotes and backslashes for ffmpeg concat format
                 var escapedPath = file.FullPath.Replace("\\", "/").Replace("'", "'\\''");
                 sb.AppendLine($"file '{escapedPath}'");
             }
@@ -187,9 +294,6 @@ public sealed class ClipRenderer : IDisposable
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Cancels any ongoing render operation.
-    /// </summary>
     public void CancelRender()
     {
         _cts?.Cancel();
@@ -201,21 +305,15 @@ public sealed class ClipRenderer : IDisposable
                 _ffmpegProcess.Kill();
                 _ffmpegProcess.WaitForExit(2000);
             }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Error killing ffmpeg process");
-            }
+            catch { }
         }
     }
 
-    /// <summary>
-    /// Deletes the rendered output file.
-    /// </summary>
     public void Cleanup()
     {
         CancelRender();
         TryDeleteFile(_outputPath);
-        TryDeleteFile(_concatListPath);
+        TryDeleteDirectory(_tempDir);
     }
 
     private static void TryDeleteFile(string path)
@@ -223,21 +321,22 @@ public sealed class ClipRenderer : IDisposable
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
             return;
 
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, $"Failed to delete temp file: {path}");
-        }
+        try { File.Delete(path); }
+        catch { }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+            return;
+
+        try { Directory.Delete(path, true); }
+        catch { }
     }
 
     public void Dispose()
     {
-        if (_isDisposed)
-            return;
-
+        if (_isDisposed) return;
         _isDisposed = true;
         Cleanup();
         _cts?.Dispose();
