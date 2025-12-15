@@ -13,12 +13,18 @@ namespace TeslaCam;
 /// </summary>
 public sealed class RealtimeVideoStreamer : IDisposable
 {
+    private static readonly object GpuLock = new();
+    private static Task<GpuCapabilities> CachedGpuTask;
+
     private Process _ffmpegProcess;
     private CancellationTokenSource _cts;
     private readonly SemaphoreSlim _streamLock = new(1, 1);
     private bool _isDisposed;
     private string _currentOutputPath;
     private readonly string _tempDir;
+
+    private CamClip _concatClip;
+    private Dictionary<string, string> _concatFiles;
 
     // Camera layout settings (Tesla-style)
     private const int MainWidth = 1280;
@@ -47,7 +53,16 @@ public sealed class RealtimeVideoStreamer : IDisposable
     /// <summary>
     /// Detects available GPU hardware acceleration.
     /// </summary>
-    public static async Task<GpuCapabilities> DetectGpuCapabilitiesAsync()
+    public static Task<GpuCapabilities> DetectGpuCapabilitiesAsync()
+    {
+        lock (GpuLock)
+        {
+            CachedGpuTask ??= DetectGpuCapabilitiesCoreAsync();
+            return CachedGpuTask;
+        }
+    }
+
+    private static async Task<GpuCapabilities> DetectGpuCapabilitiesCoreAsync()
     {
         var capabilities = new GpuCapabilities();
 
@@ -136,7 +151,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
             // Create output file path
             _currentOutputPath = Path.Combine(_tempDir, $"stream_{Guid.NewGuid():N}.mp4");
 
-            // Build concat lists for each camera
+            // Build concat lists for each camera (cached per clip to make seeks fast)
             var concatFiles = await BuildConcatFilesAsync(clip, _cts.Token);
             if (!concatFiles.ContainsKey("front"))
             {
@@ -144,11 +159,11 @@ public sealed class RealtimeVideoStreamer : IDisposable
                 return null;
             }
 
-            // Detect GPU capabilities for optimal encoding
-            var gpu = await DetectGpuCapabilitiesAsync();
+            // Detect GPU capabilities once (cached). Not currently used for args, but kept for future.
+            _ = await DetectGpuCapabilitiesAsync();
 
             // Build and start ffmpeg process
-            var args = BuildStreamingArgs(concatFiles, gpu, CurrentPosition);
+            var args = BuildStreamingArgs(concatFiles, CurrentPosition);
 
             _ffmpegProcess = new Process
             {
@@ -171,7 +186,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
             _ffmpegProcess.BeginErrorReadLine();
 
             // Wait a brief moment for ffmpeg to start writing
-            await WaitForOutputFileAsync(_currentOutputPath, TimeSpan.FromSeconds(3), _cts.Token);
+            await WaitForOutputFileAsync(_currentOutputPath, TimeSpan.FromSeconds(5), _cts.Token);
 
             StreamStarted?.Invoke(this, EventArgs.Empty);
 
@@ -259,6 +274,11 @@ public sealed class RealtimeVideoStreamer : IDisposable
 
     private async Task<Dictionary<string, string>> BuildConcatFilesAsync(CamClip clip, CancellationToken ct)
     {
+        if (_concatClip == clip && _concatFiles is not null && _concatFiles.Count > 0)
+        {
+            return _concatFiles;
+        }
+
         var cameras = new[] { "front", "back", "left_repeater", "right_repeater" };
         var concatFiles = new Dictionary<string, string>();
 
@@ -283,10 +303,12 @@ public sealed class RealtimeVideoStreamer : IDisposable
             }
         }
 
+        _concatClip = clip;
+        _concatFiles = concatFiles;
         return concatFiles;
     }
 
-    private string BuildStreamingArgs(Dictionary<string, string> concatFiles, GpuCapabilities gpu, TimeSpan seekPosition)
+    private string BuildStreamingArgs(Dictionary<string, string> concatFiles, TimeSpan seekPosition)
     {
         var sb = new StringBuilder();
         sb.Append("-y ");
@@ -297,19 +319,10 @@ public sealed class RealtimeVideoStreamer : IDisposable
             sb.Append($"-ss {seekPosition:hh\\:mm\\:ss\\.fff} ");
         }
 
-        // Hardware acceleration for decoding
-        if (gpu.HasD3D11VA)
-        {
-            sb.Append("-hwaccel d3d11va -hwaccel_output_format d3d11 ");
-        }
-        else if (gpu.HasCuda)
-        {
-            sb.Append("-hwaccel cuda -hwaccel_output_format cuda ");
-        }
-        else if (gpu.HasDXVA2)
-        {
-            sb.Append("-hwaccel dxva2 ");
-        }
+        // Hardware acceleration (safe mode)
+        // Using hwaccel_output_format (d3d11/cuda surfaces) breaks the filter graph on many systems.
+        // Keep this aligned with the known-good ClipRenderer pipeline.
+        sb.Append("-hwaccel auto ");
 
         // Add inputs for each camera
         var inputIndex = 0;
@@ -324,32 +337,19 @@ public sealed class RealtimeVideoStreamer : IDisposable
         }
 
         // Build filter complex for multi-camera composite
-        var filters = BuildFilterComplex(cameraInputs, availableCameras);
+        var filters = BuildFilterComplex(cameraInputs);
         var finalOutput = filters.LastOutput;
 
         sb.Append($"-filter_complex \"{filters.FilterString}\" ");
         sb.Append($"-map \"{finalOutput}\" ");
 
-        // Encoding settings - use GPU if available, otherwise fast CPU
-        if (gpu.HasNvenc)
-        {
-            sb.Append("-c:v h264_nvenc -preset p1 -rc vbr -cq 28 -b:v 0 ");
-        }
-        else if (gpu.HasAmf)
-        {
-            sb.Append("-c:v h264_amf -quality speed -rc cqp -qp_i 28 -qp_p 28 ");
-        }
-        else if (gpu.HasQsvEnc)
-        {
-            sb.Append("-c:v h264_qsv -preset veryfast -global_quality 28 ");
-        }
-        else
-        {
-            // Fast CPU encoding
-            sb.Append("-c:v libx264 -preset ultrafast -crf 28 -tune zerolatency ");
-        }
+        // Encoding settings
+        // Prefer stability: FFME needs a consistently decodable stream.
+        // If we re-enable GPU encoders later, do it behind a setting + validation.
+        sb.Append("-c:v libx264 -preset ultrafast -crf 28 -tune zerolatency ");
 
-        sb.Append("-movflags +frag_keyframe+empty_moov+faststart ");
+        // Fragmented MP4 for progressive open while writing
+        sb.Append("-f mp4 -movflags +frag_keyframe+empty_moov+default_base_moof ");
         sb.Append("-an "); // No audio
         sb.Append("-threads 0 ");
         sb.Append($"\"{_currentOutputPath}\"");
@@ -357,7 +357,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
         return sb.ToString();
     }
 
-    private (string FilterString, string LastOutput) BuildFilterComplex(Dictionary<string, int> cameraInputs, List<string> availableCameras)
+    private (string FilterString, string LastOutput) BuildFilterComplex(Dictionary<string, int> cameraInputs)
     {
         var filters = new List<string>();
         var frontInput = cameraInputs["front"];
@@ -410,14 +410,31 @@ public sealed class RealtimeVideoStreamer : IDisposable
             if (File.Exists(path))
             {
                 var fi = new FileInfo(path);
-                if (fi.Length > 1024) // Wait for some data
+                if (fi.Length > 64 * 1024)
                 {
-                    return;
+                    // Make sure we have a real MP4 header (ftyp) before attempting to open.
+                    try
+                    {
+                        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                        var header = new byte[Math.Min(256, (int)fs.Length)];
+                        var read = await fs.ReadAsync(header, ct);
+                        var headerText = Encoding.ASCII.GetString(header, 0, read);
+                        if (headerText.Contains("ftyp", StringComparison.Ordinal))
+                        {
+                            return;
+                        }
+                    }
+                    catch
+                    {
+                        // Keep polling until timeout.
+                    }
                 }
             }
 
             await Task.Delay(50, ct);
         }
+
+        throw new TimeoutException($"Timed out waiting for stream output: {path}");
     }
 
     private void OnFFmpegOutput(object sender, DataReceivedEventArgs e)
@@ -465,13 +482,19 @@ public sealed class RealtimeVideoStreamer : IDisposable
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
             return;
 
-        try { File.Delete(path); }
-        catch { }
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+        }
     }
 
     public void Dispose()
     {
-        if (_isDisposed) return;
+        if (_isDisposed)
+            return;
         _isDisposed = true;
 
         try
@@ -517,10 +540,14 @@ public class GpuCapabilities
     {
         get
         {
-            if (HasD3D11VA) return "d3d11va";
-            if (HasCuda) return "cuda";
-            if (HasDXVA2) return "dxva2";
-            if (HasQSV) return "qsv";
+            if (HasD3D11VA)
+                return "d3d11va";
+            if (HasCuda)
+                return "cuda";
+            if (HasDXVA2)
+                return "dxva2";
+            if (HasQSV)
+                return "qsv";
             return "auto";
         }
     }
@@ -529,9 +556,12 @@ public class GpuCapabilities
     {
         get
         {
-            if (HasNvenc) return "h264_nvenc";
-            if (HasAmf) return "h264_amf";
-            if (HasQsvEnc) return "h264_qsv";
+            if (HasNvenc)
+                return "h264_nvenc";
+            if (HasAmf)
+                return "h264_amf";
+            if (HasQsvEnc)
+                return "h264_qsv";
             return "libx264";
         }
     }

@@ -158,7 +158,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get
         {
-            var duration = MediaElement?.NaturalDuration ?? TimeSpan.Zero;
+            var duration = _playerController?.Duration ?? TimeSpan.Zero;
             var position = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
             return FormatTimeSpan(position);
         }
@@ -168,12 +168,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get
         {
-            var duration = MediaElement?.NaturalDuration ?? TimeSpan.Zero;
+            var duration = _playerController?.Duration ?? TimeSpan.Zero;
             return FormatTimeSpan(duration);
         }
     }
 
-    public bool CanSeek => MediaElement?.IsOpen == true && !IsLoading;
+    public bool CanSeek => _playerController is not null && MediaElement?.IsOpen == true && !IsLoading && _playerController.Duration > TimeSpan.Zero;
 
     public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
 
@@ -248,7 +248,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _playerController.PropertyChanged += PlayerController_PropertyChanged;
 
         // Wire up media element events for UI updates
-        MediaElement.PositionChanged += MediaElement_PositionChanged;
         MediaElement.MediaOpened += MediaElement_MediaOpened;
         MediaElement.MediaEnded += MediaElement_MediaEnded;
         MediaElement.MediaFailed += MediaElement_MediaFailed;
@@ -390,6 +389,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 case nameof(VideoPlayerController.IsPlaying):
                     IsPlaying = _playerController.IsPlaying;
                     break;
+                case nameof(VideoPlayerController.Duration):
+                    OnPropertyChanged(nameof(DurationText));
+                    OnPropertyChanged(nameof(CanSeek));
+                    // If duration changes (new stream), keep seek slider consistent
+                    if (!_isSeeking)
+                    {
+                        var dur = _playerController.Duration;
+                        if (dur.TotalSeconds > 0)
+                        {
+                            SeekPosition = Math.Clamp(_playerController.Position.TotalSeconds / dur.TotalSeconds, 0, 1);
+                        }
+                        else
+                        {
+                            SeekPosition = 0;
+                        }
+                    }
+                    break;
+                case nameof(VideoPlayerController.Position):
+                    if (!_isSeeking)
+                    {
+                        var dur = _playerController.Duration;
+                        if (dur.TotalSeconds > 0)
+                        {
+                            SeekPosition = Math.Clamp(_playerController.Position.TotalSeconds / dur.TotalSeconds, 0, 1);
+                        }
+                    }
+                    OnPropertyChanged(nameof(PositionText));
+                    break;
                 case nameof(VideoPlayerController.ErrorMessage):
                     if (_playerController.ErrorMessage is not null)
                     {
@@ -398,18 +425,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     break;
             }
         });
-    }
-
-    private void MediaElement_PositionChanged(object sender, Unosquare.FFME.Common.PositionChangedEventArgs e)
-    {
-        if (_isSeeking)
-            return;
-
-        var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
-        if (duration.TotalSeconds > 0)
-        {
-            SeekPosition = e.Position.TotalSeconds / duration.TotalSeconds;
-        }
     }
 
     private void MediaElement_MediaOpened(object sender, Unosquare.FFME.Common.MediaOpenedEventArgs e)
@@ -530,7 +545,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task SeekToCurrentPosition()
     {
-        var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
+        var duration = _playerController?.Duration ?? TimeSpan.Zero;
         if (duration.TotalSeconds > 0)
         {
             var targetPosition = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
@@ -560,7 +575,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else if (CanSeek)
                 {
-                    var pos = MediaElement.Position - TimeSpan.FromSeconds(5);
+                    var pos = _playerController.Position - TimeSpan.FromSeconds(5);
                     await _playerController.SeekAsync(pos < TimeSpan.Zero ? TimeSpan.Zero : pos);
                 }
                 e.Handled = true;
@@ -575,8 +590,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else if (CanSeek)
                 {
-                    var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
-                    var pos = MediaElement.Position + TimeSpan.FromSeconds(5);
+                    var duration = _playerController.Duration;
+                    var pos = _playerController.Position + TimeSpan.FromSeconds(5);
                     await _playerController.SeekAsync(pos > duration ? duration : pos);
                 }
                 e.Handled = true;

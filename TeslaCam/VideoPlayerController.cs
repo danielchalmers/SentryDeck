@@ -15,8 +15,13 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     private readonly MediaElement _mediaElement;
     private readonly ClipPlaylist _playlist;
     private readonly RenderCache _renderCache;
+    private readonly RealtimeVideoStreamer _streamer;
+    private readonly SemaphoreSlim _opLock = new(1, 1);
+    private CancellationTokenSource _seekCts;
     private CancellationTokenSource _playbackCts;
     private bool _isDisposed;
+
+    private TimeSpan _streamStartPosition;
 
     private bool _isPlaying;
     private bool _isLoading;
@@ -31,6 +36,13 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _mediaElement = mediaElement ?? throw new ArgumentNullException(nameof(mediaElement));
         _playlist = new ClipPlaylist();
         _renderCache = new RenderCache(maxConcurrentRenders: 1, maxCacheSize: 5);
+        _streamer = new RealtimeVideoStreamer();
+        _streamer.StreamError += (_, msg) =>
+        {
+            ErrorMessage = msg;
+            IsPlaying = false;
+            IsLoading = false;
+        };
 
         // Wire up playlist events
         _playlist.CurrentClipChanged += OnCurrentClipChanged;
@@ -117,47 +129,47 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         ErrorMessage = null;
         IsLoading = true;
 
+        var acquired = false;
+
         try
         {
+            await _opLock.WaitAsync();
+            acquired = true;
+
             _playbackCts?.Cancel();
             _playbackCts = new CancellationTokenSource();
             var ct = _playbackCts.Token;
 
-            // Mark this clip as currently playing so it won't be evicted
+            // Cancel any in-flight seek
+            _seekCts?.Cancel();
+            _seekCts = null;
+
+            // Mark this clip as currently playing so it won't be evicted (legacy render cache)
             _renderCache.SetCurrentlyPlaying(CurrentClip);
 
-            // Check if clip is already rendered
-            var renderedPath = _renderCache.GetRenderedPath(CurrentClip);
+            // Start realtime stream (fast start, no pre-render)
+            IsRendering = false;
+            RenderProgress = 0;
+            _streamStartPosition = TimeSpan.Zero;
+            var streamedPath = await _streamer.StartStreamAsync(CurrentClip, seekPosition: null, cancellationToken: ct);
 
-            if (renderedPath is null)
+            if (ct.IsCancellationRequested)
+                return;
+
+            if (streamedPath is null)
             {
-                // Need to render first
-                IsRendering = true;
-                RenderProgress = 0;
-
-                renderedPath = await _renderCache.RenderAsync(CurrentClip, ct);
-
-                IsRendering = false;
-
-                if (ct.IsCancellationRequested)
-                {
-                    // Cancelled, don't show error
-                    return;
-                }
-
-                if (renderedPath is null)
-                {
-                    ErrorMessage = "Failed to render video clip. The video files may be corrupted or in an unsupported format.";
-                    return;
-                }
+                ErrorMessage = "Failed to start stream.";
+                return;
             }
 
-            // Open and play the rendered file
-            var opened = await _mediaElement.Open(new Uri(renderedPath));
+            Duration = _streamer.Duration;
+
+            // Open and play the streamed file
+            var opened = await _mediaElement.Open(new Uri(streamedPath));
 
             if (!opened)
             {
-                ErrorMessage = "Failed to open video file. The rendered file may be invalid.";
+                ErrorMessage = "Failed to open video stream.";
                 return;
             }
 
@@ -173,8 +185,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             if (_mediaElement.IsPlaying || _mediaElement.IsOpen)
             {
                 IsPlaying = true;
-                // Pre-render next clips in background
-                QueueNextClipsForPrerender();
+                // Keep legacy prerender disabled; streaming already minimizes waits
             }
             else if (!played)
             {
@@ -192,6 +203,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         }
         finally
         {
+            if (acquired) _opLock.Release();
             IsLoading = false;
             OnPropertyChanged(nameof(CanPlayPause));
             OnPropertyChanged(nameof(CanGoNext));
@@ -222,27 +234,127 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     public async Task StopAsync()
     {
-        _playbackCts?.Cancel();
-        
-        // Close media element to release file handles
-        await _mediaElement.Stop();
-        await _mediaElement.Close();
-        
-        // Clear the currently playing marker so the file can be cleaned up
-        _renderCache.SetCurrentlyPlaying(null);
-        
-        // Small delay to ensure file handles are released
-        await Task.Delay(100);
-        
-        IsPlaying = false;
-        Position = TimeSpan.Zero;
+        var acquired = false;
+
+        try
+        {
+            await _opLock.WaitAsync();
+            acquired = true;
+
+            _seekCts?.Cancel();
+            _playbackCts?.Cancel();
+
+            await _streamer.StopStreamAsync();
+
+            // Close media element to release file handles
+            await _mediaElement.Stop();
+            await _mediaElement.Close();
+
+            // Clear the currently playing marker so the file can be cleaned up
+            _renderCache.SetCurrentlyPlaying(null);
+
+            // Small delay to ensure file handles are released
+            await Task.Delay(100);
+
+            IsPlaying = false;
+            Position = TimeSpan.Zero;
+            Duration = TimeSpan.Zero;
+            _streamStartPosition = TimeSpan.Zero;
+        }
+        finally
+        {
+            if (acquired) _opLock.Release();
+        }
     }
 
     public async Task SeekAsync(TimeSpan position)
     {
-        if (_mediaElement.IsOpen)
+        if (CurrentClip is null)
+            return;
+
+        if (_isDisposed)
+            return;
+
+        // Coalesce rapid seek requests (slider scrubbing)
+        _seekCts?.Cancel();
+        _seekCts = new CancellationTokenSource();
+        var ct = _seekCts.Token;
+
+        // Clamp using controller duration (stream duration is estimated)
+        var max = Duration;
+        if (max > TimeSpan.Zero)
         {
-            await _mediaElement.Seek(position);
+            position = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+            if (position > max)
+                position = max;
+        }
+        else
+        {
+            position = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+        }
+
+        var acquired = false;
+
+        try
+        {
+            await _opLock.WaitAsync(ct);
+            acquired = true;
+            if (ct.IsCancellationRequested)
+                return;
+
+            // If not open yet, ignore; PlayAsync will start from 0.
+            if (!_mediaElement.IsOpen)
+                return;
+
+            // Preserve play state
+            var shouldPlay = IsPlaying;
+
+            var streamedPath = await _streamer.SeekAsync(position, ct);
+            if (ct.IsCancellationRequested)
+                return;
+
+            if (streamedPath is null)
+            {
+                ErrorMessage = "Seek failed to start stream.";
+                return;
+            }
+
+            Duration = _streamer.Duration;
+            _streamStartPosition = position;
+            Position = position;
+
+            var opened = await _mediaElement.Open(new Uri(streamedPath));
+            if (!opened)
+            {
+                ErrorMessage = "Seek failed to open stream.";
+                return;
+            }
+
+            if (shouldPlay)
+            {
+                await Task.Delay(25, ct);
+                await _mediaElement.Play();
+                IsPlaying = true;
+            }
+            else
+            {
+                await Task.Delay(25, ct);
+                await _mediaElement.Pause();
+                IsPlaying = false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Swallow coalesced seek cancellation
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Seek error");
+            ErrorMessage = $"Seek error: {ex.Message}";
+        }
+        finally
+        {
+            if (acquired) _opLock.Release();
         }
     }
 
@@ -350,7 +462,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     private void OnMediaOpened(object sender, Unosquare.FFME.Common.MediaOpenedEventArgs e)
     {
-        Duration = _mediaElement.NaturalDuration ?? TimeSpan.Zero;
+        // Prefer streamer's duration estimate to keep timeline stable across stream restarts.
+        if (Duration == TimeSpan.Zero)
+            Duration = _streamer.Duration;
         Log.Debug($"Media opened: {CurrentClip?.Name}, Duration: {Duration}");
     }
 
@@ -376,7 +490,12 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     private void OnPositionChanged(object sender, Unosquare.FFME.Common.PositionChangedEventArgs e)
     {
-        Position = e.Position;
+        // When streaming, MediaElement's position resets to 0 after each stream restart.
+        // Use the stream start offset to keep a stable timeline.
+        if (_streamer?.IsStreaming ?? false)
+            Position = _streamStartPosition + e.Position;
+        else
+            Position = e.Position;
     }
 
     #endregion
@@ -452,6 +571,11 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
         _renderCache.Dispose();
         _playlist.Dispose();
+
+        _seekCts?.Cancel();
+        _seekCts?.Dispose();
+        _streamer.Dispose();
+        _opLock.Dispose();
     }
 
     #endregion
