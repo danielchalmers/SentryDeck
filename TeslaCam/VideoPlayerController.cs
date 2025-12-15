@@ -33,6 +33,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     private TimeSpan _position;
     private TimeSpan _duration;
     private string _errorMessage;
+    private double _playbackSpeed = 1.0;
 
     public VideoPlayerController(MediaElement mediaElement)
     {
@@ -119,6 +120,21 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
     public bool CanGoNext => _playlist.HasNext;
     public bool CanGoPrevious => _playlist.HasPrevious;
+
+    public double PlaybackSpeed
+    {
+        get => _playbackSpeed;
+        set
+        {
+            if (value <= 0)
+                value = 1.0;
+
+            if (!SetProperty(ref _playbackSpeed, value))
+                return;
+
+            ApplyPlaybackSpeed();
+        }
+    }
 
     #endregion
 
@@ -244,6 +260,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
                 ErrorMessage = "Failed to open video stream.";
                 return;
             }
+
+            ApplyPlaybackSpeed();
 
             Volatile.Write(ref _currentMediaRequestId, requestId);
 
@@ -426,6 +444,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
                 return;
             }
 
+            ApplyPlaybackSpeed();
+
             Volatile.Write(ref _currentMediaRequestId, requestId);
 
             if (shouldPlay)
@@ -522,6 +542,18 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     }
 
     #endregion
+
+    private void ApplyPlaybackSpeed()
+    {
+        try
+        {
+            // FFME MediaElement supports dynamic playback speed via SpeedRatio.
+            _mediaElement.SpeedRatio = _playbackSpeed;
+        }
+        catch
+        {
+        }
+    }
 
     #region Event Handlers
 

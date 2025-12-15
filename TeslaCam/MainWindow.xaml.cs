@@ -29,6 +29,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private double _renderProgress;
     private double _seekPosition;
     private bool _isPlaying;
+    private double _selectedPlaybackSpeed = 1.0;
 
     public MainWindow()
     {
@@ -199,6 +200,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string PlayPauseIcon => IsPlaying ? "⏸" : "▶";
 
+    public IReadOnlyList<double> PlaybackSpeedOptions { get; } = [
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.25,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+    ];
+
+    public double SelectedPlaybackSpeed
+    {
+        get => _selectedPlaybackSpeed;
+        set
+        {
+            if (!SetProperty(ref _selectedPlaybackSpeed, value))
+                return;
+
+            if (_playerController is not null)
+                _playerController.PlaybackSpeed = value;
+        }
+    }
+
     #endregion
 
     #region Initialization
@@ -246,6 +272,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Initialize player controller
         _playerController = new VideoPlayerController(MediaElement);
         _playerController.PropertyChanged += PlayerController_PropertyChanged;
+
+        // Apply initial playback speed selection
+        _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
 
         // Wire up media element events for UI updates
         MediaElement.MediaOpened += MediaElement_MediaOpened;
