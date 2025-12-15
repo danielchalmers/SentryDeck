@@ -27,7 +27,7 @@ runs:
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          dotnet publish ./TeslaCam/TeslaCam.csproj -o "publish/$arch" -c Release -f net9.0-windows --os win --arch $arch --self-contained -p:PublishSingleFile=true -p:DebugType=embedded -p:Version=${{ inputs.version }}
+          dotnet publish ./TeslaCam/TeslaCam.csproj -o "publish/$arch" -c Release -f net10.0-windows --os win --arch $arch --self-contained -p:PublishSingleFile=true -p:DebugType=embedded -p:Version=${{ inputs.version }}
         done
 
     - name: Create Portable ZIPs

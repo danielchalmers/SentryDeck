@@ -21,11 +21,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private string _filterText = string.Empty;
     private CamClip _selectedClip;
-    private string _errorMessage;
+    private string _errorTitle;
+    private string _errorDetails;
+    private bool _showErrorOverlay;
     private bool _isLoading;
     private bool _isRendering;
     private double _renderProgress;
     private double _seekPosition;
+    private bool _isPlaying;
 
     public MainWindow()
     {
@@ -67,17 +70,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public string ErrorMessage
+    public string ErrorTitle
     {
-        get => _errorMessage;
+        get => _errorTitle;
+        set => SetProperty(ref _errorTitle, value);
+    }
+
+    public string ErrorDetails
+    {
+        get => _errorDetails;
+        set => SetProperty(ref _errorDetails, value);
+    }
+
+    public bool ShowErrorOverlay
+    {
+        get => _showErrorOverlay;
         set
         {
-            SetProperty(ref _errorMessage, value);
-            OnPropertyChanged(nameof(HasError));
+            SetProperty(ref _showErrorOverlay, value);
+            OnPropertyChanged(nameof(ShowStatusOverlay));
         }
     }
 
-    public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
+    public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay;
+
+    public bool HasError => ShowErrorOverlay;
 
     public bool IsLoading
     {
@@ -86,8 +103,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             SetProperty(ref _isLoading, value);
             OnPropertyChanged(nameof(CanPlayPause));
-            OnPropertyChanged(nameof(LoadingStatus));
+            OnPropertyChanged(nameof(CanStop));
+            OnPropertyChanged(nameof(LoadingStatusText));
             OnPropertyChanged(nameof(IsIndeterminateProgress));
+            OnPropertyChanged(nameof(ShowStatusOverlay));
         }
     }
 
@@ -97,7 +116,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set
         {
             SetProperty(ref _isRendering, value);
-            OnPropertyChanged(nameof(LoadingStatus));
+            OnPropertyChanged(nameof(LoadingStatusText));
             OnPropertyChanged(nameof(IsIndeterminateProgress));
         }
     }
@@ -105,13 +124,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public double RenderProgress
     {
         get => _renderProgress;
-        set => SetProperty(ref _renderProgress, value);
+        set
+        {
+            SetProperty(ref _renderProgress, value);
+            OnPropertyChanged(nameof(RenderProgressPercent));
+            OnPropertyChanged(nameof(LoadingStatusText));
+        }
     }
+
+    public int RenderProgressPercent => (int)(RenderProgress * 100);
 
     public bool IsIndeterminateProgress => IsLoading && !IsRendering;
 
-    public string LoadingStatus => IsRendering
-        ? $"Rendering... {RenderProgress:P0}"
+    public string LoadingStatusText => IsRendering
+        ? $"Rendering... {RenderProgressPercent}%"
         : "Loading...";
 
     public bool HasNoClipSelected => SelectedClip is null && !IsLoading;
@@ -149,13 +175,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool CanSeek => MediaElement?.IsOpen == true && !IsLoading;
 
-    public bool CanPlayPause => SelectedClip is not null && !IsLoading;
+    public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
+
+    public bool CanStop => IsPlaying || IsLoading;
+
+    public bool IsPlaying
+    {
+        get => _isPlaying;
+        set
+        {
+            if (SetProperty(ref _isPlaying, value))
+            {
+                OnPropertyChanged(nameof(PlayPauseIcon));
+                OnPropertyChanged(nameof(CanPlayPause));
+                OnPropertyChanged(nameof(CanStop));
+            }
+        }
+    }
 
     public bool CanGoNext => _playerController?.Playlist.HasNext == true;
 
     public bool CanGoPrevious => _playerController?.Playlist.HasPrevious == true;
 
-    public string PlayPauseIcon => MediaElement?.IsPlaying == true ? "⏸" : "▶";
+    public string PlayPauseIcon => IsPlaying ? "⏸" : "▶";
 
     #endregion
 
@@ -196,7 +238,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (!loaded)
             {
-                ErrorMessage = "FFmpeg is not available. Video playback disabled.";
+                ShowError("FFmpeg Not Available", "FFmpeg is required for video playback but could not be loaded. Please restart the application and try downloading again.");
                 return;
             }
         }
@@ -244,14 +286,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void LoadClips(IEnumerable<string> roots)
     {
-        ErrorMessage = null;
+        ClearError();
         _allClips.Clear();
 
         var rootList = roots.ToList();
         if (!rootList.Any())
         {
             Log.Information("No TeslaCam roots found");
-            ErrorMessage = "No TeslaCam folders found. Click 'Select Folder' to choose one.";
+            ShowError("No TeslaCam Folders Found", "Click 'Select Folder' to choose a folder containing TeslaCam footage.");
             OnPropertyChanged(nameof(FilteredClips));
             OnPropertyChanged(nameof(HasNoClipSelected));
             return;
@@ -270,12 +312,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch (UnauthorizedAccessException ex)
             {
                 Log.Error(ex, $"Access denied to {root}");
-                ErrorMessage = $"Access denied to folder: {root}";
+                ShowError("Access Denied", $"Cannot access folder: {root}\n\nCheck that you have permission to read this location.");
             }
             catch (Exception ex)
             {
                 Log.Error(ex, $"Failed to load clips from {root}");
-                ErrorMessage = $"Error loading clips: {ex.Message}";
+                ShowError("Error Loading Clips", $"Failed to load clips from:\n{root}\n\nError: {ex.Message}");
             }
         }
 
@@ -299,7 +341,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (SelectedClip is null || _playerController is null)
             return;
 
-        ErrorMessage = null;
+        ClearError();
         
         // Don't manage IsLoading here - let the controller do it
         try
@@ -309,7 +351,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to play clip");
-            ErrorMessage = $"Failed to play clip: {ex.Message}";
+            ShowError("Playback Failed", $"Could not play clip: {SelectedClip.Name}\n\nError: {ex.Message}");
         }
         
         UpdateAllPlaybackProperties();
@@ -345,9 +387,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 case nameof(VideoPlayerController.RenderProgress):
                     RenderProgress = _playerController.RenderProgress;
                     break;
+                case nameof(VideoPlayerController.IsPlaying):
+                    IsPlaying = _playerController.IsPlaying;
+                    break;
                 case nameof(VideoPlayerController.ErrorMessage):
                     if (_playerController.ErrorMessage is not null)
-                        ErrorMessage = _playerController.ErrorMessage;
+                    {
+                        ShowError("Playback Error", _playerController.ErrorMessage);
+                    }
                     break;
             }
         });
@@ -387,7 +434,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Dispatcher.Invoke(() =>
         {
             IsLoading = false;
-            ErrorMessage = $"Playback error: {e.ErrorException?.Message}";
+            ShowError("Media Playback Failed", $"The video could not be played.\n\nError: {e.ErrorException?.Message}");
             UpdateAllPlaybackProperties();
         });
     }
@@ -460,16 +507,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_playerController is null || !CanSeek)
             return;
 
-        _isSeeking = true;
-        try
+        await SeekToCurrentPosition();
+        _isSeeking = false;
+    }
+
+    private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (CanSeek)
         {
-            var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
+            _isSeeking = true;
+        }
+    }
+
+    private async void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // Only seek when the user is actively dragging
+        if (_isSeeking && _playerController is not null && CanSeek)
+        {
+            await SeekToCurrentPosition();
+        }
+    }
+
+    private async Task SeekToCurrentPosition()
+    {
+        var duration = MediaElement.NaturalDuration ?? TimeSpan.Zero;
+        if (duration.TotalSeconds > 0)
+        {
             var targetPosition = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
             await _playerController.SeekAsync(targetPosition);
-        }
-        finally
-        {
-            _isSeeking = false;
         }
     }
 
@@ -541,6 +606,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return ts.TotalHours >= 1
             ? ts.ToString(@"h\:mm\:ss")
             : ts.ToString(@"m\:ss");
+    }
+
+    private void ShowError(string title, string details)
+    {
+        ErrorTitle = title;
+        ErrorDetails = details;
+        ShowErrorOverlay = true;
+    }
+
+    private void ClearError()
+    {
+        ShowErrorOverlay = false;
+        ErrorTitle = null;
+        ErrorDetails = null;
+    }
+
+    private void DismissErrorButton_Click(object sender, RoutedEventArgs e)
+    {
+        ClearError();
     }
 
     #endregion

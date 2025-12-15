@@ -139,9 +139,15 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
                 IsRendering = false;
 
+                if (ct.IsCancellationRequested)
+                {
+                    // Cancelled, don't show error
+                    return;
+                }
+
                 if (renderedPath is null)
                 {
-                    ErrorMessage = "Failed to render clip";
+                    ErrorMessage = "Failed to render video clip. The video files may be corrupted or in an unsupported format.";
                     return;
                 }
             }
@@ -151,26 +157,33 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
             if (!opened)
             {
-                ErrorMessage = "Failed to open video file";
+                ErrorMessage = "Failed to open video file. The rendered file may be invalid.";
                 return;
             }
+
+            // Give FFME a moment to initialize
+            await Task.Delay(50);
 
             var played = await _mediaElement.Play();
-
-            if (!played)
+            
+            // FFME sometimes returns false even when playback starts successfully
+            // Check actual playback state after a brief delay
+            await Task.Delay(100);
+            
+            if (_mediaElement.IsPlaying || _mediaElement.IsOpen)
             {
-                ErrorMessage = "Failed to start playback";
-                return;
+                IsPlaying = true;
+                // Pre-render next clips in background
+                QueueNextClipsForPrerender();
             }
-
-            IsPlaying = true;
-
-            // Pre-render next clips in background
-            QueueNextClipsForPrerender();
+            else if (!played)
+            {
+                ErrorMessage = "Failed to start playback. Try selecting the clip again.";
+            }
         }
         catch (OperationCanceledException)
         {
-            // Playback was cancelled
+            // Playback was cancelled - not an error
         }
         catch (Exception ex)
         {
@@ -256,6 +269,9 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         if (clip == CurrentClip)
             return;
 
+        // Cancel any in-progress render before switching
+        _renderCache.CancelCurrentRender();
+        
         await StopAsync();
         _playlist.MoveTo(clip);
     }

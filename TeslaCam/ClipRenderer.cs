@@ -212,11 +212,15 @@ public sealed class ClipRenderer : IDisposable
 
     /// <summary>
     /// Builds ffmpeg arguments for multi-camera composite - optimized for speed.
+    /// Uses hardware acceleration when available.
     /// </summary>
     private string BuildFFmpegArgs(Dictionary<string, string> concatFiles, List<string> availableCameras)
     {
         var sb = new StringBuilder();
         sb.Append("-y ");
+        
+        // Use hardware acceleration if available (will fallback gracefully)
+        sb.Append("-hwaccel auto ");
 
         // Add inputs for each camera
         var inputIndex = 0;
@@ -252,25 +256,35 @@ public sealed class ClipRenderer : IDisposable
                 continue;
 
             var scaled = $"s{overlayIndex}";
-            var labeled = $"l{overlayIndex}";
             var output = $"o{overlayIndex}";
 
+            // Scale overlay camera (no labels to save time)
             filters.Add($"[{camInput}:v]scale={OverlayWidth}:{OverlayHeight},setsar=1[{scaled}]");
-            filters.Add($"[{scaled}]drawtext=text='{label}':x=5:y=h-22:fontsize=16:fontcolor=white:shadowx=1:shadowy=1[{labeled}]");
-            filters.Add($"{currentOutput}[{labeled}]overlay={x}:{y}[{output}]");
+            filters.Add($"{currentOutput}[{scaled}]overlay={x}:{y}[{output}]");
 
             currentOutput = $"[{output}]";
             overlayIndex++;
         }
 
-        // Add front label
-        filters.Add($"{currentOutput}drawtext=text='Front':x={OverlayPadding}:y={OverlayPadding}:fontsize=20:fontcolor=white:shadowx=1:shadowy=1[final]");
+        // Finalize output (remove front label for speed)
+        if (currentOutput != "[main]")
+        {
+            // We have overlays, use last output
+            sb.Append($"-filter_complex \"{string.Join(";", filters)}\" ");
+            sb.Append($"-map \"{currentOutput}\" ");
+        }
+        else
+        {
+            // Only front camera
+            sb.Append($"-filter_complex \"{string.Join(";", filters)}\" ");
+            sb.Append("-map \"[main]\" ");
+        }
 
-        sb.Append($"-filter_complex \"{string.Join(";", filters)}\" ");
-        sb.Append("-map \"[final]\" ");
-
-        // Fast encoding settings - prioritize speed over quality
-        sb.Append("-c:v libx264 -preset ultrafast -crf 28 -tune fastdecode ");
+        // Super fast encoding - prioritize speed over quality
+        // Use veryfast instead of ultrafast for slightly better quality at similar speed
+        sb.Append("-c:v libx264 -preset veryfast -crf 26 ");
+        sb.Append("-movflags +faststart "); // Enable fast start for streaming
+        sb.Append("-an "); // No audio for now (faster)
         sb.Append("-threads 0 "); // Auto thread count
         sb.Append($"\"{_outputPath}\"");
 

@@ -77,18 +77,37 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Search box -->
             <Border Grid.Row="0" Background="#333" Margin="8,8,8,4">
-                <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
-                         Background="Transparent"
-                         Foreground="White"
-                         BorderThickness="0"
-                         Padding="12,10"
-                         FontSize="14"
-                         VerticalContentAlignment="Center" />
+                <Grid>
+                    <TextBox x:Name="SearchBox"
+                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                             Background="Transparent"
+                             Foreground="White"
+                             BorderThickness="0"
+                             Padding="12,10"
+                             FontSize="14"
+                             VerticalContentAlignment="Center" />
+                    <TextBlock Text="Search clips..."
+                               Foreground="#666"
+                               FontSize="14"
+                               Padding="12,10"
+                               IsHitTestVisible="False"
+                               VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Hidden" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FilterText}" Value="">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </Border>
 
             <!-- Clip list -->
@@ -164,21 +183,8 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Error message -->
-            <Border Grid.Row="2"
-                    Background="#c62828"
-                    CornerRadius="4"
-                    Margin="8,4"
-                    Padding="12"
-                    Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="{Binding ErrorMessage}"
-                           Foreground="White"
-                           FontSize="13"
-                           TextWrapping="Wrap" />
-            </Border>
-
             <!-- Folder picker -->
-            <Button Grid.Row="3"
+            <Button Grid.Row="2"
                     Content="📁 Select Folder"
                     Style="{StaticResource PlayerButton}"
                     Margin="8"
@@ -210,20 +216,46 @@
                                        UnloadedBehavior="Manual" />
                 </Viewbox>
 
-                <!-- Loading Overlay -->
+                <!-- Status Overlay (Loading/Rendering/Error) -->
                 <Border Background="#80000000"
-                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding LoadingStatus}"
-                                   Foreground="White"
-                                   FontSize="18"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,16" />
-                        <ProgressBar Width="300"
-                                     Height="8"
-                                     IsIndeterminate="{Binding IsIndeterminateProgress}"
-                                     Value="{Binding RenderProgress, Mode=OneWay}"
-                                     Maximum="1" />
+                        Visibility="{Binding ShowStatusOverlay, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="500">
+                        <!-- Loading/Rendering status -->
+                        <StackPanel Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding LoadingStatusText}"
+                                       Foreground="White"
+                                       FontSize="18"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,16" />
+                            <ProgressBar Width="300"
+                                         Height="8"
+                                         IsIndeterminate="{Binding IsIndeterminateProgress}"
+                                         Value="{Binding RenderProgressPercent, Mode=OneWay}"
+                                         Maximum="100" />
+                        </StackPanel>
+                        
+                        <!-- Error display -->
+                        <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="⚠️" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                            <TextBlock Text="{Binding ErrorTitle}"
+                                       Foreground="#ff6b6b"
+                                       FontSize="20"
+                                       FontWeight="SemiBold"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,8" />
+                            <TextBlock Text="{Binding ErrorDetails}"
+                                       Foreground="#aaa"
+                                       FontSize="14"
+                                       TextWrapping="Wrap"
+                                       TextAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                            <Button Content="Dismiss"
+                                    Style="{StaticResource PlayerButton}"
+                                    Click="DismissErrorButton_Click"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,20,0,0"
+                                    Padding="24,10" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -265,7 +297,9 @@
                                 Value="{Binding SeekPosition, Mode=TwoWay}"
                                 Minimum="0"
                                 Maximum="1"
+                                PreviewMouseDown="SeekSlider_PreviewMouseDown"
                                 PreviewMouseUp="SeekSlider_PreviewMouseUp"
+                                ValueChanged="SeekSlider_ValueChanged"
                                 IsEnabled="{Binding CanSeek}" />
 
                         <TextBlock Grid.Column="2"
@@ -288,7 +322,8 @@
                                 ToolTip="Previous Clip"
                                 FontSize="18" />
 
-                        <Button Content="{Binding PlayPauseIcon}"
+                        <Button x:Name="PlayPauseButton"
+                                Content="{Binding PlayPauseIcon}"
                                 Style="{StaticResource PlayerButton}"
                                 Click="PlayPauseButton_Click"
                                 IsEnabled="{Binding CanPlayPause}"
@@ -308,6 +343,7 @@
                         <Button Content="⏹"
                                 Style="{StaticResource PlayerButton}"
                                 Click="StopButton_Click"
+                                IsEnabled="{Binding CanStop}"
                                 ToolTip="Stop"
                                 FontSize="18" />
                     </StackPanel>

@@ -17,6 +17,7 @@ public sealed class RenderCache : IDisposable
     private readonly int _maxConcurrentRenders;
     private readonly int _maxCacheSize;
     private CamClip _currentlyPlaying;
+    private CamClip _currentlyRendering;
     private bool _isDisposed;
 
     public RenderCache(int maxConcurrentRenders = 1, int maxCacheSize = 10)
@@ -36,6 +37,18 @@ public sealed class RenderCache : IDisposable
     public void SetCurrentlyPlaying(CamClip clip)
     {
         _currentlyPlaying = clip;
+    }
+
+    /// <summary>
+    /// Cancels the render currently in progress, if any.
+    /// </summary>
+    public void CancelCurrentRender()
+    {
+        if (_currentlyRendering is not null && _renderers.TryGetValue(_currentlyRendering, out var renderer))
+        {
+            Log.Debug($"Cancelling render for: {_currentlyRendering.Name}");
+            renderer.CancelRender();
+        }
     }
 
     /// <summary>
@@ -96,6 +109,7 @@ public sealed class RenderCache : IDisposable
     private async Task<bool> StartRenderInternal(CamClip clip, ClipRenderer renderer, CancellationToken cancellationToken)
     {
         await _renderSemaphore.WaitAsync(cancellationToken);
+        _currentlyRendering = clip;
 
         try
         {
@@ -109,7 +123,7 @@ public sealed class RenderCache : IDisposable
                 RenderCompleted?.Invoke(this, clip);
                 EnforceMaxCacheSize();
             }
-            else
+            else if (!cancellationToken.IsCancellationRequested)
             {
                 RenderFailed?.Invoke(this, (clip, "Render failed"));
             }
@@ -118,6 +132,7 @@ public sealed class RenderCache : IDisposable
         }
         finally
         {
+            _currentlyRendering = null;
             _renderSemaphore.Release();
         }
     }
