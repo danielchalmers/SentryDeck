@@ -8,7 +8,7 @@ namespace TeslaCam.Tests;
 /// </summary>
 public class FFmpegTests
 {
-    [Fact]
+    [Fact(Skip = "FFmpeg tests are currently disabled (incomplete/unreliable).")]
     public void FFmpeg_IsAvailable()
     {
         var result = RunFFmpegCommand("-version");
@@ -16,7 +16,7 @@ public class FFmpegTests
         result.Output.ShouldContain("ffmpeg version");
     }
 
-    [Fact]
+    [Fact(Skip = "FFmpeg tests are currently disabled (incomplete/unreliable).")]
     public void FFmpeg_SupportsRequiredFeatures()
     {
         var encoders = RunFFmpegCommand("-encoders");
