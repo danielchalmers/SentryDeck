@@ -38,8 +38,21 @@ runs:
           Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryReplay-${{ inputs.version }}-$arch.zip"
         }
 
+    - name: Install WiX Toolset
+      shell: bash
+      run: dotnet tool install --global wix --version 6.0.2
+
+    - name: Create Installers
+      shell: bash
+      run: |
+        for arch in ${{ inputs.archs }}; do
+          dotnet build ./TeslaCam.Installer/TeslaCam.Installer.wixproj -c Release -p:Platform=$arch -p:Version=${{ inputs.version }} -p:PublishDir=../publish/$arch/
+          mv ./TeslaCam.Installer/bin/Release/*.msi ./publish/
+        done
+
     - uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error
         path: |
           publish/*.zip
+          publish/*.msi

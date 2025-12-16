@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="TeslaCam Player for Windows"
+           Manufacturer="Daniel Chalmers"
+           Version="!(bind.FileVersion.MainExecutable)"
+           UpgradeCode="A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="MainFeature" Title="TeslaCam Player" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+    <!-- Standard UI with license agreement -->
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    <ui:WixUI Id="WixUI_Minimal" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" />
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="TeslaCam">
+        <Directory Id="PUBLISHFOLDER" Name="!(bind.Property.Platform)" />
+      </Directory>
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="PUBLISHFOLDER">
+      <Component Id="MainExecutable">
+        <File Id="MainExecutable" Source="$(var.PublishDir)\TeslaCam.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="TeslaCam Player"
+                    WorkingDirectory="PUBLISHFOLDER"
+                    Icon="TeslaCam.ico"
+                    IconIndex="0"
+                    Advertise="yes" />
+        </File>
+      </Component>
+
+      <!-- Include all files from publish directory using wildcard -->
+      <Component Id="AllPublishedFiles" Guid="*">
+        <File Source="$(var.PublishDir)\**" Exclude="$(var.PublishDir)\TeslaCam.exe" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <Icon Id="TeslaCam.ico" SourceFile="..\TeslaCam.ico" />
+  </Fragment>
+</Wix>
