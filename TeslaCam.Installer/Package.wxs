@@ -20,29 +20,27 @@
 
   <Fragment>
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="TeslaCam">
-        <Directory Id="PUBLISHFOLDER" Name="!(bind.Property.Platform)" />
-      </Directory>
+      <Directory Id="INSTALLFOLDER" Name="TeslaCam" />
     </StandardDirectory>
   </Fragment>
 
   <Fragment>
-    <ComponentGroup Id="ProductComponents" Directory="PUBLISHFOLDER">
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable">
-        <File Id="MainExecutable" Source="$(var.PublishDir)\TeslaCam.exe" KeyPath="yes">
+        <File Id="MainExecutable" Source="$(var.PublishDir)TeslaCam.exe" KeyPath="yes">
           <Shortcut Id="StartMenuShortcut"
                     Directory="ProgramMenuFolder"
                     Name="TeslaCam Player"
-                    WorkingDirectory="PUBLISHFOLDER"
+                    WorkingDirectory="INSTALLFOLDER"
                     Icon="TeslaCam.ico"
                     IconIndex="0"
                     Advertise="yes" />
         </File>
       </Component>
 
-      <!-- Include all files from publish directory using wildcard -->
+      <!-- Include all other files from publish directory using wildcard -->
       <Component Id="AllPublishedFiles" Guid="*">
-        <File Source="$(var.PublishDir)\**" Exclude="$(var.PublishDir)\TeslaCam.exe" />
+        <File Source="$(var.PublishDir)**" Exclude="$(var.PublishDir)TeslaCam.exe" />
       </Component>
     </ComponentGroup>
   </Fragment>
