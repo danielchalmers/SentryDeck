@@ -35,7 +35,7 @@ runs:
       run: |
         $archs = "${{ inputs.archs }}".Split(" ")
         foreach ($arch in $archs) {
-          Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/TeslaCam-${{ inputs.version }}-$arch.zip"
+          Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryReplay-${{ inputs.version }}-$arch.zip"
         }
 
     - name: Install WiX Toolset
@@ -47,7 +47,7 @@ runs:
       run: |
         for arch in ${{ inputs.archs }}; do
           cd "publish/$arch"
-          wix build ../../TeslaCam.Installer/Package.wxs -arch $arch -out "../TeslaCam-${{ inputs.version }}-$arch.msi"
+          wix build ../../Package.wxs -arch $arch -out "../SentryReplay-${{ inputs.version }}-$arch.msi"
           cd ../..
         done
 
