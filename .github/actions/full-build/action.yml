@@ -46,10 +46,10 @@ runs:
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          dotnet build ./TeslaCam.Installer/TeslaCam.Installer.wixproj -c Release -p:Platform=$arch -p:Version=${{ inputs.version }} -p:PublishDir="$(pwd)/publish/$arch/"
+          cd "publish/$arch"
+          wix build ../../TeslaCam.Installer/Package.wxs -arch $arch -out "../TeslaCam-${{ inputs.version }}-$arch.msi"
+          cd ../..
         done
-        # Move all generated MSI files to the publish directory
-        find ./TeslaCam.Installer/bin/Release/ -name "*.msi" -type f -exec mv {} ./publish/ \;
 
     - uses: actions/upload-artifact@v4
       with:
