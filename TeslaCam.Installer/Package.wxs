@@ -14,8 +14,6 @@
           <File Source="TeslaCam.exe">
             <Shortcut Directory="ProgramMenuFolder" Name="TeslaCam Player" WorkingDirectory="INSTALLFOLDER" />
           </File>
-        </Component>
-        <Component>
           <File Source="*" />
         </Component>
       </Directory>
