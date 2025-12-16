@@ -39,7 +39,7 @@
       </Component>
 
       <!-- Include all other files from publish directory using wildcard -->
-      <Component Id="AllPublishedFiles" Guid="*">
+      <Component Id="AllPublishedFiles" Guid="B5C6D7E8-F9A0-4B5C-9D0E-1F2A3B4C5D6E">
         <File Source="$(var.PublishDir)**" Exclude="$(var.PublishDir)TeslaCam.exe" />
       </Component>
     </ComponentGroup>

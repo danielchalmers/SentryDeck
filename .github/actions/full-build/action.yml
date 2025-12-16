@@ -35,7 +35,7 @@ runs:
       run: |
         $archs = "${{ inputs.archs }}".Split(" ")
         foreach ($arch in $archs) {
-          Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryReplay-${{ inputs.version }}-$arch.zip"
+          Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/TeslaCam-${{ inputs.version }}-$arch.zip"
         }
 
     - name: Install WiX Toolset
@@ -47,9 +47,9 @@ runs:
       run: |
         for arch in ${{ inputs.archs }}; do
           dotnet build ./TeslaCam.Installer/TeslaCam.Installer.wixproj -c Release -p:Platform=$arch -p:Version=${{ inputs.version }} -p:PublishDir="$(pwd)/publish/$arch/"
-          # Move the generated MSI to the publish directory
-          find ./TeslaCam.Installer/bin/ -name "*.msi" -exec mv {} ./publish/ \;
         done
+        # Move all generated MSI files to the publish directory
+        find ./TeslaCam.Installer/bin/Release/ -name "*.msi" -type f -exec mv {} ./publish/ \;
 
     - uses: actions/upload-artifact@v4
       with:
