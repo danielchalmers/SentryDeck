@@ -14,8 +14,10 @@
           <File Source="TeslaCam.exe">
             <Shortcut Directory="ProgramMenuFolder" Name="Sentry Replay" WorkingDirectory="INSTALLFOLDER" />
           </File>
-          <File Source="*.dll" />
-          <File Source="*.json" />
+        </Component>
+        <Component>
+          <Files Include="*.dll" />
+          <Files Include="*.json" />
         </Component>
       </Directory>
     </StandardDirectory>
