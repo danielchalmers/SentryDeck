@@ -47,7 +47,7 @@ runs:
       run: |
         for arch in ${{ inputs.archs }}; do
           cd "publish/$arch"
-          wix build ../../Package.wxs -arch $arch -out "../SentryReplay-${{ inputs.version }}-$arch.msi"
+          wix build ../../Package.wxs -arch $arch -out "../SentryReplay-${{ inputs.version }}-$arch.msi" -d Version=${{ inputs.version }}
           cd ../..
         done
 

@@ -2,7 +2,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Sentry Replay" 
            Manufacturer="Daniel Chalmers" 
-           Version="!(bind.FileVersion.TeslaCam.exe)"
+           Version="$(var.Version)"
            UpgradeCode="A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D">
     
     <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
