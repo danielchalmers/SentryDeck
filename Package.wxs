@@ -15,10 +15,8 @@
             <Shortcut Directory="ProgramMenuFolder" Name="Sentry Replay" WorkingDirectory="INSTALLFOLDER" />
           </File>
         </Component>
-        <Component>
-          <Files Include="*.dll" />
-          <Files Include="*.json" />
-        </Component>
+        <Files Include="*.dll" />
+        <Files Include="*.json" />
       </Directory>
     </StandardDirectory>
   </Package>
