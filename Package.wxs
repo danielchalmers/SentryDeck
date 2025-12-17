@@ -30,8 +30,7 @@
   
   <Fragment>
     <ComponentGroup Id="HarvestedFiles" Directory="INSTALLFOLDER">
-      <Files Include="*.dll" />
-      <Files Include="*.json" />
+      <Files Include="*" Exclude="TeslaCam.exe" />
     </ComponentGroup>
   </Fragment>
 </Wix>
