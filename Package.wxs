@@ -5,8 +5,15 @@
            Version="$(var.Version)"
            UpgradeCode="A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D">
     
-    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="yes" />
+    
+    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="yes" 
+                  ExeCommand="[INSTALLFOLDER]TeslaCam.exe" Return="asyncNoWait" />
+    
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApplication" After="InstallFinalize">NOT Installed AND NOT REMOVE</Custom>
+    </InstallExecuteSequence>
     
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="SentryReplay" />
