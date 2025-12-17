@@ -8,16 +8,30 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
     <MediaTemplate EmbedCab="yes" />
     
+    <Feature Id="MainFeature">
+      <ComponentGroupRef Id="MainExecutable" />
+      <ComponentGroupRef Id="HarvestedFiles" />
+    </Feature>
+    
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="SentryReplay">
-        <Component>
-          <File Source="TeslaCam.exe">
-            <Shortcut Directory="ProgramMenuFolder" Name="Sentry Replay" WorkingDirectory="INSTALLFOLDER" />
-          </File>
-        </Component>
-        <Files Include="*.dll" />
-        <Files Include="*.json" />
-      </Directory>
+      <Directory Id="INSTALLFOLDER" Name="SentryReplay" />
     </StandardDirectory>
   </Package>
+  
+  <Fragment>
+    <ComponentGroup Id="MainExecutable" Directory="INSTALLFOLDER">
+      <Component>
+        <File Source="TeslaCam.exe">
+          <Shortcut Directory="ProgramMenuFolder" Name="Sentry Replay" WorkingDirectory="INSTALLFOLDER" />
+        </File>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+  
+  <Fragment>
+    <ComponentGroup Id="HarvestedFiles" Directory="INSTALLFOLDER">
+      <Files Include="*.dll" />
+      <Files Include="*.json" />
+    </ComponentGroup>
+  </Fragment>
 </Wix>
