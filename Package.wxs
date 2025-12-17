@@ -5,7 +5,9 @@
            Version="$(var.Version)"
            UpgradeCode="A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D">
     
-    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." Schedule="afterInstallInitialize" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." 
+                  Schedule="afterInstallInitialize" 
+                  AllowSameVersionUpgrades="yes" />
     <MediaTemplate EmbedCab="yes" />
     
     <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="yes" 
