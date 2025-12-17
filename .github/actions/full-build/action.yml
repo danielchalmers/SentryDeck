@@ -46,9 +46,7 @@ runs:
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          cd "publish/$arch"
-          wix build ../../Package.wxs -arch $arch -out "../SentryReplay-${{ inputs.version }}-$arch.msi" -d Version=${{ inputs.version }}
-          cd ../..
+          wix build Package.wxs -arch $arch -out "publish/SentryReplay-${{ inputs.version }}-$arch.msi" -d Version=${{ inputs.version }} -bindpath "publish/$arch"
         done
 
     - uses: actions/upload-artifact@v4
