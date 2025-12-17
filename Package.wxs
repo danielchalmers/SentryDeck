@@ -9,10 +9,14 @@
     <MediaTemplate EmbedCab="yes" />
     
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="SentryReplay">
-        <Files Include="*" />
-      </Directory>
+      <Directory Id="INSTALLFOLDER" Name="SentryReplay" />
     </StandardDirectory>
+    
+    <Fragment>
+      <ComponentGroup Id="AllFiles" Directory="INSTALLFOLDER">
+        <Files Include="*" />
+      </ComponentGroup>
+    </Fragment>
     
     <StandardDirectory Id="ProgramMenuFolder">
       <Component>
