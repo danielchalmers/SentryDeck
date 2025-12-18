@@ -15,6 +15,12 @@ public static class UpdateChecker
         Timeout = TimeSpan.FromSeconds(10)
     };
 
+    static UpdateChecker()
+    {
+        // Set User-Agent header once during initialization
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", App.AssemblyTitle);
+    }
+
     public static string LatestReleaseUrl { get; private set; } = ReleasesPageUrl;
 
     /// <summary>
@@ -36,11 +42,6 @@ public static class UpdateChecker
             }
 
             // Fetch latest release from GitHub
-            if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
-            {
-                _httpClient.DefaultRequestHeaders.Add("User-Agent", "SentryReplay");
-            }
-            
             var response = await _httpClient.GetAsync(ReleasesApiUrl);
             if (!response.IsSuccessStatusCode)
             {

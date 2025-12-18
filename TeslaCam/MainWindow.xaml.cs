@@ -238,8 +238,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void Window_ContentRendered(object sender, EventArgs e)
     {
-        // Check for updates in the background
-        _ = CheckForUpdatesAsync();
+        // Check for updates in the background - don't await to avoid blocking startup
+        Task.Run(async () =>
+        {
+            try
+            {
+                await CheckForUpdatesAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Update check failed during startup");
+            }
+        });
 
         // Try to load FFmpeg
         var loaded = TryLoadFFmpeg();
@@ -408,14 +418,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task CheckForUpdatesAsync()
     {
-        try
+        var isUpdateAvailable = await UpdateChecker.CheckForUpdateAsync();
+        
+        // Update UI on the UI thread
+        Dispatcher.Invoke(() =>
         {
-            IsUpdateAvailable = await UpdateChecker.CheckForUpdateAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to check for updates");
-        }
+            IsUpdateAvailable = isUpdateAvailable;
+        });
     }
 
     #endregion
