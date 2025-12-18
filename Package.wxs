@@ -46,9 +46,18 @@
         <File Id="TeslaCam.exe" Source="TeslaCam.exe" KeyPath="yes" />
       </Component>
       
-      <!-- Include all other files using wildcard pattern -->
-      <Component Id="AllFiles" Guid="*">
-        <File Source="*" />
+      <!-- Include all DLL files -->
+      <Component Id="DllFiles" Guid="*">
+        <File Source="*.dll" />
+      </Component>
+      
+      <!-- Include all other supporting files -->
+      <Component Id="JsonFiles" Guid="*">
+        <File Source="*.json" />
+      </Component>
+      
+      <Component Id="PdbFiles" Guid="*">
+        <File Source="*.pdb" />
       </Component>
       
       <!-- Create Start Menu shortcut -->
