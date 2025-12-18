@@ -24,6 +24,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _errorTitle;
     private string _errorDetails;
     private bool _showErrorOverlay;
+    private bool _showFFmpegDownloadButton;
     private bool _isLoading;
     private bool _isRendering;
     private double _renderProgress;
@@ -91,6 +92,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SetProperty(ref _showErrorOverlay, value);
             OnPropertyChanged(nameof(ShowStatusOverlay));
         }
+    }
+
+    public bool ShowFFmpegDownloadButton
+    {
+        get => _showFFmpegDownloadButton;
+        set => SetProperty(ref _showFFmpegDownloadButton, value);
     }
 
     public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay;
@@ -229,60 +236,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     #region Initialization
 
-    private async void Window_ContentRendered(object sender, EventArgs e)
+    private void Window_ContentRendered(object sender, EventArgs e)
     {
         // Try to load FFmpeg
-        var loaded = TryLoadFFmpeg();
-
-        if (!loaded)
+        if (TryLoadFFmpeg())
         {
-            var shouldInstall = MessageBox.Show(
-                this,
-                "FFmpeg is required to play clips. Download it now?\n\nThis will download about 80MB.",
-                App.Title,
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Question) == MessageBoxResult.OK;
-
-            if (shouldInstall)
-            {
-                IsLoading = true;
-                try
-                {
-                    await PackageManager.DownloadAndExtractFFmpeg();
-                    loaded = TryLoadFFmpeg();
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to download FFmpeg");
-                    MessageBox.Show(this, $"Failed to download FFmpeg: {ex.Message}", App.Title, MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-                finally
-                {
-                    IsLoading = false;
-                }
-            }
-
-            if (!loaded)
-            {
-                ShowError("FFmpeg Not Available", "FFmpeg is required for video playback but could not be loaded. Please restart the application and try downloading again.");
-                return;
-            }
+            InitializePlayer();
         }
-
-        // Initialize player controller
-        _playerController = new VideoPlayerController(MediaElement);
-        _playerController.PropertyChanged += PlayerController_PropertyChanged;
-
-        // Apply initial playback speed selection
-        _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
-
-        // Wire up media element events for UI updates
-        MediaElement.MediaOpened += MediaElement_MediaOpened;
-        MediaElement.MediaEnded += MediaElement_MediaEnded;
-        MediaElement.MediaFailed += MediaElement_MediaFailed;
-
-        // Load clips from common locations
-        LoadClips(CamStorage.FindCommonRoots());
+        else
+        {
+            ShowFFmpegMissingError();
+        }
     }
 
     private bool TryLoadFFmpeg()
@@ -662,6 +626,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ClearError()
     {
         ShowErrorOverlay = false;
+        ShowFFmpegDownloadButton = false;
         ErrorTitle = null;
         ErrorDetails = null;
     }
@@ -669,6 +634,58 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DismissErrorButton_Click(object sender, RoutedEventArgs e)
     {
         ClearError();
+    }
+
+    private async void DownloadFFmpegButton_Click(object sender, RoutedEventArgs e)
+    {
+        IsLoading = true;
+        ClearError();
+        try
+        {
+            await PackageManager.DownloadAndExtractFFmpeg();
+            if (TryLoadFFmpeg())
+            {
+                InitializePlayer();
+            }
+            else
+            {
+                ShowFFmpegMissingError();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to download FFmpeg");
+            ShowError("Download Failed", $"Failed to download FFmpeg: {ex.Message}");
+            ShowFFmpegDownloadButton = true;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ShowFFmpegMissingError()
+    {
+        ShowFFmpegDownloadButton = true;
+        ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.");
+    }
+
+    private void InitializePlayer()
+    {
+        // Initialize player controller
+        _playerController = new VideoPlayerController(MediaElement);
+        _playerController.PropertyChanged += PlayerController_PropertyChanged;
+
+        // Apply initial playback speed selection
+        _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
+
+        // Wire up media element events for UI updates
+        MediaElement.MediaOpened += MediaElement_MediaOpened;
+        MediaElement.MediaEnded += MediaElement_MediaEnded;
+        MediaElement.MediaFailed += MediaElement_MediaFailed;
+
+        // Load clips from common locations
+        LoadClips(CamStorage.FindCommonRoots());
     }
 
     #endregion

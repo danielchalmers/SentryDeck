@@ -249,6 +249,13 @@
                                        TextWrapping="Wrap"
                                        TextAlignment="Center"
                                        HorizontalAlignment="Center" />
+                            <Button Content="Download FFmpeg"
+                                    Style="{StaticResource PlayerButton}"
+                                    Click="DownloadFFmpegButton_Click"
+                                    Visibility="{Binding ShowFFmpegDownloadButton, Converter={StaticResource BoolToVisibility}}"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,20,0,0"
+                                    Padding="24,10" />
                             <Button Content="Dismiss"
                                     Style="{StaticResource PlayerButton}"
                                     Click="DismissErrorButton_Click"
