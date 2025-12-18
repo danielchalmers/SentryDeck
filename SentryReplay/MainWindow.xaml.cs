@@ -24,6 +24,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _errorTitle;
     private string _errorDetails;
     private bool _showErrorOverlay;
+    private bool _canDismissError = true;
     private bool _showFFmpegDownloadButton;
     private bool _isLoading;
     private bool _isRendering;
@@ -97,6 +98,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(ShowStatusOverlay));
             OnPropertyChanged(nameof(HasNoClipSelected));
         }
+    }
+
+    public bool CanDismissError
+    {
+        get => _canDismissError;
+        set => SetProperty(ref _canDismissError, value);
     }
 
     public bool ShowFFmpegDownloadButton
@@ -622,10 +629,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : ts.ToString(@"m\:ss");
     }
 
-    private void ShowError(string title, string details)
+    private void ShowError(string title, string details, bool canDismiss = true)
     {
         ErrorTitle = title;
         ErrorDetails = details;
+        CanDismissError = canDismiss;
         ShowErrorOverlay = true;
     }
 
@@ -633,6 +641,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         ShowErrorOverlay = false;
         ShowFFmpegDownloadButton = false;
+        CanDismissError = true;
         ErrorTitle = null;
         ErrorDetails = null;
     }
@@ -673,7 +682,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ShowFFmpegMissingError()
     {
         ShowFFmpegDownloadButton = true;
-        ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.");
+        ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
     }
 
     private void InitializePlayer()

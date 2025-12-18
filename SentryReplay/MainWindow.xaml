@@ -259,6 +259,7 @@
                             <Button Content="Dismiss"
                                     Style="{StaticResource PlayerButton}"
                                     Click="DismissErrorButton_Click"
+                                    Visibility="{Binding CanDismissError, Converter={StaticResource BoolToVisibility}}"
                                     HorizontalAlignment="Center"
                                     Margin="0,20,0,0"
                                     Padding="24,10" />
