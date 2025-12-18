@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Sentry Replay"
+           Manufacturer="Daniel Chalmers"
+           Version="!(bind.FileVersion.TeslaCam.exe)"
+           UpgradeCode="8B3C9F6E-5A2D-4E8B-9C7D-1F3A4B5C6D7E"
+           Scope="perUser">
+    
+    <!-- Allow same-version upgrades to prevent duplicate entries -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  AllowSameVersionUpgrades="yes" />
+    
+    <!-- Auto-launch application after installation -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Sentry Replay" />
+    <Property Id="WixShellExecTarget" Value="[#TeslaCam.exe]" />
+    <CustomAction Id="LaunchApplication"
+                  DllEntry="WixShellExec"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApplication" After="InstallFinalize">
+        WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed
+      </Custom>
+    </InstallExecuteSequence>
+    
+    <!-- Feature containing all application files -->
+    <Feature Id="ProductFeature" Title="Sentry Replay" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+  
+  <Fragment>
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="SentryReplay" />
+    </StandardDirectory>
+  </Fragment>
+  
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <!-- Main executable (marked as key file for version binding) -->
+      <Component Id="TeslaCam.exe" Guid="*">
+        <File Id="TeslaCam.exe" Source="TeslaCam.exe" KeyPath="yes" />
+      </Component>
+      
+      <!-- Include all other files using wildcard pattern -->
+      <Component Id="AllFiles" Guid="*">
+        <File Source="*" />
+      </Component>
+      
+      <!-- Create Start Menu shortcut -->
+      <Component Id="StartMenuShortcut" Guid="*" Directory="ProgramMenuFolder">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="Sentry Replay"
+                  Target="[#TeslaCam.exe]"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\SentryReplay" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      
+      <!-- Cleanup of old files on upgrades -->
+      <Component Id="CleanupComponent" Guid="*">
+        <util:RemoveFolderEx On="uninstall" Property="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\SentryReplay" Name="Path" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
