@@ -17,7 +17,7 @@
     <Property Id="WixShellExecTarget" Value="[#TeslaCam.exe]" />
     <CustomAction Id="LaunchApplication"
                   DllEntry="WixShellExec"
-                  BinaryRef="Wix4UtilCA_X86"
+                  BinaryRef="Wix4UtilCA"
                   Impersonate="yes"
                   Return="ignore" />
     
@@ -70,9 +70,9 @@
         <RegistryValue Root="HKCU" Key="Software\SentryReplay" Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>
       
-      <!-- Cleanup of old files on upgrades -->
+      <!-- Cleanup of old files on upgrades and uninstall -->
       <Component Id="CleanupComponent" Guid="*">
-        <util:RemoveFolderEx On="uninstall" Property="INSTALLFOLDER" />
+        <util:RemoveFolderEx On="both" Property="INSTALLFOLDER" />
         <RegistryValue Root="HKCU" Key="Software\SentryReplay" Name="Path" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
       </Component>
     </ComponentGroup>
