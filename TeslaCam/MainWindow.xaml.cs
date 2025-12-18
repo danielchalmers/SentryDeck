@@ -239,17 +239,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void Window_ContentRendered(object sender, EventArgs e)
     {
         // Check for updates in the background - don't await to avoid blocking startup
-        Task.Run(async () =>
+        _ = Task.Run(CheckForUpdatesAsync).ContinueWith(t =>
         {
-            try
+            if (t.IsFaulted)
             {
-                await CheckForUpdatesAsync();
+                Log.Warning(t.Exception, "Update check failed during startup");
             }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Update check failed during startup");
-            }
-        });
+        }, TaskScheduler.Default);
 
         // Try to load FFmpeg
         var loaded = TryLoadFFmpeg();
