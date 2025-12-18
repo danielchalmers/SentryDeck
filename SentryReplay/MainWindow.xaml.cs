@@ -65,9 +65,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _selectedClip;
         set
         {
-            if (SetProperty(ref _selectedClip, value) && value is not null)
+            if (SetProperty(ref _selectedClip, value))
             {
-                _ = PlaySelectedClipAsync();
+                OnPropertyChanged(nameof(HasNoClipSelected));
+                if (value is not null)
+                {
+                    _ = PlaySelectedClipAsync();
+                }
             }
         }
     }
@@ -91,6 +95,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             SetProperty(ref _showErrorOverlay, value);
             OnPropertyChanged(nameof(ShowStatusOverlay));
+            OnPropertyChanged(nameof(HasNoClipSelected));
         }
     }
 
@@ -115,6 +120,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(LoadingStatusText));
             OnPropertyChanged(nameof(IsIndeterminateProgress));
             OnPropertyChanged(nameof(ShowStatusOverlay));
+            OnPropertyChanged(nameof(HasNoClipSelected));
         }
     }
 
@@ -148,7 +154,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? $"Rendering... {RenderProgressPercent}%"
         : "Loading...";
 
-    public bool HasNoClipSelected => SelectedClip is null && !IsLoading;
+    public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !ShowErrorOverlay;
 
     public double SeekPosition
     {
