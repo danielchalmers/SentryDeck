@@ -47,7 +47,9 @@ runs:
       run: |
         $archs = "${{ inputs.archs }}".Split(" ")
         foreach ($arch in $archs) {
-          wix build Package.wxs -out "publish/SentryReplay-${{ inputs.version }}-$arch.msi" -arch $arch -src "publish/$arch"
+          Push-Location "publish/$arch"
+          wix build ../../Package.wxs -out "../SentryReplay-${{ inputs.version }}-$arch.msi" -arch $arch
+          Pop-Location
         }
 
     - uses: actions/upload-artifact@v4
