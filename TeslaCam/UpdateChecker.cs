@@ -10,6 +10,11 @@ public static class UpdateChecker
     private const string ReleasesApiUrl = "https://api.github.com/repos/danielchalmers/SentryReplay/releases/latest";
     private const string ReleasesPageUrl = "https://github.com/danielchalmers/SentryReplay/releases";
 
+    private static readonly HttpClient _httpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(10)
+    };
+
     public static string LatestReleaseUrl { get; private set; } = ReleasesPageUrl;
 
     /// <summary>
@@ -31,10 +36,12 @@ public static class UpdateChecker
             }
 
             // Fetch latest release from GitHub
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "SentryReplay");
+            if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
+            {
+                _httpClient.DefaultRequestHeaders.Add("User-Agent", "SentryReplay");
+            }
             
-            var response = await client.GetAsync(ReleasesApiUrl);
+            var response = await _httpClient.GetAsync(ReleasesApiUrl);
             if (!response.IsSuccessStatusCode)
             {
                 Log.Warning($"Failed to check for updates: {response.StatusCode}");
