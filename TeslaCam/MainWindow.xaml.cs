@@ -30,6 +30,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private double _seekPosition;
     private bool _isPlaying;
     private double _selectedPlaybackSpeed = 1.0;
+    private bool _isUpdateAvailable;
 
     public MainWindow()
     {
@@ -225,12 +226,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsUpdateAvailable
+    {
+        get => _isUpdateAvailable;
+        set => SetProperty(ref _isUpdateAvailable, value);
+    }
+
     #endregion
 
     #region Initialization
 
     private async void Window_ContentRendered(object sender, EventArgs e)
     {
+        // Check for updates in the background
+        _ = CheckForUpdatesAsync();
+
         // Try to load FFmpeg
         var loaded = TryLoadFFmpeg();
 
@@ -394,6 +404,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(CanSeek));
         OnPropertyChanged(nameof(DurationText));
         OnPropertyChanged(nameof(HasNoClipSelected));
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            IsUpdateAvailable = await UpdateChecker.CheckForUpdateAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to check for updates");
+        }
     }
 
     #endregion
@@ -669,6 +691,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DismissErrorButton_Click(object sender, RoutedEventArgs e)
     {
         ClearError();
+    }
+
+    private void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var url = UpdateChecker.LatestReleaseUrl;
+            Log.Information($"Opening update URL: {url}");
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to open update URL");
+            MessageBox.Show(this, $"Failed to open update URL: {ex.Message}", App.Title, MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     #endregion

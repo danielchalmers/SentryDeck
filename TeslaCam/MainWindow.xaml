@@ -77,6 +77,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Search box -->
@@ -183,8 +184,39 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Folder picker -->
+            <!-- Update Available Button -->
             <Button Grid.Row="2"
+                    Content="🔔 Update Available"
+                    Background="#1e88e5"
+                    Foreground="White"
+                    BorderThickness="0"
+                    Padding="12"
+                    Margin="8,4,8,4"
+                    FontSize="14"
+                    Cursor="Hand"
+                    Click="UpdateButton_Click"
+                    Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisibility}}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#1976d2" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#1565c0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <!-- Folder picker -->
+            <Button Grid.Row="3"
                     Content="📁 Select Folder"
                     Style="{StaticResource PlayerButton}"
                     Margin="8"
