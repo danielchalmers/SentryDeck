@@ -5,4 +5,4 @@
 
 An app that lets you view your Tesla's dashcam videos directly on your computer.
 
-**Note:** This application reads from the `TeslaCam` folder structure that Tesla creates on your USB drive, which contains `SavedClips`, `SentryClips`, and `RecentClips` subdirectories.
+It reads from the `TeslaCam` folder structure that Tesla creates on your USB drive, which contains your clips.
