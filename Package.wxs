@@ -6,7 +6,7 @@
            Scope="perUser">
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of SentryReplay is already installed." />
-    <MediaTemplate />
+    <MediaTemplate EmbedCab="yes" />
 
     <CustomAction Id="LaunchApp"
                   FileRef="SentryReplayExe"
