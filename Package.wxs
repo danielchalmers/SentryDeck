@@ -4,7 +4,8 @@
            Version="$(var.Version)"
            UpgradeCode="98E07D4B-45EB-45A6-90A5-2A68E772F2E7"
            Scope="perUser">
-    <MajorUpgrade AllowSameVersionUpgrades="yes" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of SentryReplay is already installed." />
     <MediaTemplate />
 
     <CustomAction Id="LaunchApp"
@@ -15,7 +16,7 @@
                   Return="asyncNoWait" />
 
     <InstallExecuteSequence>
-      <Custom Action="LaunchApp" After="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
     <Feature Id="Main" Title="SentryReplay" Level="1">
