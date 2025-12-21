@@ -10,10 +10,9 @@
     <MediaTemplate EmbedCab="yes" />
 
     <CustomAction Id="LaunchApp"
-                  FileRef="SentryReplayExe"
-                  ExeCommand=""
-                  Execute="immediate"
                   Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]SentryReplay.exe&quot;"
+                  Execute="immediate"
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
