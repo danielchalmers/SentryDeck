@@ -3,8 +3,7 @@
            Manufacturer="Daniel Chalmers"
            Version="$(var.Version)"
            UpgradeCode="98E07D4B-45EB-45A6-90A5-2A68E772F2E7"
-           InstallScope="perUser"
-           InstallPrivileges="limited">
+           Scope="perUser">
     <MajorUpgrade AllowSameVersionUpgrades="yes" />
     <MediaTemplate />
 
@@ -39,7 +38,9 @@
         <RemoveFile Id="RemoveOldFiles" Name="*.*" On="both" />
         <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
       </Component>
-      <Files Include="publish/$(var.Arch)/**" Exclude="publish/$(var.Arch)/SentryReplay.exe" />
+      <Files Include="publish/$(var.Arch)/**">
+        <Exclude Files="publish/$(var.Arch)/SentryReplay.exe" />
+      </Files>
     </ComponentGroup>
   </Fragment>
 </Wix>
