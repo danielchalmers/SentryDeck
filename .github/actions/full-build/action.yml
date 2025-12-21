@@ -15,6 +15,11 @@ runs:
   steps:
     - uses: actions/setup-dotnet@v4
 
+    - name: Install WiX v6
+      shell: bash
+      run: |
+        dotnet tool install --global wix --version 6.0.*
+
     - name: Build
       shell: bash
       run: dotnet build
@@ -38,8 +43,16 @@ runs:
           Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryReplay-${{ inputs.version }}-$arch.zip"
         }
 
+    - name: Create MSI Installers
+      shell: bash
+      run: |
+        for arch in ${{ inputs.archs }}; do
+          wix build Package.wxs -arch $arch -d Version=${{ inputs.version }} -d Arch=$arch -o "publish/SentryReplay-${{ inputs.version }}-$arch.msi"
+        done
+
     - uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error
         path: |
           publish/*.zip
+          publish/*.msi
