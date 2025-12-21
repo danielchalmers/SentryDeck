@@ -4,6 +4,7 @@
            Version="$(var.Version)"
            UpgradeCode="98E07D4B-45EB-45A6-90A5-2A68E772F2E7"
            Scope="perUser">
+    <Property Id="ARPNOMODIFY" Value="1" />
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of Sentry Replay is already installed." />
     <MediaTemplate EmbedCab="yes" />
@@ -30,6 +31,9 @@
         <Directory Id="INSTALLFOLDER" Name="SentryReplay" />
       </Directory>
     </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuSentryReplay" Name="Sentry Replay" />
+    </StandardDirectory>
   </Fragment>
 
   <Fragment>
@@ -38,6 +42,21 @@
         <File Id="SentryReplayExe" Source="publish/$(var.Arch)/SentryReplay.exe" KeyPath="yes" />
         <RemoveFile Id="RemoveOldFiles" Name="*.*" On="both" />
         <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="SentryReplayShortcut"
+                  Name="Sentry Replay"
+                  Description="Sentry Replay"
+                  Directory="ProgramMenuSentryReplay"
+                  Target="[INSTALLFOLDER]SentryReplay.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveStartMenuFolder" Directory="ProgramMenuSentryReplay" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\\Daniel Chalmers\\SentryReplay"
+                       Name="StartMenuShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
       </Component>
       <Files Include="publish/$(var.Arch)/**">
         <Exclude Files="publish/$(var.Arch)/SentryReplay.exe" />
