@@ -13,6 +13,7 @@
                   FileRef="SentryReplayExe"
                   ExeCommand=""
                   Execute="immediate"
+                  Directory="INSTALLFOLDER"
                   Impersonate="yes"
                   Return="asyncNoWait" />
 
