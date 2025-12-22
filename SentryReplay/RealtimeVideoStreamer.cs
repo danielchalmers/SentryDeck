@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.IO.Pipes;
 using System.Text;
 using Serilog;
 using SentryReplay.Data;
@@ -16,11 +15,11 @@ public sealed class RealtimeVideoStreamer : IDisposable
     private static readonly object GpuLock = new();
     private static Task<GpuCapabilities> CachedGpuTask;
 
-    private Process _ffmpegProcess;
+    private readonly VideoStreamServer _streamServer;
     private CancellationTokenSource _cts;
     private readonly SemaphoreSlim _streamLock = new(1, 1);
     private bool _isDisposed;
-    private string _currentOutputPath;
+    private string _currentStreamUrl;
     private readonly string _tempDir;
 
     private CamClip _concatClip;
@@ -37,13 +36,20 @@ public sealed class RealtimeVideoStreamer : IDisposable
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"SentryReplay-Stream-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
+
+        _streamServer = new VideoStreamServer();
+        _streamServer.StreamError += (_, msg) => StreamError?.Invoke(this, msg);
+        _streamServer.StreamStarted += (_, _) => StreamStarted?.Invoke(this, EventArgs.Empty);
+        _streamServer.StreamEnded += (_, _) => StreamEnded?.Invoke(this, EventArgs.Empty);
+        _streamServer.FfmpegLogLine += (_, line) => OnFFmpegOutput(line);
     }
 
     public CamClip CurrentClip { get; private set; }
     public TimeSpan CurrentPosition { get; private set; }
     public TimeSpan Duration { get; private set; }
-    public bool IsStreaming => _ffmpegProcess is not null && !_ffmpegProcess.HasExited;
-    public string OutputPath => _currentOutputPath;
+    public bool IsStreaming => _streamServer?.IsStreaming ?? false;
+    public string StreamUrl => _currentStreamUrl;
+    public string OutputPath => _currentStreamUrl;
 
     public event EventHandler StreamStarted;
     public event EventHandler StreamEnded;
@@ -148,9 +154,6 @@ public sealed class RealtimeVideoStreamer : IDisposable
 
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-            // Create output file path
-            _currentOutputPath = Path.Combine(_tempDir, $"stream_{Guid.NewGuid():N}.mp4");
-
             // Build concat lists for each camera (cached per clip to make seeks fast)
             var concatFiles = await BuildConcatFilesAsync(clip, _cts.Token);
             if (!concatFiles.ContainsKey("front"))
@@ -162,35 +165,14 @@ public sealed class RealtimeVideoStreamer : IDisposable
             // Detect GPU capabilities once (cached). Not currently used for args, but kept for future.
             _ = await DetectGpuCapabilitiesAsync();
 
-            // Build and start ffmpeg process
+            // Build and start ffmpeg process (streamed via local HTTP server)
             var args = BuildStreamingArgs(concatFiles, CurrentPosition);
 
-            _ffmpegProcess = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "ffmpeg",
-                    Arguments = args,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardError = true,
-                },
-                EnableRaisingEvents = true
-            };
+            _streamServer.Start();
+            _streamServer.SetSource(args);
 
-            _ffmpegProcess.ErrorDataReceived += OnFFmpegOutput;
-            _ffmpegProcess.Exited += OnFFmpegExited;
-
-            Log.Debug($"Starting stream: ffmpeg {args}");
-            _ffmpegProcess.Start();
-            _ffmpegProcess.BeginErrorReadLine();
-
-            // Wait a brief moment for ffmpeg to start writing
-            await WaitForOutputFileAsync(_currentOutputPath, TimeSpan.FromSeconds(5), _cts.Token);
-
-            StreamStarted?.Invoke(this, EventArgs.Empty);
-
-            return _currentOutputPath;
+            _currentStreamUrl = $"{_streamServer.StreamUri}?v={Guid.NewGuid():N}";
+            return _currentStreamUrl;
         }
         catch (Exception ex)
         {
@@ -238,38 +220,20 @@ public sealed class RealtimeVideoStreamer : IDisposable
 
     private async Task StopStreamInternalAsync()
     {
-        if (_ffmpegProcess is not null)
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+
+        try
         {
-            try
-            {
-                _cts?.Cancel();
-
-                if (!_ffmpegProcess.HasExited)
-                {
-                    // Send 'q' to gracefully stop ffmpeg
-                    try
-                    {
-                        _ffmpegProcess.Kill();
-                    }
-                    catch { }
-
-                    await Task.Run(() => _ffmpegProcess.WaitForExit(2000));
-                }
-            }
-            catch { }
-            finally
-            {
-                _ffmpegProcess?.Dispose();
-                _ffmpegProcess = null;
-            }
-
-            StreamEnded?.Invoke(this, EventArgs.Empty);
+            _streamServer?.ClearSource();
+        }
+        catch
+        {
         }
 
-        // Clean up old output file
-        await Task.Delay(100); // Wait for file handles
-        TryDeleteFile(_currentOutputPath);
-        _currentOutputPath = null;
+        _currentStreamUrl = null;
+        await Task.CompletedTask;
     }
 
     private async Task<Dictionary<string, string>> BuildConcatFilesAsync(CamClip clip, CancellationToken ct)
@@ -327,13 +291,11 @@ public sealed class RealtimeVideoStreamer : IDisposable
         // Add inputs for each camera
         var inputIndex = 0;
         var cameraInputs = new Dictionary<string, int>();
-        var availableCameras = new List<string>();
 
         foreach (var kvp in concatFiles)
         {
             sb.Append($"-f concat -safe 0 -i \"{kvp.Value}\" ");
             cameraInputs[kvp.Key] = inputIndex++;
-            availableCameras.Add(kvp.Key);
         }
 
         // Build filter complex for multi-camera composite
@@ -352,7 +314,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
         sb.Append("-f mp4 -movflags +frag_keyframe+empty_moov+default_base_moof ");
         sb.Append("-an "); // No audio
         sb.Append("-threads 0 ");
-        sb.Append($"\"{_currentOutputPath}\"");
+        sb.Append("-");
 
         return sb.ToString();
     }
@@ -400,58 +362,21 @@ public sealed class RealtimeVideoStreamer : IDisposable
         return TimeSpan.FromSeconds(clip.Chunks.Count * 60);
     }
 
-    private async Task WaitForOutputFileAsync(string path, TimeSpan timeout, CancellationToken ct)
+    private void OnFFmpegOutput(string data)
     {
-        var sw = Stopwatch.StartNew();
-        while (sw.Elapsed < timeout)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            if (File.Exists(path))
-            {
-                var fi = new FileInfo(path);
-                if (fi.Length > 64 * 1024)
-                {
-                    // Make sure we have a real MP4 header (ftyp) before attempting to open.
-                    try
-                    {
-                        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                        var header = new byte[Math.Min(256, (int)fs.Length)];
-                        var read = await fs.ReadAsync(header, ct);
-                        var headerText = Encoding.ASCII.GetString(header, 0, read);
-                        if (headerText.Contains("ftyp", StringComparison.Ordinal))
-                        {
-                            return;
-                        }
-                    }
-                    catch
-                    {
-                        // Keep polling until timeout.
-                    }
-                }
-            }
-
-            await Task.Delay(50, ct);
-        }
-
-        throw new TimeoutException($"Timed out waiting for stream output: {path}");
-    }
-
-    private void OnFFmpegOutput(object sender, DataReceivedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(e.Data))
+        if (string.IsNullOrEmpty(data))
             return;
 
         // Log errors
-        if (e.Data.Contains("Error", StringComparison.OrdinalIgnoreCase))
+        if (data.Contains("Error", StringComparison.OrdinalIgnoreCase))
         {
-            Log.Warning($"[ffmpeg] {e.Data}");
+            Log.Warning($"[ffmpeg] {data}");
         }
 
         // Parse time progress for position tracking
-        if (e.Data.Contains("time="))
+        if (data.Contains("time="))
         {
-            var match = System.Text.RegularExpressions.Regex.Match(e.Data, @"time=(\d+):(\d+):(\d+)\.(\d+)");
+            var match = System.Text.RegularExpressions.Regex.Match(data, @"time=(\d+):(\d+):(\d+)\.(\d+)");
             if (match.Success)
             {
                 var hours = int.Parse(match.Groups[1].Value);
@@ -471,26 +396,6 @@ public sealed class RealtimeVideoStreamer : IDisposable
         }
     }
 
-    private void OnFFmpegExited(object sender, EventArgs e)
-    {
-        Log.Debug($"FFmpeg process exited with code: {_ffmpegProcess?.ExitCode}");
-        StreamEnded?.Invoke(this, EventArgs.Empty);
-    }
-
-    private static void TryDeleteFile(string path)
-    {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            return;
-
-        try
-        {
-            File.Delete(path);
-        }
-        catch
-        {
-        }
-    }
-
     public void Dispose()
     {
         if (_isDisposed)
@@ -500,8 +405,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
         try
         {
             _cts?.Cancel();
-            _ffmpegProcess?.Kill();
-            _ffmpegProcess?.Dispose();
+            _streamServer?.Dispose();
         }
         catch { }
 

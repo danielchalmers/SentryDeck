@@ -17,7 +17,6 @@ public sealed class VideoStreamServer : IDisposable
     private Task _serverTask;
     private Process _ffmpegProcess;
     private readonly object _lock = new();
-    private string _currentSourcePath;
     private bool _isDisposed;
 
     public VideoStreamServer(int port = 0)
@@ -36,10 +35,12 @@ public sealed class VideoStreamServer : IDisposable
     public Uri StreamUri => new($"http://localhost:{_port}/stream");
 
     public bool IsRunning => _serverTask is not null && !_serverTask.IsCompleted;
+    public bool IsStreaming => _ffmpegProcess is not null && !_ffmpegProcess.HasExited;
 
     public event EventHandler<string> StreamError;
     public event EventHandler StreamStarted;
     public event EventHandler StreamEnded;
+    public event EventHandler<string> FfmpegLogLine;
 
     private static int FindAvailablePort()
     {
@@ -84,7 +85,6 @@ public sealed class VideoStreamServer : IDisposable
         lock (_lock)
         {
             StopFFmpeg();
-            _currentSourcePath = ffmpegArgs;
             StartFFmpeg(ffmpegArgs);
         }
     }
@@ -94,7 +94,6 @@ public sealed class VideoStreamServer : IDisposable
         lock (_lock)
         {
             StopFFmpeg();
-            _currentSourcePath = null;
         }
     }
 
@@ -103,7 +102,8 @@ public sealed class VideoStreamServer : IDisposable
         if (string.IsNullOrEmpty(inputArgs))
             return;
 
-        var args = $"{inputArgs} -c:v libx264 -preset ultrafast -tune zerolatency -movflags +frag_keyframe+empty_moov+default_base_moof -f mp4 -";
+        // Caller provides full args, including output to stdout (e.g. "-f mp4 -").
+        var args = inputArgs;
 
         _ffmpegProcess = new Process
         {
@@ -123,6 +123,7 @@ public sealed class VideoStreamServer : IDisposable
         {
             if (!string.IsNullOrEmpty(e.Data))
             {
+                FfmpegLogLine?.Invoke(this, e.Data);
                 Log.Verbose($"[ffmpeg] {e.Data}");
             }
         };
@@ -200,6 +201,15 @@ public sealed class VideoStreamServer : IDisposable
                 return;
             }
 
+            var method = context.Request.HttpMethod;
+            if (!string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(method, "HEAD", StringComparison.OrdinalIgnoreCase))
+            {
+                response.StatusCode = 405;
+                response.Close();
+                return;
+            }
+
             Process ffmpeg;
             lock (_lock)
             {
@@ -216,7 +226,15 @@ public sealed class VideoStreamServer : IDisposable
             response.ContentType = "video/mp4";
             response.SendChunked = true;
             response.AddHeader("Cache-Control", "no-cache, no-store");
+            response.AddHeader("Accept-Ranges", "none");
             response.AddHeader("Connection", "close");
+
+            if (string.Equals(method, "HEAD", StringComparison.OrdinalIgnoreCase))
+            {
+                response.StatusCode = 200;
+                response.Close();
+                return;
+            }
 
             var buffer = new byte[64 * 1024]; // 64KB buffer
             var stdout = ffmpeg.StandardOutput.BaseStream;
