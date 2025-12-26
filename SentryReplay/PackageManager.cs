@@ -10,18 +10,38 @@ public static class PackageManager
 {
     private static async Task DownloadFile(string url, string savePath)
     {
-        using var client = new HttpClient();
-        var response = await client.GetAsync(url);
-        if (response.IsSuccessStatusCode)
-        {
-            using var fileStream = File.Create(savePath);
-            await response.Content.CopyToAsync(fileStream);
-        }
+        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        
+        using var fileStream = File.Create(savePath);
+        await response.Content.CopyToAsync(fileStream);
     }
 
     private static void ExtractZipFile(string zipFilePath, string extractPath)
     {
-        ZipFile.ExtractToDirectory(zipFilePath, extractPath, true);
+        // Extract and flatten nested directories - the zip contains a bin directory with ffmpeg.exe and required DLLs
+        using var archive = ZipFile.OpenRead(zipFilePath);
+        
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name))
+                continue;
+            
+            // Find bin directory in the zip structure
+            var entryPath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+            var binIndex = entryPath.IndexOf("bin" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            
+            if (binIndex >= 0)
+            {
+                // Extract files from bin directory to root of extractPath
+                var relativePath = entryPath.Substring(binIndex + 4); // Skip "bin\\"
+                var destPath = Path.Combine(extractPath, relativePath);
+                
+                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                entry.ExtractToFile(destPath, overwrite: true);
+            }
+        }
     }
 
     public static async Task DownloadAndExtractFFmpeg()
@@ -30,15 +50,29 @@ public static class PackageManager
         var url = GetFFmpegDownloadUrl();
         var tempPath = Path.GetTempFileName();
 
-        Log.Information("Getting ffmpeg");
+        try
+        {
+            Log.Information("Downloading FFmpeg...");
 
-        Log.Debug($"Downloading ffmpeg to {tempPath} from {url}");
-        await DownloadFile(url, tempPath);
+            Log.Debug($"Downloading FFmpeg to {tempPath} from {url}");
+            await DownloadFile(url, tempPath);
 
-        Log.Debug($"Extracting ffmpeg to {outputFolder}");
-        ExtractZipFile(tempPath, outputFolder);
-
-        File.Delete(tempPath);
+            Log.Information("Extracting FFmpeg...");
+            Log.Debug($"Extracting FFmpeg to {outputFolder}");
+            
+            if (Directory.Exists(outputFolder))
+                Directory.Delete(outputFolder, true);
+            Directory.CreateDirectory(outputFolder);
+            
+            ExtractZipFile(tempPath, outputFolder);
+            
+            Log.Information("FFmpeg downloaded and extracted successfully");
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
     }
 
     private static string GetFFmpegDownloadUrl()
