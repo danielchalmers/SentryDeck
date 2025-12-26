@@ -20,7 +20,7 @@ public static class PackageManager
 
     private static void ExtractZipFile(string zipFilePath, string extractPath)
     {
-        // Extract and flatten nested directories - the zip contains ffmpeg-7.0-full_build-shared/bin/*.dll and ffmpeg.exe
+        // Extract and flatten nested directories - the zip contains a bin directory with ffmpeg.exe and required DLLs
         using var archive = ZipFile.OpenRead(zipFilePath);
         
         foreach (var entry in archive.Entries)
