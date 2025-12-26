@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using Serilog;
 
 namespace TeslaCam;
@@ -46,7 +47,7 @@ public static class PackageManager
     public static async Task DownloadAndExtractFFmpeg()
     {
         var outputFolder = Path.GetFullPath("ffmpeg");
-        var url = "https://github.com/GyanD/codexffmpeg/releases/download/7.0/ffmpeg-7.0-full_build-shared.zip";
+        var url = GetFFmpegDownloadUrl();
         var tempPath = Path.GetTempFileName();
 
         try
@@ -72,6 +73,18 @@ public static class PackageManager
             if (File.Exists(tempPath))
                 File.Delete(tempPath);
         }
+    }
+
+    private static string GetFFmpegDownloadUrl()
+    {
+        var architecture = RuntimeInformation.ProcessArchitecture;
+        
+        return architecture switch
+        {
+            Architecture.Arm64 => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-winarm64-gpl-shared.zip",
+            Architecture.X64 => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip",
+            _ => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip", // Default to x64
+        };
     }
 
     public static IEnumerable<string> FindFFmpegDirectories(string searchDirectory = ".")
