@@ -49,7 +49,7 @@ public static class PackageManager
         {
             Architecture.Arm64 => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-winarm64-gpl-shared.zip",
             Architecture.X64 => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip",
-            _ => "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip", // Default to x64
+            _ => throw new PlatformNotSupportedException($"Unsupported architecture: {architecture}. Only x64 and ARM64 are supported.")
         };
     }
 
