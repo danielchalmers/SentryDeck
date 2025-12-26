@@ -30,12 +30,13 @@ public static class PackageManager
             
             // Find bin directory in the zip structure
             var entryPath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
-            var binIndex = entryPath.IndexOf("bin" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            var binDirectory = "bin" + Path.DirectorySeparatorChar;
+            var binIndex = entryPath.IndexOf(binDirectory, StringComparison.OrdinalIgnoreCase);
             
             if (binIndex >= 0)
             {
                 // Extract files from bin directory to root of extractPath
-                var relativePath = entryPath.Substring(binIndex + 4); // Skip "bin\\"
+                var relativePath = entryPath.Substring(binIndex + binDirectory.Length);
                 var destPath = Path.Combine(extractPath, relativePath);
                 
                 Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
