@@ -1,4 +1,4 @@
-namespace SentryReplay;
+﻿namespace SentryReplay;
 
 /// <summary>
 /// Represents GPU capabilities for hardware-accelerated video processing.

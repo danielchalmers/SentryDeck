@@ -1,4 +1,4 @@
-using Shouldly;
+﻿using Shouldly;
 
 namespace SentryReplay.Tests;
 
@@ -133,5 +133,4 @@ public class ConverterTests
         // Assert
         result.ShouldBe(expected);
     }
-
 }

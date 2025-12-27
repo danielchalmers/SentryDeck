@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -21,7 +17,7 @@ namespace SentryReplay;
 [INotifyPropertyChanged]
 public partial class MainWindow : Window
 {
-    private readonly List<CamClip> _allClips = [];
+    private readonly List<CamClip> AllClips = [];
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
@@ -61,7 +57,7 @@ public partial class MainWindow : Window
         4.0,
     ];
 
-    public IReadOnlyList<CamClip> FilteredClips => _allClips
+    public IReadOnlyList<CamClip> FilteredClips => AllClips
         .Where(c => string.IsNullOrWhiteSpace(FilterText) ||
                     c.Name.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase) ||
                     c.FullPath.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase))
@@ -116,30 +112,30 @@ public partial class MainWindow : Window
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FilteredClips))]
-    private string filterText = string.Empty;
+    private string _filterText = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
-    private CamClip selectedClip;
+    private CamClip _selectedClip;
 
     [ObservableProperty]
-    private string errorTitle;
+    private string _errorTitle;
 
     [ObservableProperty]
-    private string errorDetails;
+    private string _errorDetails;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(HasError))]
-    private bool showErrorOverlay;
+    private bool _showErrorOverlay;
 
     [ObservableProperty]
-    private bool canDismissError = true;
+    private bool _canDismissError = true;
 
     [ObservableProperty]
-    private bool showFFmpegDownloadButton;
+    private bool _showFFmpegDownloadButton;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
@@ -149,30 +145,30 @@ public partial class MainWindow : Window
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(CanSeek))]
-    private bool isLoading;
+    private bool _isLoading;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
     [NotifyPropertyChangedFor(nameof(IsIndeterminateProgress))]
-    private bool isRendering;
+    private bool _isRendering;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RenderProgressPercent))]
     [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
-    private double renderProgress;
+    private double _renderProgress;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PositionText))]
-    private double seekPosition;
+    private double _seekPosition;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayPauseIcon))]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     [NotifyPropertyChangedFor(nameof(CanStop))]
-    private bool isPlaying;
+    private bool _isPlaying;
 
     [ObservableProperty]
-    private double selectedPlaybackSpeed = 1.0;
+    private double _selectedPlaybackSpeed = 1.0;
 
     private async void Window_ContentRendered(object sender, EventArgs e)
     {
@@ -258,7 +254,7 @@ public partial class MainWindow : Window
     private void LoadClips(IEnumerable<string> roots)
     {
         ClearError();
-        _allClips.Clear();
+        AllClips.Clear();
 
         var rootList = roots?.Where(root => !string.IsNullOrWhiteSpace(root)).ToList() ?? [];
         if (rootList.Count == 0)
@@ -279,7 +275,7 @@ public partial class MainWindow : Window
             try
             {
                 var storage = CamStorage.Map(root);
-                _allClips.AddRange(storage.Clips);
+                AllClips.AddRange(storage.Clips);
                 Log.Information($"Found {storage.Clips.Count} clips in {root}");
             }
             catch (UnauthorizedAccessException ex)
@@ -294,16 +290,13 @@ public partial class MainWindow : Window
             }
         }
 
-        if (_playerController is not null)
-        {
-            _playerController.LoadClips(_allClips);
-        }
+        _playerController?.LoadClips(AllClips);
 
         OnPropertyChanged(nameof(FilteredClips));
         OnPropertyChanged(nameof(HasNoClipSelected));
         OnPropertyChanged(nameof(CanGoNext));
         OnPropertyChanged(nameof(CanGoPrevious));
-        Log.Information($"Total clips loaded: {_allClips.Count}");
+        Log.Information($"Total clips loaded: {AllClips.Count}");
     }
 
     private async Task OpenFolderAsync()
@@ -432,6 +425,7 @@ public partial class MainWindow : Window
                     var pos = _playerController.Position - TimeSpan.FromSeconds(5);
                     await _playerController.SeekAsync(pos < TimeSpan.Zero ? TimeSpan.Zero : pos);
                 }
+
                 return true;
 
             case Key.Right:
@@ -446,6 +440,7 @@ public partial class MainWindow : Window
                     var pos = _playerController.Position + TimeSpan.FromSeconds(5);
                     await _playerController.SeekAsync(pos > duration ? duration : pos);
                 }
+
                 return true;
         }
 
@@ -556,6 +551,7 @@ public partial class MainWindow : Window
                 {
                     ShowError("Playback Error", _playerController.ErrorMessage);
                 }
+
                 break;
             case nameof(VideoPlayerController.CurrentClip):
                 SelectedClip = _playerController.CurrentClip;

@@ -2,21 +2,18 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:SentryReplay"
         xmlns:ffme="clr-namespace:Unosquare.FFME;assembly=ffme.win"
-        mc:Ignorable="d"
-        d:DataContext="{d:DesignInstance Type=local:MainWindow, IsDesignTimeCreatable=False}"
-        Title="{x:Static local:App.Title}"
-        MinWidth="1200"
-        MinHeight="700"
-        Background="#1a1a1a"
-        ContentRendered="Window_ContentRendered"
-        Closing="Window_Closing"
-        KeyDown="Window_KeyDown">
+        xmlns:local="clr-namespace:SentryReplay"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        Title="Sentry Replay"
+        MinWidth="1200" MinHeight="700"
+        d:DataContext="{d:DesignInstance Type=local:MainWindow}"
+        Background="#1a1a1a" Closing="Window_Closing"
+        ContentRendered="Window_ContentRendered" KeyDown="Window_KeyDown"
+        mc:Ignorable="d">
 
     <Window.Resources>
-        <!-- Button Style -->
+        <!--  Button Style  -->
         <Style x:Key="PlayerButton" TargetType="Button">
             <Setter Property="Background" Value="#333" />
             <Setter Property="Foreground" Value="White" />
@@ -28,9 +25,9 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="4"
-                                Padding="{TemplateBinding Padding}">
+                        <Border Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -50,7 +47,7 @@
             </Setter>
         </Style>
 
-        <!-- Slider Style for Seek Bar -->
+        <!--  Slider Style for Seek Bar  -->
         <Style x:Key="SeekSlider" TargetType="Slider">
             <Setter Property="Minimum" Value="0" />
             <Setter Property="Maximum" Value="1" />
@@ -66,36 +63,34 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Sidebar -->
-        <Grid Grid.Column="0" Background="#252525">
+        <!--  Sidebar  -->
+        <Grid Grid.Column="0"
+              Background="#252525">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Search box -->
-            <Border Grid.Row="0" Background="#333" Margin="8,8,8,4">
+            <!--  Search box  -->
+            <Border Grid.Row="0"
+                    Margin="8,8,8,4"
+                    Background="#333">
                 <Grid>
                     <TextBox x:Name="SearchBox"
-                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
-                             Background="Transparent"
-                             Foreground="White"
-                             BorderThickness="0"
-                             Padding="12,10"
-                             FontSize="14"
-                             VerticalContentAlignment="Center" />
-                    <TextBlock Text="Search clips..."
-                               Foreground="#666"
-                               FontSize="14"
-                               Padding="12,10"
-                               IsHitTestVisible="False"
-                               VerticalAlignment="Center">
+                             Padding="12,10" VerticalContentAlignment="Center"
+                             Background="Transparent" BorderThickness="0"
+                             FontSize="14" Foreground="White"
+                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Padding="12,10" VerticalAlignment="Center"
+                               FontSize="14" Foreground="#666"
+                               IsHitTestVisible="False" Text="Search clips...">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Hidden" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding FilterText}" Value="">
+                                    <DataTrigger Binding="{Binding FilterText}"
+                                                 Value="">
                                         <Setter Property="Visibility" Value="Visible" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -105,15 +100,14 @@
                 </Grid>
             </Border>
 
-            <!-- Clip list -->
-            <ListBox Grid.Row="1"
-                     x:Name="ClipListBox"
-                     ItemsSource="{Binding FilteredClips}"
-                     SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
-                     Background="Transparent"
-                     BorderThickness="0"
+            <!--  Clip list  -->
+            <ListBox x:Name="ClipListBox"
+                     Grid.Row="1"
                      Margin="4,0"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                     Background="Transparent" BorderThickness="0"
+                     ItemsSource="{Binding FilteredClips}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     SelectedItem="{Binding SelectedClip, Mode=TwoWay}">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
                         <Setter Property="Padding" Value="8" />
@@ -123,9 +117,9 @@
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">
-                                    <Border Background="{TemplateBinding Background}"
-                                            CornerRadius="6"
-                                            Padding="{TemplateBinding Padding}">
+                                    <Border Padding="{TemplateBinding Padding}"
+                                            Background="{TemplateBinding Background}"
+                                            CornerRadius="6">
                                         <ContentPresenter />
                                     </Border>
                                     <ControlTemplate.Triggers>
@@ -149,26 +143,26 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
-                            <!-- Thumbnail -->
-                            <Border Grid.Column="0" CornerRadius="4" Background="#222">
-                                <Image Source="{Binding ThumbnailPath}"
-                                       Stretch="UniformToFill"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" />
+                            <!--  Thumbnail  -->
+                            <Border Grid.Column="0"
+                                    Background="#222" CornerRadius="4">
+                                <Image HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Source="{Binding ThumbnailPath}"
+                                       Stretch="UniformToFill" />
                             </Border>
 
-                            <!-- Info -->
-                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Name}"
-                                           FontSize="14"
-                                           FontWeight="SemiBold"
+                            <!--  Info  -->
+                            <StackPanel Grid.Column="1"
+                                        Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock FontSize="14" FontWeight="SemiBold"
                                            Foreground="White"
+                                           Text="{Binding Name}"
                                            TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}"
-                                           FontSize="12"
-                                           Foreground="#aaa"
-                                           Margin="0,4,0,0" />
-                                <TextBlock FontSize="11" Foreground="#888" Margin="0,2,0,0">
+                                <TextBlock Margin="0,4,0,0"
+                                           FontSize="12" Foreground="#aaa"
+                                           Text="{Binding Timestamp, StringFormat='{}{0:g}'}" />
+                                <TextBlock Margin="0,2,0,0"
+                                           FontSize="11" Foreground="#888">
                                     <Run Text="{Binding Chunks.Count, Mode=OneWay}" />
                                     <Run Text="chunks" />
                                 </TextBlock>
@@ -178,109 +172,102 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Folder picker -->
+            <!--  Folder picker  -->
             <Button Grid.Row="2"
+                    Margin="8" Padding="12"
+                    Command="{Binding OpenFolderCommand}"
                     Content="📁 Select Folder"
-                    Style="{StaticResource PlayerButton}"
-                    Margin="8"
-                    Padding="12"
-                    Command="{Binding OpenFolderCommand}" />
+                    Style="{StaticResource PlayerButton}" />
         </Grid>
 
-        <!-- Splitter -->
+        <!--  Splitter  -->
         <GridSplitter Grid.Column="1"
                       Width="8"
                       HorizontalAlignment="Stretch"
                       Background="#333" />
 
-        <!-- Video Player Area -->
-        <Grid Grid.Column="2" Background="#1a1a1a">
+        <!--  Video Player Area  -->
+        <Grid Grid.Column="2"
+              Background="#1a1a1a">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Video Container -->
+            <!--  Video Container  -->
             <Grid Grid.Row="0">
-                <!-- Video Player -->
+                <!--  Video Player  -->
                 <Viewbox Stretch="Uniform">
-                    <!-- HW3 = 1280x960, HW4 = 2896x1876 -->
+                    <!--  HW3 = 1280x960, HW4 = 2896x1876  -->
                     <ffme:MediaElement x:Name="MediaElement"
                                        Height="960"
-                                       LoadedBehavior="Manual"
-                                       UnloadedBehavior="Manual" />
+                                       LoadedBehavior="Manual" UnloadedBehavior="Manual" />
                 </Viewbox>
 
-                <!-- Status Overlay (Loading/Rendering/Error) -->
+                <!--  Status Overlay (Loading/Rendering/Error)  -->
                 <Border Background="#80000000"
                         Visibility="{Binding ShowStatusOverlay, Converter={local:BoolToVisibilityConverter}}">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="500">
-                        <!-- Loading/Rendering status -->
+                    <StackPanel MaxWidth="500"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <!--  Loading/Rendering status  -->
                         <StackPanel Visibility="{Binding IsLoading, Converter={local:BoolToVisibilityConverter}}">
-                            <TextBlock Text="{Binding LoadingStatusText}"
-                                       Foreground="White"
-                                       FontSize="18"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,0,0,16" />
-                            <ProgressBar Width="300"
-                                         Height="8"
+                            <TextBlock Margin="0,0,0,16" HorizontalAlignment="Center"
+                                       FontSize="18" Foreground="White"
+                                       Text="{Binding LoadingStatusText}" />
+                            <ProgressBar Width="300" Height="8"
                                          IsIndeterminate="{Binding IsIndeterminateProgress}"
-                                         Value="{Binding RenderProgressPercent, Mode=OneWay}"
-                                         Maximum="100" />
+                                         Maximum="100"
+                                         Value="{Binding RenderProgressPercent, Mode=OneWay}" />
                         </StackPanel>
-                        
-                        <!-- Error display -->
+
+                        <!--  Error display  -->
                         <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={local:BoolToVisibilityConverter}}">
-                            <TextBlock Text="⚠️" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,16" />
-                            <TextBlock Text="{Binding ErrorTitle}"
+                            <TextBlock Margin="0,0,0,16" HorizontalAlignment="Center"
+                                       FontSize="48" Text="⚠️" />
+                            <TextBlock Margin="0,0,0,8" HorizontalAlignment="Center"
+                                       FontSize="20" FontWeight="SemiBold"
                                        Foreground="#ff6b6b"
-                                       FontSize="20"
-                                       FontWeight="SemiBold"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,0,0,8" />
-                            <TextBlock Text="{Binding ErrorDetails}"
-                                       Foreground="#aaa"
-                                       FontSize="14"
-                                       TextWrapping="Wrap"
-                                       TextAlignment="Center"
-                                       HorizontalAlignment="Center" />
-                            <Button Content="Download FFmpeg"
-                                    Style="{StaticResource PlayerButton}"
+                                       Text="{Binding ErrorTitle}" />
+                            <TextBlock HorizontalAlignment="Center"
+                                       FontSize="14" Foreground="#aaa"
+                                       Text="{Binding ErrorDetails}"
+                                       TextAlignment="Center" TextWrapping="Wrap" />
+                            <Button Margin="0,20,0,0" Padding="24,10"
+                                    HorizontalAlignment="Center"
                                     Command="{Binding DownloadFFmpegCommand}"
-                                    Visibility="{Binding ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}"
-                                    HorizontalAlignment="Center"
-                                    Margin="0,20,0,0"
-                                    Padding="24,10" />
-                            <Button Content="Dismiss"
+                                    Content="Download FFmpeg"
                                     Style="{StaticResource PlayerButton}"
-                                    Command="{Binding DismissErrorCommand}"
-                                    Visibility="{Binding CanDismissError, Converter={local:BoolToVisibilityConverter}}"
+                                    Visibility="{Binding ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}" />
+                            <Button Margin="0,20,0,0" Padding="24,10"
                                     HorizontalAlignment="Center"
-                                    Margin="0,20,0,0"
-                                    Padding="24,10" />
+                                    Command="{Binding DismissErrorCommand}"
+                                    Content="Dismiss"
+                                    Style="{StaticResource PlayerButton}"
+                                    Visibility="{Binding CanDismissError, Converter={local:BoolToVisibilityConverter}}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- No Clip Selected -->
-                <TextBlock Text="Select a clip to play"
-                           Foreground="#666"
-                           FontSize="24"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
+                <!--  No Clip Selected  -->
+                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="24" Foreground="#666"
+                           Text="Select a clip to play"
                            Visibility="{Binding HasNoClipSelected, Converter={local:BoolToVisibilityConverter}}" />
             </Grid>
 
-            <!-- Player Controls -->
-            <Border Grid.Row="1" Background="#252525" Padding="16">
+            <!--  Player Controls  -->
+            <Border Grid.Row="1"
+                    Padding="16"
+                    Background="#252525">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <!-- Progress Bar -->
-                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                    <!--  Progress Bar  -->
+                    <Grid Grid.Row="0"
+                          Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -288,83 +275,73 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Grid.Column="0"
-                                   Text="{Binding PositionText}"
-                                   Foreground="#aaa"
-                                   FontSize="13"
+                                   MinWidth="50"
                                    VerticalAlignment="Center"
-                                   MinWidth="50" />
+                                   FontSize="13" Foreground="#aaa"
+                                   Text="{Binding PositionText}" />
 
-                        <Slider Grid.Column="1"
-                                x:Name="SeekSlider"
-                                Style="{StaticResource SeekSlider}"
-                                Value="{Binding SeekPosition, Mode=TwoWay}"
-                                Minimum="0"
-                                Maximum="1"
+                        <Slider x:Name="SeekSlider"
+                                Grid.Column="1"
+                                IsEnabled="{Binding CanSeek}"
+                                Maximum="1" Minimum="0"
                                 PreviewMouseDown="SeekSlider_PreviewMouseDown"
                                 PreviewMouseUp="SeekSlider_PreviewMouseUp"
+                                Style="{StaticResource SeekSlider}"
                                 ValueChanged="SeekSlider_ValueChanged"
-                                IsEnabled="{Binding CanSeek}" />
+                                Value="{Binding SeekPosition, Mode=TwoWay}" />
 
                         <TextBlock Grid.Column="2"
-                                   Text="{Binding DurationText}"
-                                   Foreground="#aaa"
-                                   FontSize="13"
-                                   VerticalAlignment="Center"
                                    MinWidth="50"
+                                   VerticalAlignment="Center"
+                                   FontSize="13" Foreground="#aaa"
+                                   Text="{Binding DurationText}"
                                    TextAlignment="Right" />
                     </Grid>
 
-                    <!-- Control Buttons -->
+                    <!--  Control Buttons  -->
                     <StackPanel Grid.Row="1"
-                                Orientation="Horizontal"
-                                HorizontalAlignment="Center">
-                        <Button Content="⏮"
-                                Style="{StaticResource PlayerButton}"
-                                Command="{Binding PreviousCommand}"
+                                HorizontalAlignment="Center"
+                                Orientation="Horizontal">
+                        <Button Command="{Binding PreviousCommand}"
+                                Content="⏮" FontSize="18"
                                 IsEnabled="{Binding CanGoPrevious}"
-                                ToolTip="Previous Clip"
-                                FontSize="18" />
+                                Style="{StaticResource PlayerButton}"
+                                ToolTip="Previous Clip" />
 
                         <Button x:Name="PlayPauseButton"
-                                Content="{Binding PlayPauseIcon}"
-                                Style="{StaticResource PlayerButton}"
+                                Padding="20,8"
                                 Command="{Binding PlayPauseCommand}"
-                                IsEnabled="{Binding CanPlayPause}"
-                                ToolTip="Play/Pause (Space)"
+                                Content="{Binding PlayPauseIcon}"
                                 FontSize="20"
-                                Padding="20,8" />
-
-                        <Button Content="⏭"
+                                IsEnabled="{Binding CanPlayPause}"
                                 Style="{StaticResource PlayerButton}"
-                                Command="{Binding NextCommand}"
+                                ToolTip="Play/Pause (Space)" />
+
+                        <Button Command="{Binding NextCommand}"
+                                Content="⏭" FontSize="18"
                                 IsEnabled="{Binding CanGoNext}"
-                                ToolTip="Next Clip"
-                                FontSize="18" />
-
-                        <Rectangle Width="20" />
-
-                        <Button Content="⏹"
                                 Style="{StaticResource PlayerButton}"
-                                Command="{Binding StopCommand}"
-                                IsEnabled="{Binding CanStop}"
-                                ToolTip="Stop"
-                                FontSize="18" />
+                                ToolTip="Next Clip" />
 
                         <Rectangle Width="20" />
 
-                        <TextBlock Text="Speed"
-                                   Foreground="#aaa"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,8,0" />
+                        <Button Command="{Binding StopCommand}"
+                                Content="⏹" FontSize="18"
+                                IsEnabled="{Binding CanStop}"
+                                Style="{StaticResource PlayerButton}"
+                                ToolTip="Stop" />
 
-                        <ComboBox Width="90"
-                                  Height="34"
-                                  ItemsSource="{Binding PlaybackSpeedOptions}"
-                                  SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}"
-                                  Background="#333"
+                        <Rectangle Width="20" />
+
+                        <TextBlock Margin="0,0,8,0" VerticalAlignment="Center"
+                                   Foreground="#aaa" Text="Speed" />
+
+                        <ComboBox Width="90" Height="34"
+                                  VerticalContentAlignment="Center"
+                                  Background="#333" BorderThickness="0"
                                   Foreground="White"
-                                  BorderThickness="0"
-                                  VerticalContentAlignment="Center">
+                                  ItemsSource="{Binding PlaybackSpeedOptions}"
+                                  SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding StringFormat={}{0:0.##}x}" />

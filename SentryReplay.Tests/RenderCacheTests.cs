@@ -1,6 +1,6 @@
-using System.IO;
-using Shouldly;
+﻿using System.IO;
 using SentryReplay.Data;
+using Shouldly;
 
 namespace SentryReplay.Tests;
 
@@ -9,18 +9,18 @@ namespace SentryReplay.Tests;
 /// </summary>
 public class RenderCacheTests : IDisposable
 {
-    private RenderCache _cache;
+    private readonly RenderCache Cache;
 
     public RenderCacheTests()
     {
-        _cache = new RenderCache(maxConcurrentRenders: 2, maxCacheSize: 5);
+        Cache = new RenderCache(maxConcurrentRenders: 2, maxCacheSize: 5);
     }
 
     [Fact]
     public void RenderCache_InitializesCorrectly()
     {
         // Arrange & Assert
-        _cache.ShouldNotBeNull();
+        Cache.ShouldNotBeNull();
     }
 
     [Fact]
@@ -28,10 +28,11 @@ public class RenderCacheTests : IDisposable
     {
         // Arrange
         var clip = GetTestClip();
-        if (clip is null) return;
+        if (clip is null)
+            return;
 
         // Act
-        var renderer = _cache.GetOrCreateRenderer(clip);
+        var renderer = Cache.GetOrCreateRenderer(clip);
 
         // Assert
         renderer.ShouldNotBeNull();
@@ -43,11 +44,12 @@ public class RenderCacheTests : IDisposable
     {
         // Arrange
         var clip = GetTestClip();
-        if (clip is null) return;
+        if (clip is null)
+            return;
 
         // Act
-        var renderer1 = _cache.GetOrCreateRenderer(clip);
-        var renderer2 = _cache.GetOrCreateRenderer(clip);
+        var renderer1 = Cache.GetOrCreateRenderer(clip);
+        var renderer2 = Cache.GetOrCreateRenderer(clip);
 
         // Assert
         renderer1.ShouldBeSameAs(renderer2);
@@ -58,10 +60,11 @@ public class RenderCacheTests : IDisposable
     {
         // Arrange
         var clip = GetTestClip();
-        if (clip is null) return;
+        if (clip is null)
+            return;
 
         // Act
-        var isRendered = _cache.IsRendered(clip);
+        var isRendered = Cache.IsRendered(clip);
 
         // Assert
         isRendered.ShouldBeFalse();
@@ -72,10 +75,11 @@ public class RenderCacheTests : IDisposable
     {
         // Arrange
         var clip = GetTestClip();
-        if (clip is null) return;
+        if (clip is null)
+            return;
 
         // Act
-        var path = _cache.GetRenderedPath(clip);
+        var path = Cache.GetRenderedPath(clip);
 
         // Assert
         path.ShouldBeNull();
@@ -86,10 +90,11 @@ public class RenderCacheTests : IDisposable
     {
         // Arrange
         var clip = GetTestClip();
-        if (clip is null) return;
+        if (clip is null)
+            return;
 
         // Act - should not throw
-        _cache.SetCurrentlyPlaying(clip);
+        Cache.SetCurrentlyPlaying(clip);
 
         // Assert - currently playing should protect from eviction
         // (actual eviction behavior would need integration tests)
@@ -100,41 +105,42 @@ public class RenderCacheTests : IDisposable
     {
         // Arrange
         var clip = GetTestClip();
-        if (clip is null) return;
+        if (clip is null)
+            return;
 
-        _cache.SetCurrentlyPlaying(clip);
+        Cache.SetCurrentlyPlaying(clip);
 
         // Act - should not throw
-        _cache.SetCurrentlyPlaying(null);
+        Cache.SetCurrentlyPlaying(null);
     }
 
     [Fact]
     public void CancelAll_DoesNotThrowOnEmptyCache()
     {
         // Act - should not throw
-        _cache.CancelAll();
+        Cache.CancelAll();
     }
 
     [Fact]
     public void Clear_DoesNotThrowOnEmptyCache()
     {
         // Act - should not throw
-        _cache.Clear();
+        Cache.Clear();
     }
 
     [Fact]
     public void CancelCurrentRender_DoesNotThrowWhenNoRender()
     {
         // Act - should not throw
-        _cache.CancelCurrentRender();
+        Cache.CancelCurrentRender();
     }
 
     [Fact]
     public void Dispose_CanBeCalledMultipleTimes()
     {
         // Act - should not throw
-        _cache.Dispose();
-        _cache.Dispose();
+        Cache.Dispose();
+        Cache.Dispose();
     }
 
     private static CamClip GetTestClip()
@@ -144,11 +150,12 @@ public class RenderCacheTests : IDisposable
         {
             return CamClip.Map(mockPath);
         }
+
         return null;
     }
 
     public void Dispose()
     {
-        _cache?.Dispose();
+        Cache?.Dispose();
     }
 }

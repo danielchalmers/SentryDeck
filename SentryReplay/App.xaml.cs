@@ -8,10 +8,6 @@ namespace SentryReplay;
 /// </summary>
 public partial class App : Application
 {
-    public static string Title { get; } = "Sentry Replay";
-
-    public static string AssemblyTitle { get; } = "SentryReplay";
-
     public App()
     {
         AppDomain.CurrentDomain.UnhandledException += (_, _) => Log.Error("Unhandled Exception");
@@ -24,7 +20,7 @@ public partial class App : Application
 
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console()
-            .MinimumLevel.Information() // Reduced from Verbose
+            .MinimumLevel.Information()
             .WriteTo.Debug()
             .CreateLogger();
 

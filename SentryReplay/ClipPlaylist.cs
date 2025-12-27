@@ -1,5 +1,5 @@
+﻿using SentryReplay.Data;
 using Serilog;
-using SentryReplay.Data;
 
 namespace SentryReplay;
 
@@ -9,7 +9,7 @@ namespace SentryReplay;
 /// </summary>
 public sealed class ClipPlaylist : IDisposable
 {
-    private readonly List<CamClip> _clips = [];
+    private readonly List<CamClip> ClipsInternal = [];
     private int _currentIndex = -1;
     private bool _isDisposed;
 
@@ -17,16 +17,16 @@ public sealed class ClipPlaylist : IDisposable
     {
     }
 
-    public IReadOnlyList<CamClip> Clips => _clips;
+    public IReadOnlyList<CamClip> Clips => ClipsInternal;
 
-    public CamClip CurrentClip => _currentIndex >= 0 && _currentIndex < _clips.Count ? _clips[_currentIndex] : null;
+    public CamClip CurrentClip => _currentIndex >= 0 && _currentIndex < ClipsInternal.Count ? ClipsInternal[_currentIndex] : null;
 
     public int CurrentIndex
     {
         get => _currentIndex;
         set
         {
-            if (value < -1 || value >= _clips.Count)
+            if (value < -1 || value >= ClipsInternal.Count)
                 return;
 
             var oldIndex = _currentIndex;
@@ -40,24 +40,24 @@ public sealed class ClipPlaylist : IDisposable
     }
 
     public bool HasPrevious => _currentIndex > 0;
-    public bool HasNext => _currentIndex < _clips.Count - 1;
+    public bool HasNext => _currentIndex < ClipsInternal.Count - 1;
 
     public event EventHandler<CamClip> CurrentClipChanged;
     public event EventHandler PlaylistChanged;
 
     public void SetClips(IEnumerable<CamClip> clips)
     {
-        _clips.Clear();
-        _clips.AddRange(clips);
+        ClipsInternal.Clear();
+        ClipsInternal.AddRange(clips);
         _currentIndex = -1; // Don't auto-select first clip
 
-        Log.Information($"Playlist set with {_clips.Count} clips");
+        Log.Information($"Playlist set with {ClipsInternal.Count} clips");
         PlaylistChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Clear()
     {
-        _clips.Clear();
+        ClipsInternal.Clear();
         _currentIndex = -1;
         PlaylistChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -82,7 +82,7 @@ public sealed class ClipPlaylist : IDisposable
 
     public void MoveTo(CamClip clip)
     {
-        var index = _clips.IndexOf(clip);
+        var index = ClipsInternal.IndexOf(clip);
         if (index >= 0)
         {
             CurrentIndex = index;
@@ -91,7 +91,7 @@ public sealed class ClipPlaylist : IDisposable
 
     public void MoveTo(int index)
     {
-        if (index >= 0 && index < _clips.Count)
+        if (index >= 0 && index < ClipsInternal.Count)
         {
             CurrentIndex = index;
         }
@@ -99,12 +99,12 @@ public sealed class ClipPlaylist : IDisposable
 
     public CamClip PeekNext()
     {
-        return HasNext ? _clips[_currentIndex + 1] : null;
+        return HasNext ? ClipsInternal[_currentIndex + 1] : null;
     }
 
     public CamClip PeekPrevious()
     {
-        return HasPrevious ? _clips[_currentIndex - 1] : null;
+        return HasPrevious ? ClipsInternal[_currentIndex - 1] : null;
     }
 
     public void Dispose()

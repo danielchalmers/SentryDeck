@@ -1,8 +1,8 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text;
-using Serilog;
 using SentryReplay.Data;
+using Serilog;
 
 namespace SentryReplay;
 
@@ -12,15 +12,14 @@ namespace SentryReplay;
 /// </summary>
 public sealed class RealtimeVideoStreamer : IDisposable
 {
-    private static readonly object GpuLock = new();
-    private static Task<GpuCapabilities> CachedGpuTask;
-
-    private readonly VideoStreamServer _streamServer;
+    private static readonly Lock GpuLock = new();
+    private static Task<GpuCapabilities> _cachedGpuTask;
+    private readonly VideoStreamServer StreamServer;
     private CancellationTokenSource _cts;
-    private readonly SemaphoreSlim _streamLock = new(1, 1);
+    private readonly SemaphoreSlim StreamLock = new(1, 1);
     private bool _isDisposed;
     private string _currentStreamUrl;
-    private readonly string _tempDir;
+    private readonly string TempDir;
 
     private CamClip _concatClip;
     private Dictionary<string, string> _concatFiles;
@@ -34,20 +33,20 @@ public sealed class RealtimeVideoStreamer : IDisposable
 
     public RealtimeVideoStreamer()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SentryReplay-Stream-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_tempDir);
+        TempDir = Path.Combine(Path.GetTempPath(), $"SentryReplay-Stream-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(TempDir);
 
-        _streamServer = new VideoStreamServer();
-        _streamServer.StreamError += (_, msg) => StreamError?.Invoke(this, msg);
-        _streamServer.StreamStarted += (_, _) => StreamStarted?.Invoke(this, EventArgs.Empty);
-        _streamServer.StreamEnded += (_, _) => StreamEnded?.Invoke(this, EventArgs.Empty);
-        _streamServer.FfmpegLogLine += (_, line) => OnFFmpegOutput(line);
+        StreamServer = new VideoStreamServer();
+        StreamServer.StreamError += (_, msg) => StreamError?.Invoke(this, msg);
+        StreamServer.StreamStarted += (_, _) => StreamStarted?.Invoke(this, EventArgs.Empty);
+        StreamServer.StreamEnded += (_, _) => StreamEnded?.Invoke(this, EventArgs.Empty);
+        StreamServer.FfmpegLogLine += (_, line) => OnFFmpegOutput(line);
     }
 
     public CamClip CurrentClip { get; private set; }
     public TimeSpan CurrentPosition { get; private set; }
     public TimeSpan Duration { get; private set; }
-    public bool IsStreaming => _streamServer?.IsStreaming ?? false;
+    public bool IsStreaming => StreamServer?.IsStreaming ?? false;
     public string StreamUrl => _currentStreamUrl;
     public string OutputPath => _currentStreamUrl;
 
@@ -63,8 +62,8 @@ public sealed class RealtimeVideoStreamer : IDisposable
     {
         lock (GpuLock)
         {
-            CachedGpuTask ??= DetectGpuCapabilitiesCoreAsync();
-            return CachedGpuTask;
+            _cachedGpuTask ??= DetectGpuCapabilitiesCoreAsync();
+            return _cachedGpuTask;
         }
     }
 
@@ -141,7 +140,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
     /// </summary>
     public async Task<string> StartStreamAsync(CamClip clip, TimeSpan? seekPosition = null, CancellationToken cancellationToken = default)
     {
-        await _streamLock.WaitAsync(cancellationToken);
+        await StreamLock.WaitAsync(cancellationToken);
 
         try
         {
@@ -168,10 +167,10 @@ public sealed class RealtimeVideoStreamer : IDisposable
             // Build and start ffmpeg process (streamed via local HTTP server)
             var args = BuildStreamingArgs(concatFiles, CurrentPosition);
 
-            _streamServer.Start();
-            _streamServer.SetSource(args);
+            StreamServer.Start();
+            StreamServer.SetSource(args);
 
-            _currentStreamUrl = $"{_streamServer.StreamUri}?v={Guid.NewGuid():N}";
+            _currentStreamUrl = $"{StreamServer.StreamUri}?v={Guid.NewGuid():N}";
             return _currentStreamUrl;
         }
         catch (Exception ex)
@@ -182,7 +181,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
         }
         finally
         {
-            _streamLock.Release();
+            StreamLock.Release();
         }
     }
 
@@ -207,14 +206,14 @@ public sealed class RealtimeVideoStreamer : IDisposable
     /// </summary>
     public async Task StopStreamAsync()
     {
-        await _streamLock.WaitAsync();
+        await StreamLock.WaitAsync();
         try
         {
             await StopStreamInternalAsync();
         }
         finally
         {
-            _streamLock.Release();
+            StreamLock.Release();
         }
     }
 
@@ -226,7 +225,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
 
         try
         {
-            _streamServer?.ClearSource();
+            StreamServer?.ClearSource();
         }
         catch
         {
@@ -261,7 +260,7 @@ public sealed class RealtimeVideoStreamer : IDisposable
 
             if (sb.Length > 0)
             {
-                var concatPath = Path.Combine(_tempDir, $"{camera}.txt");
+                var concatPath = Path.Combine(TempDir, $"{camera}.txt");
                 await File.WriteAllTextAsync(concatPath, sb.ToString(), ct);
                 concatFiles[camera] = concatPath;
             }
@@ -299,11 +298,10 @@ public sealed class RealtimeVideoStreamer : IDisposable
         }
 
         // Build filter complex for multi-camera composite
-        var filters = BuildFilterComplex(cameraInputs);
-        var finalOutput = filters.LastOutput;
+        var (FilterString, LastOutput) = BuildFilterComplex(cameraInputs);
 
-        sb.Append($"-filter_complex \"{filters.FilterString}\" ");
-        sb.Append($"-map \"{finalOutput}\" ");
+        sb.Append($"-filter_complex \"{FilterString}\" ");
+        sb.Append($"-map \"{LastOutput}\" ");
 
         // Encoding settings
         // Prefer stability: FFME needs a consistently decodable stream.
@@ -405,20 +403,20 @@ public sealed class RealtimeVideoStreamer : IDisposable
         try
         {
             _cts?.Cancel();
-            _streamServer?.Dispose();
+            StreamServer?.Dispose();
         }
         catch { }
 
         try
         {
-            if (Directory.Exists(_tempDir))
+            if (Directory.Exists(TempDir))
             {
-                Directory.Delete(_tempDir, true);
+                Directory.Delete(TempDir, true);
             }
         }
         catch { }
 
-        _streamLock?.Dispose();
+        StreamLock?.Dispose();
         _cts?.Dispose();
     }
 }

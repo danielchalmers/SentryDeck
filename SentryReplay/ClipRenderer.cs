@@ -1,8 +1,8 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text;
-using Serilog;
 using SentryReplay.Data;
+using Serilog;
 
 namespace SentryReplay;
 
@@ -15,8 +15,7 @@ public sealed class ClipRenderer : IDisposable
     private Process _ffmpegProcess;
     private CancellationTokenSource _cts;
     private bool _isDisposed;
-    private readonly string _outputPath;
-    private readonly string _tempDir;
+    private readonly string TempDir;
     private TimeSpan _estimatedDuration;
 
     // Camera layout settings (Tesla-style)
@@ -28,15 +27,15 @@ public sealed class ClipRenderer : IDisposable
     {
         Clip = clip;
         var id = Guid.NewGuid().ToString("N")[..8];
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SentryReplay-{id}");
-        _outputPath = Path.Combine(Path.GetTempPath(), $"SentryReplay-{id}.mp4");
+        TempDir = Path.Combine(Path.GetTempPath(), $"SentryReplay-{id}");
+        OutputPath = Path.Combine(Path.GetTempPath(), $"SentryReplay-{id}.mp4");
     }
 
     public CamClip Clip { get; }
 
-    public string OutputPath => _outputPath;
+    public string OutputPath { get; }
 
-    public bool IsRendered => File.Exists(_outputPath) && new FileInfo(_outputPath).Length > 1024;
+    public bool IsRendered => File.Exists(OutputPath) && new FileInfo(OutputPath).Length > 1024;
 
     public bool IsRendering => _ffmpegProcess is not null && !_ffmpegProcess.HasExited;
 
@@ -68,7 +67,7 @@ public sealed class ClipRenderer : IDisposable
 
         try
         {
-            Directory.CreateDirectory(_tempDir);
+            Directory.CreateDirectory(TempDir);
 
             // Build concat file lists for each camera
             var cameras = new[] { "front", "back", "left_repeater", "right_repeater" };
@@ -80,7 +79,7 @@ public sealed class ClipRenderer : IDisposable
                 var concatList = BuildConcatList(camera);
                 if (!string.IsNullOrWhiteSpace(concatList))
                 {
-                    var concatPath = Path.Combine(_tempDir, $"{camera}.txt");
+                    var concatPath = Path.Combine(TempDir, $"{camera}.txt");
                     await File.WriteAllTextAsync(concatPath, concatList, _cts.Token);
                     concatFiles[camera] = concatPath;
                     availableCameras.Add(camera);
@@ -207,7 +206,7 @@ public sealed class ClipRenderer : IDisposable
         await Task.Delay(200);
 
         // Clean up concat list files only
-        TryDeleteDirectory(_tempDir);
+        TryDeleteDirectory(TempDir);
     }
 
     /// <summary>
@@ -218,7 +217,7 @@ public sealed class ClipRenderer : IDisposable
     {
         var sb = new StringBuilder();
         sb.Append("-y ");
-        
+
         // Use hardware acceleration if available (will fallback gracefully)
         sb.Append("-hwaccel auto ");
 
@@ -286,7 +285,7 @@ public sealed class ClipRenderer : IDisposable
         sb.Append("-movflags +faststart "); // Enable fast start for streaming
         sb.Append("-an "); // No audio for now (faster)
         sb.Append("-threads 0 "); // Auto thread count
-        sb.Append($"\"{_outputPath}\"");
+        sb.Append($"\"{OutputPath}\"");
 
         return sb.ToString();
     }
@@ -326,8 +325,8 @@ public sealed class ClipRenderer : IDisposable
     public void Cleanup()
     {
         CancelRender();
-        TryDeleteFile(_outputPath);
-        TryDeleteDirectory(_tempDir);
+        TryDeleteFile(OutputPath);
+        TryDeleteDirectory(TempDir);
     }
 
     private static void TryDeleteFile(string path)
@@ -335,7 +334,10 @@ public sealed class ClipRenderer : IDisposable
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
             return;
 
-        try { File.Delete(path); }
+        try
+        {
+            File.Delete(path);
+        }
         catch { }
     }
 
@@ -344,13 +346,17 @@ public sealed class ClipRenderer : IDisposable
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
             return;
 
-        try { Directory.Delete(path, true); }
+        try
+        {
+            Directory.Delete(path, true);
+        }
         catch { }
     }
 
     public void Dispose()
     {
-        if (_isDisposed) return;
+        if (_isDisposed)
+            return;
         _isDisposed = true;
         Cleanup();
         _cts?.Dispose();

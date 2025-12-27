@@ -1,8 +1,7 @@
-using System.Diagnostics;
-using System.IO;
+﻿using System.IO;
 using System.Text;
-using Shouldly;
 using SentryReplay.Data;
+using Shouldly;
 
 namespace SentryReplay.Tests;
 
@@ -42,7 +41,7 @@ public class ClipRendererTests : IDisposable
         var clip = GetRequiredTestClip();
 
         using var renderer = new ClipRenderer(clip);
-        
+
         // Should not throw
         renderer.CancelRender();
     }
@@ -53,7 +52,7 @@ public class ClipRendererTests : IDisposable
         var clip = GetRequiredTestClip();
 
         using var renderer = new ClipRenderer(clip);
-        
+
         // Should not throw
         renderer.Cleanup();
     }
@@ -90,7 +89,7 @@ public class ClipRendererTests : IDisposable
         var sb = new StringBuilder();
         sb.Append("-y -hwaccel auto ");
 
-        for (int i = 0; i < cameras.Length; i++)
+        for (var i = 0; i < cameras.Length; i++)
         {
             sb.Append($"-f concat -safe 0 -i \"test_{cameras[i]}.txt\" ");
         }
@@ -98,7 +97,7 @@ public class ClipRendererTests : IDisposable
         var filters = new List<string> { "[0:v]scale=1280:960,setsar=1[main]" };
         var currentOutput = "[main]";
 
-        for (int i = 1; i < cameras.Length; i++)
+        for (var i = 1; i < cameras.Length; i++)
         {
             var scaled = $"s{i}";
             var output = $"o{i}";

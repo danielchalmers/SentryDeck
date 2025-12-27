@@ -1,6 +1,6 @@
-using System.IO;
-using Shouldly;
+﻿using System.IO;
 using SentryReplay.Data;
+using Shouldly;
 
 namespace SentryReplay.Tests;
 
@@ -140,7 +140,7 @@ public class ClipPlaylistTests
         var playlist = new ClipPlaylist();
         var clips = CreateMockClips(3);
         playlist.SetClips(clips);
-        
+
         CamClip changedClip = null;
         playlist.CurrentClipChanged += (s, c) => changedClip = c;
 
@@ -171,7 +171,7 @@ public class ClipPlaylistTests
     private static List<CamClip> CreateMockClips(int count)
     {
         var clips = new List<CamClip>();
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
             // Use the real CamClip.Map with mock folders if available
             // For now, we'll create minimal mock data
@@ -185,7 +185,7 @@ public class ClipPlaylistTests
                 }
             }
         }
-        
+
         // If no real mocks available, return empty list
         // Tests will need to handle this gracefully
         return clips.Count > 0 ? clips : CreateEmptyMockClips(count);

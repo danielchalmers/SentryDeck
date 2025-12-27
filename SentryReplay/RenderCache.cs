@@ -1,7 +1,7 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO;
-using Serilog;
 using SentryReplay.Data;
+using Serilog;
 
 namespace SentryReplay;
 
@@ -11,20 +11,20 @@ namespace SentryReplay;
 /// </summary>
 public sealed class RenderCache : IDisposable
 {
-    private readonly ConcurrentDictionary<CamClip, ClipRenderer> _renderers = new();
-    private readonly ConcurrentDictionary<CamClip, Task<bool>> _renderTasks = new();
-    private readonly SemaphoreSlim _renderSemaphore;
-    private readonly int _maxConcurrentRenders;
-    private readonly int _maxCacheSize;
+    private readonly ConcurrentDictionary<CamClip, ClipRenderer> Renderers = new();
+    private readonly ConcurrentDictionary<CamClip, Task<bool>> RenderTasks = new();
+    private readonly SemaphoreSlim RenderSemaphore;
+    private readonly int MaxConcurrentRenders;
+    private readonly int MaxCacheSize;
     private CamClip _currentlyPlaying;
     private CamClip _currentlyRendering;
     private bool _isDisposed;
 
     public RenderCache(int maxConcurrentRenders = 1, int maxCacheSize = 10)
     {
-        _maxConcurrentRenders = maxConcurrentRenders;
-        _maxCacheSize = maxCacheSize;
-        _renderSemaphore = new SemaphoreSlim(maxConcurrentRenders);
+        MaxConcurrentRenders = maxConcurrentRenders;
+        MaxCacheSize = maxCacheSize;
+        RenderSemaphore = new SemaphoreSlim(maxConcurrentRenders);
     }
 
     public event EventHandler<(CamClip Clip, double Progress)> RenderProgress;
@@ -44,7 +44,7 @@ public sealed class RenderCache : IDisposable
     /// </summary>
     public void CancelCurrentRender()
     {
-        if (_currentlyRendering is not null && _renderers.TryGetValue(_currentlyRendering, out var renderer))
+        if (_currentlyRendering is not null && Renderers.TryGetValue(_currentlyRendering, out var renderer))
         {
             Log.Debug($"Cancelling render for: {_currentlyRendering.Name}");
             renderer.CancelRender();
@@ -56,7 +56,7 @@ public sealed class RenderCache : IDisposable
     /// </summary>
     public ClipRenderer GetOrCreateRenderer(CamClip clip)
     {
-        return _renderers.GetOrAdd(clip, c => new ClipRenderer(c));
+        return Renderers.GetOrAdd(clip, c => new ClipRenderer(c));
     }
 
     /// <summary>
@@ -64,7 +64,7 @@ public sealed class RenderCache : IDisposable
     /// </summary>
     public bool IsRendered(CamClip clip)
     {
-        return _renderers.TryGetValue(clip, out var renderer) && renderer.IsRendered;
+        return Renderers.TryGetValue(clip, out var renderer) && renderer.IsRendered;
     }
 
     /// <summary>
@@ -72,10 +72,11 @@ public sealed class RenderCache : IDisposable
     /// </summary>
     public string GetRenderedPath(CamClip clip)
     {
-        if (_renderers.TryGetValue(clip, out var renderer) && renderer.IsRendered)
+        if (Renderers.TryGetValue(clip, out var renderer) && renderer.IsRendered)
         {
             return renderer.OutputPath;
         }
+
         return null;
     }
 
@@ -93,7 +94,7 @@ public sealed class RenderCache : IDisposable
         }
 
         // Check if render is already in progress
-        var existingTask = _renderTasks.GetOrAdd(clip, _ => StartRenderInternal(clip, renderer, cancellationToken));
+        var existingTask = RenderTasks.GetOrAdd(clip, _ => StartRenderInternal(clip, renderer, cancellationToken));
 
         try
         {
@@ -102,13 +103,13 @@ public sealed class RenderCache : IDisposable
         }
         finally
         {
-            _renderTasks.TryRemove(clip, out _);
+            RenderTasks.TryRemove(clip, out _);
         }
     }
 
     private async Task<bool> StartRenderInternal(CamClip clip, ClipRenderer renderer, CancellationToken cancellationToken)
     {
-        await _renderSemaphore.WaitAsync(cancellationToken);
+        await RenderSemaphore.WaitAsync(cancellationToken);
         _currentlyRendering = clip;
 
         try
@@ -133,7 +134,7 @@ public sealed class RenderCache : IDisposable
         finally
         {
             _currentlyRendering = null;
-            _renderSemaphore.Release();
+            RenderSemaphore.Release();
         }
     }
 
@@ -144,14 +145,14 @@ public sealed class RenderCache : IDisposable
     {
         foreach (var clip in clips)
         {
-            if (!IsRendered(clip) && !_renderTasks.ContainsKey(clip))
+            if (!IsRendered(clip) && !RenderTasks.ContainsKey(clip))
             {
                 var renderer = GetOrCreateRenderer(clip);
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _renderSemaphore.WaitAsync();
+                        await RenderSemaphore.WaitAsync();
                         try
                         {
                             if (!renderer.IsRendered)
@@ -162,7 +163,7 @@ public sealed class RenderCache : IDisposable
                         }
                         finally
                         {
-                            _renderSemaphore.Release();
+                            RenderSemaphore.Release();
                         }
                     }
                     catch (Exception ex)
@@ -179,11 +180,12 @@ public sealed class RenderCache : IDisposable
     /// </summary>
     public void CancelAll()
     {
-        foreach (var renderer in _renderers.Values)
+        foreach (var renderer in Renderers.Values)
         {
             renderer.CancelRender();
         }
-        _renderTasks.Clear();
+
+        RenderTasks.Clear();
     }
 
     /// <summary>
@@ -192,17 +194,17 @@ public sealed class RenderCache : IDisposable
     /// </summary>
     private void EnforceMaxCacheSize()
     {
-        var rendered = _renderers.Values
+        var rendered = Renderers.Values
             .Where(r => r.IsRendered && r.Clip != _currentlyPlaying)
             .OrderBy(r => File.GetLastAccessTime(r.OutputPath))
             .ToList();
 
-        while (rendered.Count > _maxCacheSize - 1) // Keep one slot for current
+        while (rendered.Count > MaxCacheSize - 1) // Keep one slot for current
         {
             var oldest = rendered[0];
             rendered.RemoveAt(0);
 
-            if (_renderers.TryRemove(oldest.Clip, out var removed))
+            if (Renderers.TryRemove(oldest.Clip, out var removed))
             {
                 removed.Cleanup();
                 Log.Debug($"Evicted from cache: {oldest.Clip.Name}");
@@ -217,12 +219,12 @@ public sealed class RenderCache : IDisposable
     {
         CancelAll();
 
-        foreach (var renderer in _renderers.Values)
+        foreach (var renderer in Renderers.Values)
         {
             renderer.Dispose();
         }
 
-        _renderers.Clear();
+        Renderers.Clear();
     }
 
     public void Dispose()
@@ -232,6 +234,6 @@ public sealed class RenderCache : IDisposable
 
         _isDisposed = true;
         Clear();
-        _renderSemaphore.Dispose();
+        RenderSemaphore.Dispose();
     }
 }

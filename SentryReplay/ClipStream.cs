@@ -1,21 +1,20 @@
 ﻿using System.Diagnostics;
 using System.IO;
-using Serilog;
 using SentryReplay.Data;
-using Unosquare.FFME;
+using Serilog;
 
 namespace SentryReplay;
 
 public class ClipStream : IAsyncDisposable
 {
-    private readonly string _tempFilePath = Path.Combine(Path.GetTempPath(), $"{App.AssemblyTitle}-{Random.Shared.Next(10000, 99999)}.ts");
+    private readonly string TempFilePath = Path.Combine(Path.GetTempPath(), $"SentryReplay-{Random.Shared.Next(10000, 99999)}.ts");
     private Process _ffmpegProcess;
     private CancellationTokenSource _cts;
 
     public ClipStream(CamClip clip)
     {
         Clip = clip;
-        Uri = new(_tempFilePath);
+        Uri = new(TempFilePath);
     }
 
     public CamClip Clip { get; }
@@ -63,7 +62,7 @@ public class ClipStream : IAsyncDisposable
 
         try
         {
-            File.Delete(_tempFilePath);
+            File.Delete(TempFilePath);
         }
         catch (Exception ex)
         {
@@ -148,7 +147,7 @@ public class ClipStream : IAsyncDisposable
 #endif
             "-f", "mpegts",
             "-t", "60",
-            _tempFilePath
+            TempFilePath
         ]);
 
         _ffmpegProcess = new()
@@ -175,7 +174,7 @@ public class ClipStream : IAsyncDisposable
     {
         while (true)
         {
-            if (File.Exists(_tempFilePath) && new FileInfo(_tempFilePath).Length > 0)
+            if (File.Exists(TempFilePath) && new FileInfo(TempFilePath).Length > 0)
                 return true;
 
             await Task.Delay(100, _cts.Token);

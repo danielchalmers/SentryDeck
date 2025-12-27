@@ -1,5 +1,5 @@
-﻿using Shouldly;
-using SentryReplay.Data;
+﻿using SentryReplay.Data;
+using Shouldly;
 
 namespace SentryReplay.Tests;
 

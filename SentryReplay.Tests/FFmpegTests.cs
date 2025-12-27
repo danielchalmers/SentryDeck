@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Shouldly;
 
 namespace SentryReplay.Tests;
@@ -11,16 +11,16 @@ public class FFmpegTests
     [Fact(Skip = "FFmpeg tests are currently disabled (incomplete/unreliable).")]
     public void FFmpeg_IsAvailable()
     {
-        var result = RunFFmpegCommand("-version");
-        result.ExitCode.ShouldBe(0);
-        result.Output.ShouldContain("ffmpeg version");
+        var (ExitCode, Output) = RunFFmpegCommand("-version");
+        ExitCode.ShouldBe(0);
+        Output.ShouldContain("ffmpeg version");
     }
 
     [Fact(Skip = "FFmpeg tests are currently disabled (incomplete/unreliable).")]
     public void FFmpeg_SupportsRequiredFeatures()
     {
-        var encoders = RunFFmpegCommand("-encoders");
-        encoders.Output.ShouldContain("libx264");
+        var (ExitCode, Output) = RunFFmpegCommand("-encoders");
+        Output.ShouldContain("libx264");
 
         var demuxers = RunFFmpegCommand("-demuxers");
         demuxers.Output.ShouldContain("concat");

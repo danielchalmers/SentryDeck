@@ -1,5 +1,4 @@
-using System.Diagnostics;
-using System.IO;
+﻿using System.Diagnostics;
 using System.Net;
 using Serilog;
 
@@ -11,12 +10,12 @@ namespace SentryReplay;
 /// </summary>
 public sealed class VideoStreamServer : IDisposable
 {
-    private readonly HttpListener _listener;
-    private readonly int _port;
+    private readonly HttpListener Listener;
+    private readonly int Port;
+    private readonly Lock SourceLock = new();
     private CancellationTokenSource _cts;
     private Task _serverTask;
     private Process _ffmpegProcess;
-    private readonly object _lock = new();
     private bool _isDisposed;
 
     public VideoStreamServer(int port = 0)
@@ -27,12 +26,12 @@ public sealed class VideoStreamServer : IDisposable
             port = FindAvailablePort();
         }
 
-        _port = port;
-        _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://localhost:{_port}/");
+        Port = port;
+        Listener = new HttpListener();
+        Listener.Prefixes.Add($"http://localhost:{Port}/");
     }
 
-    public Uri StreamUri => new($"http://localhost:{_port}/stream");
+    public Uri StreamUri => new($"http://localhost:{Port}/stream");
 
     public bool IsRunning => _serverTask is not null && !_serverTask.IsCompleted;
     public bool IsStreaming => _ffmpegProcess is not null && !_ffmpegProcess.HasExited;
@@ -57,9 +56,9 @@ public sealed class VideoStreamServer : IDisposable
             return;
 
         _cts = new CancellationTokenSource();
-        _listener.Start();
+        Listener.Start();
         _serverTask = Task.Run(() => ServerLoop(_cts.Token));
-        Log.Information($"Video stream server started on port {_port}");
+        Log.Information($"Video stream server started on port {Port}");
     }
 
     public void Stop()
@@ -69,7 +68,7 @@ public sealed class VideoStreamServer : IDisposable
 
         try
         {
-            _listener.Stop();
+            Listener.Stop();
         }
         catch (Exception ex)
         {
@@ -82,7 +81,7 @@ public sealed class VideoStreamServer : IDisposable
 
     public void SetSource(string ffmpegArgs)
     {
-        lock (_lock)
+        lock (SourceLock)
         {
             StopFFmpeg();
             StartFFmpeg(ffmpegArgs);
@@ -91,7 +90,7 @@ public sealed class VideoStreamServer : IDisposable
 
     public void ClearSource()
     {
-        lock (_lock)
+        lock (SourceLock)
         {
             StopFFmpeg();
         }
@@ -170,7 +169,7 @@ public sealed class VideoStreamServer : IDisposable
         {
             try
             {
-                var context = await _listener.GetContextAsync().WaitAsync(ct);
+                var context = await Listener.GetContextAsync().WaitAsync(ct);
                 _ = Task.Run(() => HandleRequest(context, ct), ct);
             }
             catch (OperationCanceledException)
@@ -211,7 +210,7 @@ public sealed class VideoStreamServer : IDisposable
             }
 
             Process ffmpeg;
-            lock (_lock)
+            lock (SourceLock)
             {
                 ffmpeg = _ffmpegProcess;
             }
@@ -283,6 +282,6 @@ public sealed class VideoStreamServer : IDisposable
         _isDisposed = true;
         Stop();
         _cts?.Dispose();
-        _listener.Close();
+        Listener.Close();
     }
 }
