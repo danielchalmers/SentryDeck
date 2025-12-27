@@ -54,6 +54,25 @@
             <Setter Property="Height" Value="20" />
             <Setter Property="Margin" Value="8,0" />
         </Style>
+
+        <Style TargetType="Hyperlink"
+               BasedOn="{StaticResource {x:Type Hyperlink}}">
+            <Setter Property="TextDecorations" Value="None" />
+        </Style>
+
+        <Style x:Key="ProjectTitleTextBlock"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="18" />
+        </Style>
+
+        <Style x:Key="ProjectDescriptionTextBlock"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="Foreground" Value="#aaa" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -183,7 +202,7 @@
                     <Button Margin="0,8,0,0"
                             Padding="12"
                             Command="{Binding ToggleAboutCommand}"
-                            Content="❓ About / Help"
+                            Content="ℹ️ About / Help"
                             Style="{StaticResource PlayerButton}" />
                 </StackPanel>
             </Grid>
@@ -370,94 +389,259 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0"
-                    Padding="16"
-                    Background="#252525">
-                <Grid>
-                    <TextBlock FontSize="20" FontWeight="SemiBold"
-                               Foreground="White"
-                               Text="About / Help" />
-                    <Button HorizontalAlignment="Right"
-                            Padding="16,8"
+                    Padding="8">
+                <StackPanel Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button Padding="10,6"
                             Command="{Binding ToggleAboutCommand}"
-                            Content="Back to Player"
-                            Style="{StaticResource PlayerButton}" />
-                </Grid>
+                            Content="←"
+                            Style="{StaticResource PlayerButton}"
+                            ToolTip="Back to Player" />
+                    <TextBlock Margin="12,0,0,0"
+                               FontSize="20" FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Text="About / Help" />
+                </StackPanel>
             </Border>
 
             <ScrollViewer Grid.Row="1"
                           VerticalScrollBarVisibility="Auto">
-                <Grid Margin="24">
+                <Grid Margin="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
                     <Border Grid.Column="0"
-                            Margin="0,0,12,0"
                             Padding="20"
                             Background="#252525"
                             CornerRadius="8">
-                        <StackPanel>
-                            <TextBlock FontSize="26" FontWeight="SemiBold"
-                                       Foreground="White"
-                                       Text="Sentry Replay" />
+                            <StackPanel>
+                                <TextBlock FontSize="26" FontWeight="SemiBold"
+                                           Foreground="White"
+                                           Text="Sentry Replay" />
                             <TextBlock Margin="0,8,0,16"
                                        FontSize="14"
-                                       Foreground="#aaa"
-                                       Text="Review TeslaCam footage in a single timeline with quick clip navigation."
+                                       Foreground="#ddd"
+                                       Text="Review TeslaCam footage in a single timeline with easy clip navigation."
                                        TextWrapping="Wrap" />
                             <TextBlock FontSize="16" FontWeight="SemiBold"
                                        Foreground="White"
                                        Text="Quick start" />
                             <StackPanel Margin="0,8,0,0">
                                 <TextBlock Foreground="#ddd"
-                                           Text="- Select Folder to pick your TeslaCam directory."
+                                           Text="• Select Folder to pick your TeslaCam directory."
                                            TextWrapping="Wrap" />
                                 <TextBlock Foreground="#ddd"
-                                           Text="- Choose a clip from the list to start playback."
+                                           Text="• Choose a clip from the list to start playback."
                                            TextWrapping="Wrap" />
                                 <TextBlock Foreground="#ddd"
-                                           Text="- Use the controls below the video to scrub and change speed."
+                                           Text="• Use the controls below the video to scrub and change speed."
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock Margin="0,16,0,0"
-                                       Foreground="#888"
-                                       Text="{Binding AppVersion, StringFormat=Version: {0}}" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Grid.Column="1"
-                            Margin="12,0,0,0"
-                            Padding="20"
-                            Background="#252525"
-                            CornerRadius="8">
-                        <StackPanel>
-                            <TextBlock FontSize="16" FontWeight="SemiBold"
-                                       Foreground="White"
-                                       Text="Shortcuts" />
-                            <StackPanel Margin="0,8,0,0">
-                                <TextBlock Foreground="#ddd"
-                                           Text="Space: Play/Pause" />
-                                <TextBlock Foreground="#ddd"
-                                           Text="Left/Right: Seek 5 seconds" />
-                                <TextBlock Foreground="#ddd"
-                                           Text="Ctrl+Left/Right: Previous/Next clip" />
-                            </StackPanel>
-
                             <TextBlock Margin="0,16,0,0"
                                        FontSize="16" FontWeight="SemiBold"
                                        Foreground="White"
-                                       Text="Playback notes" />
-                            <TextBlock Margin="0,8,0,0"
-                                       Foreground="#ddd"
-                                       Text="FFmpeg is required for playback. Use the Download FFmpeg button when prompted."
-                                       TextWrapping="Wrap" />
-                            <TextBlock Margin="0,12,0,0"
-                                       Foreground="#ddd"
-                                       Text="If clips do not appear, confirm the folder contains a TeslaCam directory."
-                                       TextWrapping="Wrap" />
+                                       Text="App info" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0"
+                                           FontWeight="SemiBold"
+                                           Foreground="#ccc"
+                                           Text="Version:"
+                                           TextAlignment="Right" />
+                                <TextBlock Grid.Row="0" Grid.Column="2"
+                                           Foreground="#ddd"
+                                           Text="{Binding FileVersion}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0"
+                                           FontWeight="SemiBold"
+                                           Foreground="#ccc"
+                                           Text="Runtime:"
+                                           TextAlignment="Right" />
+                                <TextBlock Grid.Row="1" Grid.Column="2"
+                                           Foreground="#ddd"
+                                           Text="{Binding RuntimeDescription}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0"
+                                           FontWeight="SemiBold"
+                                           Foreground="#ccc"
+                                           Text="OS:"
+                                           TextAlignment="Right" />
+                                <TextBlock Grid.Row="2" Grid.Column="2"
+                                           Foreground="#ddd"
+                                           Text="{Binding OsDescription}" />
+                                <TextBlock Grid.Row="3" Grid.Column="0"
+                                           FontWeight="SemiBold"
+                                           Foreground="#ccc"
+                                           Text="Exe:"
+                                           TextAlignment="Right" />
+                                <TextBlock Grid.Row="3" Grid.Column="2"
+                                           Foreground="#ddd"
+                                           Text="{Binding ExecutablePath}"
+                                           TextWrapping="Wrap" />
+                            </Grid>
                         </StackPanel>
                     </Border>
+
+                    <StackPanel Grid.Column="1"
+                                Margin="12,0,0,0">
+                        <Border Padding="20"
+                                Background="#252525"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock FontSize="16" FontWeight="SemiBold"
+                                           Foreground="White"
+                                           Text="Shortcuts" />
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Foreground="#ddd"
+                                               Text="Space: Play/Pause" />
+                                    <TextBlock Foreground="#ddd"
+                                               Text="Left/Right: Seek 5 seconds" />
+                                    <TextBlock Foreground="#ddd"
+                                               Text="Ctrl+Left/Right: Previous/Next clip" />
+                                </StackPanel>
+
+                                <TextBlock Margin="0,16,0,0"
+                                           FontSize="16" FontWeight="SemiBold"
+                                           Foreground="White"
+                                           Text="Playback notes" />
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="#ddd"
+                                           Text="FFmpeg is required for playback. Use the Download FFmpeg button when prompted."
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,12,0,0"
+                                           Foreground="#ddd"
+                                           Text="If clips do not appear, confirm the folder contains a TeslaCam directory."
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                Padding="20"
+                                Background="#252525"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock FontSize="16" FontWeight="SemiBold"
+                                           Foreground="White"
+                                           Text="Support" />
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Margin="0,0,0,8">
+                                        <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay"
+                                                   RequestNavigate="Hyperlink_RequestNavigate">
+                                            📦 View Sentry Replay on GitHub
+                                        </Hyperlink>
+                                    </TextBlock>
+                                    <TextBlock Margin="0,0,0,8">
+                                        <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay/issues"
+                                                   RequestNavigate="Hyperlink_RequestNavigate">
+                                            🐛 Report a Bug / Request a Feature
+                                        </Hyperlink>
+                                    </TextBlock>
+                                    <TextBlock>
+                                        <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay/releases"
+                                                   RequestNavigate="Hyperlink_RequestNavigate">
+                                            🚀 Check for Updates
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                Padding="20"
+                                Background="#252525"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock FontSize="16" FontWeight="SemiBold"
+                                           Foreground="White"
+                                           Text="More from the author" />
+                                <UniformGrid Columns="3"
+                                             Margin="0,8,0,0">
+                                    <StackPanel Margin="0,0,12,12">
+                                        <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
+                                            <Hyperlink NavigateUri="https://github.com/danielchalmers/JournalApp"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                Good Diary
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Style="{StaticResource ProjectDescriptionTextBlock}"
+                                                   Text="Track your daily activities and moods on Android." />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,12,12">
+                                        <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
+                                            <Hyperlink NavigateUri="https://github.com/danielchalmers/DesktopClock"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                DesktopClock
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Style="{StaticResource ProjectDescriptionTextBlock}"
+                                                   Text="A digital clock for your desktop." />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,12,12">
+                                        <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
+                                            <Hyperlink NavigateUri="https://github.com/danielchalmers/RadialActions"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                Radial Actions
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Style="{StaticResource ProjectDescriptionTextBlock}"
+                                                   Text="Summon a customizable menu at your cursor." />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,12,12">
+                                        <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
+                                            <Hyperlink NavigateUri="https://github.com/danielchalmers/SteamAccountSwitcher"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                SteamAccountSwitcher
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Style="{StaticResource ProjectDescriptionTextBlock}"
+                                                   Text="Swap Steam accounts from the system tray." />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,12,12">
+                                        <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
+                                            <Hyperlink NavigateUri="https://github.com/danielchalmers/Network-Monitor"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                Network Monitor
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Style="{StaticResource ProjectDescriptionTextBlock}"
+                                                   Text="Live latency and bandwidth in a desktop widget." />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,12,12">
+                                        <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
+                                            <Hyperlink NavigateUri="https://github.com/danielchalmers/Teichos"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                Teichos
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Style="{StaticResource ProjectDescriptionTextBlock}"
+                                                   Text="Stay focused with URL blocking and schedules." />
+                                    </StackPanel>
+                                </UniformGrid>
+                                <TextBlock Margin="0,0,0,8">
+                                    <Hyperlink NavigateUri="https://github.com/danielchalmers"
+                                               RequestNavigate="Hyperlink_RequestNavigate">
+                                        View all projects on GitHub
+                                    </Hyperlink>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </Grid>
             </ScrollViewer>
         </Grid>

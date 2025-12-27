@@ -1,7 +1,9 @@
 ﻿using System.ComponentModel;
-using System.Reflection;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Navigation;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
@@ -49,7 +51,10 @@ public partial class MainWindow : Window
 
     public bool ShowMainContent => !ShowAboutPage;
 
-    public string AppVersion => Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown";
+    public string FileVersion => FileVersionInfo.GetVersionInfo(Environment.ProcessPath)?.FileVersion ?? "Unknown";
+    public string RuntimeDescription => $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})";
+    public string OsDescription => RuntimeInformation.OSDescription;
+    public string ExecutablePath => Environment.ProcessPath;
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -610,6 +615,21 @@ public partial class MainWindow : Window
     private void ToggleAbout()
     {
         ShowAboutPage = !ShowAboutPage;
+    }
+
+    private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
+    {
+        if (e.Uri is null)
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri)
+        {
+            UseShellExecute = true,
+        });
+
+        e.Handled = true;
     }
 
     partial void OnSelectedClipChanged(CamClip value)
