@@ -3,8 +3,8 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
-using Serilog;
 using SentryReplay.Data;
+using Serilog;
 using Unosquare.FFME;
 
 namespace SentryReplay;
@@ -264,29 +264,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool TryLoadFFmpeg()
     {
-        var directories = PackageManager.FindFFmpegDirectories();
-
-        foreach (var directory in directories)
+        var directory = PackageManager.FindFFmpegDirectory();
+        if (directory is null)
         {
-            Library.FFmpegDirectory = directory;
-            Log.Debug($"Trying to load FFmpeg from {directory}");
-
-            try
-            {
-                var loaded = Library.LoadFFmpeg();
-                if (loaded)
-                {
-                    Log.Information($"Loaded FFmpeg from {directory}");
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, $"Failed to load FFmpeg from {directory}");
-            }
+            return false;
         }
 
-        return Library.IsInitialized;
+        Library.FFmpegDirectory = directory;
+        return Library.LoadFFmpeg();
     }
 
     private void LoadClips(IEnumerable<string> roots)

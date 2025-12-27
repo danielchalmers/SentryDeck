@@ -182,39 +182,6 @@ public class ClipStream : IAsyncDisposable
         }
     }
 
-    public static bool TryLoadFFmpeg()
-    {
-        var directories = PackageManager.FindFFmpegDirectories();
-
-        foreach (var directory in directories)
-        {
-            Library.FFmpegDirectory = directory;
-
-            Log.Debug($"Loading {directory}");
-            try
-            {
-                var loaded = Library.LoadFFmpeg();
-
-                if (loaded)
-                {
-                    Log.Information($"Loaded ffmpeg from {directory}");
-                    return true;
-                }
-                else
-                {
-                    Log.Error("Failed to load ffmpeg because it was already loaded");
-                    return false;
-                }
-            }
-            catch (FileNotFoundException ex)
-            {
-                Log.Error(ex, "Failed to load ffmpeg");
-            }
-        }
-
-        return false;
-    }
-
     public async ValueTask DisposeAsync()
     {
         _cts?.Dispose();
