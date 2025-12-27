@@ -7,6 +7,8 @@ namespace SentryReplay;
 
 public static class PackageManager
 {
+    private const string FfmpegVersion = "7.1";
+
     private static async Task DownloadFile(string url, string savePath)
     {
         using var client = new HttpClient();
@@ -26,7 +28,7 @@ public static class PackageManager
     public static async Task DownloadAndExtractFFmpeg()
     {
         var outputFolder = Path.GetFullPath("ffmpeg");
-        var url = "https://github.com/GyanD/codexffmpeg/releases/download/7.0/ffmpeg-7.0-full_build-shared.zip"; // TODO: ARM64 builds?
+        var url = $"https://github.com/GyanD/codexffmpeg/releases/download/{FfmpegVersion}/ffmpeg-{FfmpegVersion}-full_build-shared.zip"; // TODO: ARM64 builds?
         var tempPath = Path.GetTempFileName();
 
         Log.Information("Getting ffmpeg");
