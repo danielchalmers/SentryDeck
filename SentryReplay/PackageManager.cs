@@ -64,7 +64,7 @@ public static class PackageManager
         var url = RuntimeInformation.ProcessArchitecture switch
         {
             Architecture.X64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-win64-gpl-shared-{FFmpegVersion}.zip",
-            Architecture.Arm64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-winarm64-gpl-{FFmpegVersion}.zip",
+            Architecture.Arm64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-winarm64-gpl-shared-{FFmpegVersion}.zip",
             _ => throw new NotSupportedException($"FFmpeg download is not supported for {RuntimeInformation.ProcessArchitecture}."),
         };
         var tempPath = Path.GetTempFileName();
