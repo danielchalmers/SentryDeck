@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using Serilog;
 
 namespace SentryReplay;
@@ -8,7 +9,6 @@ namespace SentryReplay;
 public static class PackageManager
 {
     private const string FFmpegVersion = "7.1";
-    private static readonly string FFmpegArchiveRoot = $"ffmpeg-{FFmpegVersion}-full_build-shared";
     private static readonly string FFmpegBinFolderName = $"ffmpeg-{FFmpegVersion}-bin";
 
     private static async Task DownloadFile(string url, string savePath)
@@ -22,7 +22,7 @@ public static class PackageManager
         }
     }
 
-    private static void ExtractFFmpegBin(string zipFilePath, string destinationBinPath)
+    private static void ExtractFFmpegBin(string zipFilePath, string destinationBinPath, string archiveRoot)
     {
         if (Directory.Exists(destinationBinPath))
         {
@@ -31,7 +31,7 @@ public static class PackageManager
 
         Directory.CreateDirectory(destinationBinPath);
 
-        var binPrefix = $"{FFmpegArchiveRoot}/bin/";
+        var binPrefix = $"{archiveRoot}/bin/";
         using var archive = ZipFile.OpenRead(zipFilePath);
         foreach (var entry in archive.Entries)
         {
@@ -61,14 +61,20 @@ public static class PackageManager
     {
         var outputFolder = Path.GetFullPath(".");
         var destinationBinPath = Path.Combine(outputFolder, FFmpegBinFolderName);
-        var url = $"https://github.com/GyanD/codexffmpeg/releases/download/{FFmpegVersion}/ffmpeg-{FFmpegVersion}-full_build-shared.zip"; // TODO: ARM64 builds?
+        var url = RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.X64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-win64-gpl-shared-{FFmpegVersion}.zip",
+            Architecture.Arm64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-winarm64-gpl-shared-{FFmpegVersion}.zip",
+            _ => throw new NotSupportedException($"FFmpeg download is not supported for {RuntimeInformation.ProcessArchitecture}."),
+        };
         var tempPath = Path.GetTempFileName();
+        var archiveRoot = Path.GetFileNameWithoutExtension(new Uri(url).AbsolutePath);
 
         Log.Information($"Downloading ffmpeg to {tempPath} from {url}");
         await DownloadFile(url, tempPath);
 
         Log.Information($"Extracting ffmpeg bin to {destinationBinPath}");
-        ExtractFFmpegBin(tempPath, destinationBinPath);
+        ExtractFFmpegBin(tempPath, destinationBinPath, archiveRoot);
 
         File.Delete(tempPath);
     }
