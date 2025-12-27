@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -34,6 +35,7 @@ public partial class MainWindow : Window
         NextCommand = new AsyncRelayCommand(NextAsync);
         DownloadFFmpegCommand = new AsyncRelayCommand(DownloadFFmpegAsync);
         DismissErrorCommand = new RelayCommand(ClearError);
+        ToggleAboutCommand = new RelayCommand(ToggleAbout);
     }
 
     public IAsyncRelayCommand OpenFolderCommand { get; }
@@ -43,6 +45,11 @@ public partial class MainWindow : Window
     public IAsyncRelayCommand NextCommand { get; }
     public IAsyncRelayCommand DownloadFFmpegCommand { get; }
     public IRelayCommand DismissErrorCommand { get; }
+    public IRelayCommand ToggleAboutCommand { get; }
+
+    public bool ShowMainContent => !ShowAboutPage;
+
+    public string AppVersion => Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "Unknown";
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -136,6 +143,10 @@ public partial class MainWindow : Window
 
     [ObservableProperty]
     private bool _showFFmpegDownloadButton;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMainContent))]
+    private bool _showAboutPage;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
@@ -594,6 +605,11 @@ public partial class MainWindow : Window
     {
         ShowFFmpegDownloadButton = true;
         ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
+    }
+
+    private void ToggleAbout()
+    {
+        ShowAboutPage = !ShowAboutPage;
     }
 
     partial void OnSelectedClipChanged(CamClip value)
