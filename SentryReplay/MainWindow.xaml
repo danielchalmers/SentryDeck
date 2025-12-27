@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:SentryReplay"
         xmlns:ffme="clr-namespace:Unosquare.FFME;assembly=ffme.win"
         mc:Ignorable="d"
-        d:DataContext="{d:DesignInstance Type=local:MainWindow}"
+        d:DataContext="{d:DesignInstance Type=local:MainWindow, IsDesignTimeCreatable=False}"
         Title="{x:Static local:App.Title}"
         MinWidth="1200"
         MinHeight="700"
@@ -16,11 +16,6 @@
         KeyDown="Window_KeyDown">
 
     <Window.Resources>
-        <!-- Converters -->
-        <local:TimeSpanToStringConverter x:Key="TimeSpanConverter" />
-        <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
-        <local:InverseBoolConverter x:Key="InverseBoolConverter" />
-
         <!-- Button Style -->
         <Style x:Key="PlayerButton" TargetType="Button">
             <Setter Property="Background" Value="#333" />
@@ -189,7 +184,7 @@
                     Style="{StaticResource PlayerButton}"
                     Margin="8"
                     Padding="12"
-                    Click="OpenFolderButton_Click" />
+                    Command="{Binding OpenFolderCommand}" />
         </Grid>
 
         <!-- Splitter -->
@@ -218,10 +213,10 @@
 
                 <!-- Status Overlay (Loading/Rendering/Error) -->
                 <Border Background="#80000000"
-                        Visibility="{Binding ShowStatusOverlay, Converter={StaticResource BoolToVisibility}}">
+                        Visibility="{Binding ShowStatusOverlay, Converter={local:BoolToVisibilityConverter}}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="500">
                         <!-- Loading/Rendering status -->
-                        <StackPanel Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Visibility="{Binding IsLoading, Converter={local:BoolToVisibilityConverter}}">
                             <TextBlock Text="{Binding LoadingStatusText}"
                                        Foreground="White"
                                        FontSize="18"
@@ -235,7 +230,7 @@
                         </StackPanel>
                         
                         <!-- Error display -->
-                        <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={local:BoolToVisibilityConverter}}">
                             <TextBlock Text="⚠️" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,16" />
                             <TextBlock Text="{Binding ErrorTitle}"
                                        Foreground="#ff6b6b"
@@ -251,15 +246,15 @@
                                        HorizontalAlignment="Center" />
                             <Button Content="Download FFmpeg"
                                     Style="{StaticResource PlayerButton}"
-                                    Click="DownloadFFmpegButton_Click"
-                                    Visibility="{Binding ShowFFmpegDownloadButton, Converter={StaticResource BoolToVisibility}}"
+                                    Command="{Binding DownloadFFmpegCommand}"
+                                    Visibility="{Binding ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}"
                                     HorizontalAlignment="Center"
                                     Margin="0,20,0,0"
                                     Padding="24,10" />
                             <Button Content="Dismiss"
                                     Style="{StaticResource PlayerButton}"
-                                    Click="DismissErrorButton_Click"
-                                    Visibility="{Binding CanDismissError, Converter={StaticResource BoolToVisibility}}"
+                                    Command="{Binding DismissErrorCommand}"
+                                    Visibility="{Binding CanDismissError, Converter={local:BoolToVisibilityConverter}}"
                                     HorizontalAlignment="Center"
                                     Margin="0,20,0,0"
                                     Padding="24,10" />
@@ -273,7 +268,7 @@
                            FontSize="24"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
-                           Visibility="{Binding HasNoClipSelected, Converter={StaticResource BoolToVisibility}}" />
+                           Visibility="{Binding HasNoClipSelected, Converter={local:BoolToVisibilityConverter}}" />
             </Grid>
 
             <!-- Player Controls -->
@@ -325,7 +320,7 @@
                                 HorizontalAlignment="Center">
                         <Button Content="⏮"
                                 Style="{StaticResource PlayerButton}"
-                                Click="PreviousButton_Click"
+                                Command="{Binding PreviousCommand}"
                                 IsEnabled="{Binding CanGoPrevious}"
                                 ToolTip="Previous Clip"
                                 FontSize="18" />
@@ -333,7 +328,7 @@
                         <Button x:Name="PlayPauseButton"
                                 Content="{Binding PlayPauseIcon}"
                                 Style="{StaticResource PlayerButton}"
-                                Click="PlayPauseButton_Click"
+                                Command="{Binding PlayPauseCommand}"
                                 IsEnabled="{Binding CanPlayPause}"
                                 ToolTip="Play/Pause (Space)"
                                 FontSize="20"
@@ -341,7 +336,7 @@
 
                         <Button Content="⏭"
                                 Style="{StaticResource PlayerButton}"
-                                Click="NextButton_Click"
+                                Command="{Binding NextCommand}"
                                 IsEnabled="{Binding CanGoNext}"
                                 ToolTip="Next Clip"
                                 FontSize="18" />
@@ -350,7 +345,7 @@
 
                         <Button Content="⏹"
                                 Style="{StaticResource PlayerButton}"
-                                Click="StopButton_Click"
+                                Command="{Binding StopCommand}"
                                 IsEnabled="{Binding CanStop}"
                                 ToolTip="Stop"
                                 FontSize="18" />

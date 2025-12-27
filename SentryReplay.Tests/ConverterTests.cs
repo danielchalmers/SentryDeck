@@ -7,8 +7,6 @@ namespace SentryReplay.Tests;
 /// </summary>
 public class ConverterTests
 {
-    #region TimeSpanToStringConverter Tests
-
     [Theory]
     [InlineData(0, 0, 0, "0:00")]
     [InlineData(0, 1, 30, "1:30")]
@@ -54,10 +52,6 @@ public class ConverterTests
         result.ShouldBe("0:00");
     }
 
-    #endregion
-
-    #region BoolToVisibilityConverter Tests
-
     [Fact]
     public void BoolToVisibilityConverter_True_ReturnsVisible()
     {
@@ -96,10 +90,6 @@ public class ConverterTests
         // Assert
         result.ShouldBe(System.Windows.Visibility.Collapsed);
     }
-
-    #endregion
-
-    #region InverseBoolConverter Tests
 
     [Theory]
     [InlineData(true, false)]
@@ -144,5 +134,4 @@ public class ConverterTests
         result.ShouldBe(expected);
     }
 
-    #endregion
 }

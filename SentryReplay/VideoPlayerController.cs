@@ -1,5 +1,4 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Serilog;
 using SentryReplay.Data;
 using Unosquare.FFME;
@@ -10,7 +9,7 @@ namespace SentryReplay;
 /// Main controller for video playback that coordinates the render cache,
 /// playlist, and media player for seamless clip transitions.
 /// </summary>
-public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
+public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
     private readonly MediaElement _mediaElement;
     private readonly ClipPlaylist _playlist;
@@ -26,14 +25,33 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
     private long _activeRequestId;
     private long _currentMediaRequestId;
 
-    private bool _isPlaying;
-    private bool _isLoading;
-    private bool _isRendering;
-    private double _renderProgress;
-    private TimeSpan _position;
-    private TimeSpan _duration;
-    private string _errorMessage;
-    private double _playbackSpeed = 1.0;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPlayPause))]
+    private bool isLoading;
+
+    [ObservableProperty]
+    private bool isPlaying;
+
+    [ObservableProperty]
+    private bool isRendering;
+
+    [ObservableProperty]
+    private double renderProgress;
+
+    [ObservableProperty]
+    private TimeSpan position;
+
+    [ObservableProperty]
+    private TimeSpan duration;
+
+    [ObservableProperty]
+    private string errorMessage;
+
+    [ObservableProperty]
+    private double playbackSpeed = 1.0;
+
+    [ObservableProperty]
+    private bool isMediaOpen;
 
     public VideoPlayerController(MediaElement mediaElement)
     {
@@ -50,6 +68,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
         // Wire up playlist events
         _playlist.CurrentClipChanged += OnCurrentClipChanged;
+        _playlist.PlaylistChanged += OnPlaylistChanged;
 
         // Wire up render cache events
         _renderCache.RenderProgress += OnRenderProgress;
@@ -63,82 +82,13 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _mediaElement.PositionChanged += OnPositionChanged;
     }
 
-    #region Properties
-
     public ClipPlaylist Playlist => _playlist;
 
     public CamClip CurrentClip => _playlist.CurrentClip;
-
-    public bool IsPlaying
-    {
-        get => _isPlaying;
-        private set => SetProperty(ref _isPlaying, value);
-    }
-
-    public bool IsLoading
-    {
-        get => _isLoading;
-        private set => SetProperty(ref _isLoading, value);
-    }
-
-    public bool IsRendering
-    {
-        get => _isRendering;
-        private set => SetProperty(ref _isRendering, value);
-    }
-
-    public double RenderProgress
-    {
-        get => _renderProgress;
-        private set => SetProperty(ref _renderProgress, value);
-    }
-
-    public TimeSpan Position
-    {
-        get => _position;
-        private set => SetProperty(ref _position, value);
-    }
-
-    public TimeSpan Duration
-    {
-        get => _duration;
-        private set => SetProperty(ref _duration, value);
-    }
-
-    public string ErrorMessage
-    {
-        get => _errorMessage;
-        private set
-        {
-            if (SetProperty(ref _errorMessage, value) && value is not null)
-            {
-                Log.Error(value);
-            }
-        }
-    }
-
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
     public bool CanGoNext => _playlist.HasNext;
     public bool CanGoPrevious => _playlist.HasPrevious;
 
-    public double PlaybackSpeed
-    {
-        get => _playbackSpeed;
-        set
-        {
-            if (value <= 0)
-                value = 1.0;
-
-            if (!SetProperty(ref _playbackSpeed, value))
-                return;
-
-            ApplyPlaybackSpeed();
-        }
-    }
-
-    #endregion
-
-    #region Playback Control
 
     private long BeginNewRequest()
     {
@@ -179,6 +129,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         catch
         {
         }
+
+        IsMediaOpen = false;
 
         // Small delay to allow file handles to release and avoid races on rapid switching.
         try
@@ -302,9 +254,6 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             if (IsRequestActive(requestId))
             {
                 IsLoading = false;
-                OnPropertyChanged(nameof(CanPlayPause));
-                OnPropertyChanged(nameof(CanGoNext));
-                OnPropertyChanged(nameof(CanGoPrevious));
             }
         }
     }
@@ -520,9 +469,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _playlist.MoveTo(index);
     }
 
-    #endregion
 
-    #region Playlist Management
 
     public async Task LoadClipsAsync(IEnumerable<CamClip> clips)
     {
@@ -541,25 +488,43 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _playlist.SetClips(clips);
     }
 
-    #endregion
 
     private void ApplyPlaybackSpeed()
     {
         try
         {
             // FFME MediaElement supports dynamic playback speed via SpeedRatio.
-            _mediaElement.SpeedRatio = _playbackSpeed;
+            _mediaElement.SpeedRatio = PlaybackSpeed;
         }
         catch
         {
         }
     }
 
-    #region Event Handlers
+    partial void OnErrorMessageChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            Log.Error(value);
+        }
+    }
+
+    partial void OnPlaybackSpeedChanged(double value)
+    {
+        if (value <= 0)
+        {
+            PlaybackSpeed = 1.0;
+            return;
+        }
+
+        ApplyPlaybackSpeed();
+    }
+
 
     private void OnCurrentClipChanged(object sender, CamClip clip)
     {
         OnPropertyChanged(nameof(CurrentClip));
+        OnPropertyChanged(nameof(CanPlayPause));
         OnPropertyChanged(nameof(CanGoNext));
         OnPropertyChanged(nameof(CanGoPrevious));
 
@@ -569,6 +534,14 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             var requestId = BeginNewRequest();
             _ = PlayInternalAsync(requestId, clip);
         }
+    }
+
+    private void OnPlaylistChanged(object sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(CurrentClip));
+        OnPropertyChanged(nameof(CanPlayPause));
+        OnPropertyChanged(nameof(CanGoNext));
+        OnPropertyChanged(nameof(CanGoPrevious));
     }
 
     private void OnRenderProgress(object sender, (CamClip Clip, double Progress) e)
@@ -598,6 +571,8 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
 
     private void OnMediaOpened(object sender, Unosquare.FFME.Common.MediaOpenedEventArgs e)
     {
+        IsMediaOpen = true;
+
         // Prefer streamer's duration estimate to keep timeline stable across stream restarts.
         if (Duration == TimeSpan.Zero)
             Duration = _streamer.Duration;
@@ -627,6 +602,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         ErrorMessage = $"Playback failed: {e.ErrorException?.Message}";
         IsPlaying = false;
         IsLoading = false;
+        IsMediaOpen = false;
     }
 
     private void OnPositionChanged(object sender, Unosquare.FFME.Common.PositionChangedEventArgs e)
@@ -639,9 +615,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
             Position = e.Position;
     }
 
-    #endregion
 
-    #region Helpers
 
     private void QueueNextClipsForPrerender()
     {
@@ -665,30 +639,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         }
     }
 
-    #endregion
 
-    #region INotifyPropertyChanged
-
-    public event PropertyChangedEventHandler PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string propertyName = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-            return false;
-
-        field = value;
-        OnPropertyChanged(propertyName);
-        return true;
-    }
-
-    #endregion
-
-    #region IDisposable
 
     public void Dispose()
     {
@@ -701,6 +652,7 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _playbackCts?.Dispose();
 
         _playlist.CurrentClipChanged -= OnCurrentClipChanged;
+        _playlist.PlaylistChanged -= OnPlaylistChanged;
         _renderCache.RenderProgress -= OnRenderProgress;
         _renderCache.RenderCompleted -= OnRenderCompleted;
         _renderCache.RenderFailed -= OnRenderFailed;
@@ -719,5 +671,4 @@ public sealed class VideoPlayerController : INotifyPropertyChanged, IDisposable
         _opLock.Dispose();
     }
 
-    #endregion
 }
