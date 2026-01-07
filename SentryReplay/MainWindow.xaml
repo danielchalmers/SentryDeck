@@ -9,9 +9,10 @@
         MinWidth="1200"
         MinHeight="700"
         d:DataContext="{d:DesignInstance Type=local:MainWindow}"
-        Background="#1a1a1a"
+        Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}"
         Closing="Window_Closing"
         ContentRendered="Window_ContentRendered"
+        Foreground="{DynamicResource TextControlForeground}"
         KeyDown="Window_KeyDown"
         mc:Ignorable="d">
 
@@ -19,8 +20,8 @@
         <!--  Button Style  -->
         <Style x:Key="PlayerButton"
                TargetType="Button">
-            <Setter Property="Background" Value="#333" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="12,8" />
             <Setter Property="Margin" Value="2" />
@@ -37,14 +38,14 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#555" />
+                                <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#666" />
+                                <Setter Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="#222" />
-                                <Setter Property="Foreground" Value="#666" />
+                                <Setter Property="Background" Value="{DynamicResource ControlFillColorDisabledBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextControlForegroundDisabled}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -63,6 +64,7 @@
 
         <Style TargetType="Hyperlink"
                BasedOn="{StaticResource {x:Type Hyperlink}}">
+            <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
             <Setter Property="TextDecorations" Value="None" />
         </Style>
 
@@ -76,8 +78,32 @@
         <Style x:Key="ProjectDescriptionTextBlock"
                TargetType="TextBlock"
                BasedOn="{StaticResource {x:Type TextBlock}}">
-            <Setter Property="Foreground" Value="#aaa" />
+            <Setter Property="Foreground" Value="{DynamicResource TextControlPlaceholderForeground}" />
             <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="ClipListTextBlock"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}"
+                             Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ClipListSecondaryTextBlock"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource ClipListTextBlock}">
+            <Setter Property="Opacity" Value="0.8" />
+        </Style>
+
+        <Style x:Key="ClipListTertiaryTextBlock"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource ClipListTextBlock}">
+            <Setter Property="Opacity" Value="0.65" />
         </Style>
     </Window.Resources>
 
@@ -91,7 +117,7 @@
 
             <!--  Sidebar  -->
             <Grid Grid.Column="0"
-                  Background="#252525">
+                  Background="{DynamicResource ControlAltFillColorSecondaryBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -101,7 +127,7 @@
                 <!--  Search box  -->
                 <Border Grid.Row="0"
                         Margin="8,8,8,4"
-                        Background="#333">
+                        Background="{DynamicResource TextControlBackground}">
                     <Grid>
                         <TextBox x:Name="SearchBox"
                                  Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
@@ -110,12 +136,12 @@
                                  FontSize="14"
                                  Background="Transparent"
                                  BorderThickness="0"
-                                 Foreground="White" />
+                                 Foreground="{DynamicResource TextControlForeground}" />
                         <TextBlock Text="Search clips..."
                                    Padding="12,10"
                                    VerticalAlignment="Center"
                                    FontSize="14"
-                                   Foreground="#666"
+                                   Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                    IsHitTestVisible="False">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -145,8 +171,8 @@
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="8" />
                             <Setter Property="Margin" Value="4" />
-                            <Setter Property="Background" Value="#333" />
-                            <Setter Property="Foreground" Value="White" />
+                            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
@@ -157,10 +183,11 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="#444" />
+                                                <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#1e88e5" />
+                                                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -178,7 +205,7 @@
 
                                 <!--  Thumbnail  -->
                                 <Border Grid.Column="0"
-                                        Background="#222"
+                                        Background="{DynamicResource ControlFillColorDisabledBrush}"
                                         CornerRadius="4">
                                     <Image HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
@@ -193,15 +220,15 @@
                                     <TextBlock Text="{Binding Name}"
                                                FontSize="14"
                                                FontWeight="SemiBold"
-                                               Foreground="White"
+                                               Style="{StaticResource ClipListTextBlock}"
                                                TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}"
                                                Margin="0,4,0,0"
                                                FontSize="12"
-                                               Foreground="#aaa" />
+                                               Style="{StaticResource ClipListSecondaryTextBlock}" />
                                     <TextBlock Margin="0,2,0,0"
                                                FontSize="11"
-                                               Foreground="#888">
+                                               Style="{StaticResource ClipListTertiaryTextBlock}">
                                         <Run Text="{Binding Chunks.Count, Mode=OneWay}" />
                                         <Run Text="chunks" />
                                     </TextBlock>
@@ -230,11 +257,11 @@
             <GridSplitter Grid.Column="1"
                           Width="8"
                           HorizontalAlignment="Stretch"
-                          Background="#333" />
+                          Background="{DynamicResource ControlStrokeColorDefaultBrush}" />
 
             <!--  Video Player Area  -->
             <Grid Grid.Column="2"
-                  Background="#1a1a1a">
+                  Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
@@ -263,7 +290,7 @@
                                            Margin="0,0,0,16"
                                            HorizontalAlignment="Center"
                                            FontSize="18"
-                                           Foreground="White" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <ProgressBar Width="300"
                                              Height="8"
                                              IsIndeterminate="{Binding IsIndeterminateProgress}"
@@ -282,11 +309,11 @@
                                            HorizontalAlignment="Center"
                                            FontSize="20"
                                            FontWeight="SemiBold"
-                                           Foreground="#ff6b6b" />
+                                           Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                                 <TextBlock Text="{Binding ErrorDetails}"
                                            HorizontalAlignment="Center"
                                            FontSize="14"
-                                           Foreground="#aaa"
+                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                            TextAlignment="Center"
                                            TextWrapping="Wrap" />
                                 <Button Content="Download FFmpeg"
@@ -312,14 +339,14 @@
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                FontSize="24"
-                               Foreground="#666"
+                               Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                Visibility="{Binding HasNoClipSelected, Converter={local:BoolToVisibilityConverter}}" />
                 </Grid>
 
                 <!--  Player Controls  -->
                 <Border Grid.Row="1"
                         Padding="16"
-                        Background="#252525">
+                        Background="{DynamicResource ControlAltFillColorSecondaryBrush}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -340,7 +367,7 @@
                                        MinWidth="50"
                                        VerticalAlignment="Center"
                                        FontSize="13"
-                                       Foreground="#aaa" />
+                                       Foreground="{DynamicResource TextControlPlaceholderForeground}" />
 
                             <Slider x:Name="SeekSlider"
                                     Grid.Column="1"
@@ -358,7 +385,7 @@
                                        MinWidth="50"
                                        VerticalAlignment="Center"
                                        FontSize="13"
-                                       Foreground="#aaa"
+                                       Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                        TextAlignment="Right" />
                         </Grid>
 
@@ -403,14 +430,14 @@
                             <TextBlock Text="Speed"
                                        Margin="0,0,8,0"
                                        VerticalAlignment="Center"
-                                       Foreground="#aaa" />
+                                       Foreground="{DynamicResource TextControlPlaceholderForeground}" />
 
                             <ComboBox Width="90"
                                       Height="34"
                                       VerticalContentAlignment="Center"
-                                      Background="#333"
+                                      Background="{DynamicResource TextControlBackground}"
                                       BorderThickness="0"
-                                      Foreground="White"
+                                      Foreground="{DynamicResource TextControlForeground}"
                                       ItemsSource="{Binding PlaybackSpeedOptions}"
                                       SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}">
                                 <ComboBox.ItemTemplate>
@@ -425,7 +452,7 @@
             </Grid>
         </Grid>
 
-        <Grid Background="#1a1a1a"
+        <Grid Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}"
               Visibility="{Binding ShowAboutPage, Converter={local:BoolToVisibilityConverter}}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -459,38 +486,38 @@
 
                     <Border Grid.Column="0"
                             Padding="20"
-                            Background="#252525"
+                            Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
                             CornerRadius="8">
                         <StackPanel>
                             <TextBlock Text="Sentry Replay"
                                        FontSize="26"
                                        FontWeight="SemiBold"
-                                       Foreground="White" />
+                                       Foreground="{DynamicResource TextControlForeground}" />
                             <TextBlock Text="Review TeslaCam footage in a single timeline with easy clip navigation."
                                        Margin="0,8,0,16"
                                        FontSize="14"
-                                       Foreground="#ddd"
+                                       Foreground="{DynamicResource TextControlForeground}"
                                        TextWrapping="Wrap" />
                             <TextBlock Text="Quick start"
                                        FontSize="16"
                                        FontWeight="SemiBold"
-                                       Foreground="White" />
+                                       Foreground="{DynamicResource TextControlForeground}" />
                             <StackPanel Margin="0,8,0,0">
                                 <TextBlock Text="• Select Folder to pick your TeslaCam directory."
-                                           Foreground="#ddd"
+                                           Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                                 <TextBlock Text="• Choose a clip from the list to start playback."
-                                           Foreground="#ddd"
+                                           Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                                 <TextBlock Text="• Use the controls below the video to scrub and change speed."
-                                           Foreground="#ddd"
+                                           Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
                             <TextBlock Text="App info"
                                        Margin="0,16,0,0"
                                        FontSize="16"
                                        FontWeight="SemiBold"
-                                       Foreground="White" />
+                                       Foreground="{DynamicResource TextControlForeground}" />
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -507,42 +534,42 @@
                                            Grid.Column="0"
                                            Text="Version:"
                                            FontWeight="SemiBold"
-                                           Foreground="#ccc"
+                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                            TextAlignment="Right" />
                                 <TextBlock Grid.Row="0"
                                            Grid.Column="2"
                                            Text="{Binding FileVersion}"
-                                           Foreground="#ddd" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <TextBlock Grid.Row="1"
                                            Grid.Column="0"
                                            Text="Runtime:"
                                            FontWeight="SemiBold"
-                                           Foreground="#ccc"
+                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                            TextAlignment="Right" />
                                 <TextBlock Grid.Row="1"
                                            Grid.Column="2"
                                            Text="{Binding RuntimeDescription}"
-                                           Foreground="#ddd" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <TextBlock Grid.Row="2"
                                            Grid.Column="0"
                                            Text="OS:"
                                            FontWeight="SemiBold"
-                                           Foreground="#ccc"
+                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                            TextAlignment="Right" />
                                 <TextBlock Grid.Row="2"
                                            Grid.Column="2"
                                            Text="{Binding OsDescription}"
-                                           Foreground="#ddd" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <TextBlock Grid.Row="3"
                                            Grid.Column="0"
                                            Text="Exe:"
                                            FontWeight="SemiBold"
-                                           Foreground="#ccc"
+                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
                                            TextAlignment="Right" />
                                 <TextBlock Grid.Row="3"
                                            Grid.Column="2"
                                            Text="{Binding ExecutablePath}"
-                                           Foreground="#ddd"
+                                           Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                             </Grid>
                         </StackPanel>
@@ -551,47 +578,47 @@
                     <StackPanel Grid.Column="1"
                                 Margin="12,0,0,0">
                         <Border Padding="20"
-                                Background="#252525"
+                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
                                 CornerRadius="8">
                             <StackPanel>
                                 <TextBlock Text="Shortcuts"
                                            FontSize="16"
                                            FontWeight="SemiBold"
-                                           Foreground="White" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <StackPanel Margin="0,8,0,0">
                                     <TextBlock Text="Space: Play/Pause"
-                                               Foreground="#ddd" />
+                                               Foreground="{DynamicResource TextControlForeground}" />
                                     <TextBlock Text="Left/Right: Seek 5 seconds"
-                                               Foreground="#ddd" />
+                                               Foreground="{DynamicResource TextControlForeground}" />
                                     <TextBlock Text="Ctrl+Left/Right: Previous/Next clip"
-                                               Foreground="#ddd" />
+                                               Foreground="{DynamicResource TextControlForeground}" />
                                 </StackPanel>
 
                                 <TextBlock Text="Playback notes"
                                            Margin="0,16,0,0"
                                            FontSize="16"
                                            FontWeight="SemiBold"
-                                           Foreground="White" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <TextBlock Text="FFmpeg is required for playback. Use the Download FFmpeg button when prompted."
                                            Margin="0,8,0,0"
-                                           Foreground="#ddd"
+                                           Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                                 <TextBlock Text="If clips do not appear, confirm the folder contains a TeslaCam directory."
                                            Margin="0,12,0,0"
-                                           Foreground="#ddd"
+                                           Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
 
                         <Border Margin="0,12,0,0"
                                 Padding="20"
-                                Background="#252525"
+                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
                                 CornerRadius="8">
                             <StackPanel>
                                 <TextBlock Text="Support"
                                            FontSize="16"
                                            FontWeight="SemiBold"
-                                           Foreground="White" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <StackPanel Margin="0,8,0,0">
                                     <TextBlock Margin="0,0,0,8">
                                         <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay"
@@ -617,13 +644,13 @@
 
                         <Border Margin="0,12,0,0"
                                 Padding="20"
-                                Background="#252525"
+                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
                                 CornerRadius="8">
                             <StackPanel>
                                 <TextBlock Text="More from the author"
                                            FontSize="16"
                                            FontWeight="SemiBold"
-                                           Foreground="White" />
+                                           Foreground="{DynamicResource TextControlForeground}" />
                                 <UniformGrid Columns="3"
                                              Margin="0,8,0,0">
                                     <StackPanel Margin="0,0,12,12">
