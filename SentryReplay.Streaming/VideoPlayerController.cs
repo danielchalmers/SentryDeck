@@ -10,14 +10,13 @@ namespace SentryReplay;
 /// </summary>
 public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
-    private const double EstimatedChunkSeconds = 60;
-
     private readonly IMediaPlayer FrontPlayer;
     private readonly IReadOnlyDictionary<string, IMediaPlayer> CameraPlayers;
+    private readonly OverlayCameraLoader OverlayLoader;
+    private readonly ClipPlaylistOrchestrator PlaylistOrchestrator;
     private readonly SemaphoreSlim OpLock = new(1, 1);
     private CancellationTokenSource _playbackCts;
-    private CancellationTokenSource _overlayCts;
-    private IReadOnlyList<CamChunk> _chunks = [];
+    private ClipTimeline _timeline = ClipTimeline.Empty;
     private bool _isDisposed;
     private bool _isOpeningMedia;
     private int _currentChunkIndex = -1;
@@ -67,8 +66,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             ["left_repeater"] = leftPlayer ?? throw new ArgumentNullException(nameof(leftPlayer)),
             ["right_repeater"] = rightPlayer ?? throw new ArgumentNullException(nameof(rightPlayer)),
         };
+        OverlayLoader = new OverlayCameraLoader(
+            OverlayPlayers,
+            () => CurrentChunk,
+            IsRequestActive,
+            () => PlaybackSpeed,
+            () => IsPlaying);
 
         Playlist = new ClipPlaylist();
+        PlaylistOrchestrator = new ClipPlaylistOrchestrator(Playlist, StopAsync, () => BeginNewRequest());
 
         Playlist.CurrentClipChanged += OnCurrentClipChanged;
         Playlist.PlaylistChanged += OnPlaylistChanged;
@@ -86,11 +92,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     public CamClip CurrentClip => Playlist.CurrentClip;
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
-    public bool CanGoNext => Playlist.HasNext;
-    public bool CanGoPrevious => Playlist.HasPrevious;
+    public bool CanGoNext => PlaylistOrchestrator.CanGoNext;
+    public bool CanGoPrevious => PlaylistOrchestrator.CanGoPrevious;
 
-    private TimeSpan CurrentChunkStart => TimeSpan.FromSeconds(Math.Max(0, _currentChunkIndex) * EstimatedChunkSeconds);
-    private CamChunk CurrentChunk => _currentChunkIndex >= 0 && _currentChunkIndex < _chunks.Count ? _chunks[_currentChunkIndex] : null;
+    private CamChunk CurrentChunk => _timeline.GetChunk(_currentChunkIndex);
     private IEnumerable<KeyValuePair<string, IMediaPlayer>> OverlayPlayers => CameraPlayers
         .Where(player => !ReferenceEquals(player.Value, FrontPlayer));
 
@@ -148,7 +153,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private async Task StopPlaybackInternalAsync(bool resetTimeline)
     {
         Volatile.Write(ref _currentMediaRequestId, 0);
-        CancelOverlayLoad();
+        OverlayLoader.Cancel();
         await StopAndClosePlayersAsync();
 
         IsMediaOpen = false;
@@ -160,7 +165,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             IsPlaying = false;
             Position = TimeSpan.Zero;
             Duration = TimeSpan.Zero;
-            _chunks = [];
+            _timeline = ClipTimeline.Empty;
         }
     }
 
@@ -207,10 +212,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
                 await StopPlaybackInternalAsync(resetTimeline: false);
 
-                _chunks = clip.Chunks.ToList();
-                Duration = TimeSpan.FromSeconds(_chunks.Count * EstimatedChunkSeconds);
+                _timeline = new ClipTimeline(clip.Chunks);
+                Duration = _timeline.Duration;
 
-                if (_chunks.Count == 0)
+                if (_timeline.IsEmpty)
                 {
                     ErrorMessage = "No playable footage found.";
                     return;
@@ -293,38 +298,36 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         await RunSerializedPlaybackOperationAsync(async _ =>
         {
             CancelAndDisposePlaybackCts();
-            CancelOverlayLoad();
+            OverlayLoader.Cancel();
             await StopPlaybackInternalAsync(resetTimeline: true);
         });
     }
 
     public async Task SeekAsync(TimeSpan position)
     {
-        if (CurrentClip is null || _isDisposed || _chunks.Count == 0)
+        if (CurrentClip is null || _isDisposed || _timeline.IsEmpty)
             return;
-
-        position = Clamp(position, TimeSpan.Zero, Duration);
 
         try
         {
             await RunSerializedPlaybackOperationAsync(async ct =>
             {
-                var targetChunkIndex = Math.Min(_chunks.Count - 1, (int)(position.TotalSeconds / EstimatedChunkSeconds));
-                var targetChunkStart = TimeSpan.FromSeconds(targetChunkIndex * EstimatedChunkSeconds);
-                var targetOffset = position - targetChunkStart;
+                var targetPosition = _timeline.GetPosition(position);
+                if (targetPosition is null)
+                    return;
 
-                CancelOverlayLoad();
+                OverlayLoader.Cancel();
 
-                if (IsMediaOpen && _openedClip == CurrentClip && targetChunkIndex == _currentChunkIndex)
+                if (IsMediaOpen && _openedClip == CurrentClip && targetPosition.ChunkIndex == _currentChunkIndex)
                 {
-                    await SeekOpenPlayersAsync(targetOffset);
-                    Position = targetChunkStart + targetOffset;
-                    StartOverlayLoad(_chunks[targetChunkIndex], targetOffset, Volatile.Read(ref _currentMediaRequestId), ct);
+                    await SeekOpenPlayersAsync(targetPosition.Offset);
+                    Position = targetPosition.AbsolutePosition;
+                    OverlayLoader.Start(targetPosition.Chunk, targetPosition.Offset, Volatile.Read(ref _currentMediaRequestId), ct);
                     return;
                 }
 
                 var requestId = BeginNewRequest();
-                await OpenChunkInternalAsync(CurrentClip, targetChunkIndex, targetOffset, IsPlaying, requestId, ct);
+                await OpenChunkInternalAsync(CurrentClip, targetPosition.ChunkIndex, targetPosition.Offset, IsPlaying, requestId, ct);
             }, replacePlaybackCts: true);
         }
         catch (OperationCanceledException)
@@ -339,51 +342,32 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     public async Task NextAsync()
     {
-        if (!Playlist.HasNext)
-            return;
-
-        await StopAsync();
-        Playlist.MoveNext();
+        await PlaylistOrchestrator.NextAsync();
     }
 
     public async Task PreviousAsync()
     {
-        if (!Playlist.HasPrevious)
-            return;
-
-        await StopAsync();
-        Playlist.MovePrevious();
+        await PlaylistOrchestrator.PreviousAsync();
     }
 
     public async Task GoToClipAsync(CamClip clip)
     {
-        if (clip == CurrentClip)
-            return;
-
-        BeginNewRequest();
-        await StopAsync();
-        Playlist.MoveTo(clip);
+        await PlaylistOrchestrator.GoToClipAsync(clip);
     }
 
     public async Task GoToClipAsync(int index)
     {
-        if (index == Playlist.CurrentIndex)
-            return;
-
-        BeginNewRequest();
-        await StopAsync();
-        Playlist.MoveTo(index);
+        await PlaylistOrchestrator.GoToClipAsync(index);
     }
 
     public async Task LoadClipsAsync(IEnumerable<CamClip> clips)
     {
-        await StopAsync();
-        Playlist.SetClips(clips);
+        await PlaylistOrchestrator.LoadClipsAsync(clips);
     }
 
     public void LoadClips(IEnumerable<CamClip> clips)
     {
-        Playlist.SetClips(clips);
+        PlaylistOrchestrator.LoadClips(clips);
     }
 
     private async Task OpenChunkInternalAsync(
@@ -394,10 +378,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         long requestId,
         CancellationToken cancellationToken)
     {
-        if (clip is null || chunkIndex < 0 || chunkIndex >= _chunks.Count)
+        if (clip is null || _timeline.GetChunk(chunkIndex) is null)
             return;
 
-        var chunk = _chunks[chunkIndex];
+        var chunk = _timeline.GetChunk(chunkIndex);
         if (!chunk.Files.ContainsKey("front"))
         {
             ErrorMessage = "No front camera footage found.";
@@ -408,7 +392,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         try
         {
-            CancelOverlayLoad();
+            OverlayLoader.Cancel();
 
             await StopAndClosePlayersAsync();
 
@@ -435,7 +419,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 await FrontPlayer.SeekAsync(offset);
             }
 
-            Position = CurrentChunkStart + offset;
+            Position = _timeline.ToAbsolutePosition(chunkIndex, offset);
             Volatile.Write(ref _currentMediaRequestId, requestId);
 
             if (playAfterOpen)
@@ -449,96 +433,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 IsPlaying = false;
             }
 
-            StartOverlayLoad(chunk, offset, requestId, cancellationToken);
+            OverlayLoader.Start(chunk, offset, requestId, cancellationToken);
         }
         finally
         {
             _isOpeningMedia = false;
-        }
-    }
-
-    private void StartOverlayLoad(CamChunk chunk, TimeSpan offset, long requestId, CancellationToken cancellationToken)
-    {
-        CancelOverlayLoad();
-
-        var overlayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _overlayCts = overlayCts;
-        _ = LoadOverlayPlayersAsync(chunk, offset, requestId, overlayCts);
-    }
-
-    private async Task LoadOverlayPlayersAsync(CamChunk chunk, TimeSpan offset, long requestId, CancellationTokenSource cts)
-    {
-        var ct = cts.Token;
-
-        try
-        {
-            await Task.Yield();
-
-            foreach (var (camera, player) in OverlayPlayers)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                if (!IsRequestActive(requestId) || chunk != CurrentChunk)
-                    return;
-
-                if (!chunk.Files.TryGetValue(camera, out var file) || !File.Exists(file.FullPath))
-                    continue;
-
-                if (player.IsOpen)
-                {
-                    player.SpeedRatio = PlaybackSpeed;
-                    continue;
-                }
-
-                await player.CloseAsync();
-                var opened = await player.OpenAsync(new Uri(file.FullPath));
-                if (!opened)
-                    continue;
-
-                if (ct.IsCancellationRequested || !IsRequestActive(requestId) || chunk != CurrentChunk)
-                {
-                    await player.CloseAsync();
-                    return;
-                }
-
-                player.SpeedRatio = PlaybackSpeed;
-
-                if (offset > TimeSpan.Zero)
-                {
-                    await player.SeekAsync(offset);
-                }
-
-                if (ct.IsCancellationRequested || !IsRequestActive(requestId) || chunk != CurrentChunk)
-                {
-                    await player.CloseAsync();
-                    return;
-                }
-
-                if (IsPlaying)
-                {
-                    await player.PlayAsync();
-                }
-                else
-                {
-                    await player.PauseAsync();
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to load overlay camera");
-        }
-        finally
-        {
-            if (ReferenceEquals(_overlayCts, cts))
-            {
-                _overlayCts = null;
-            }
-
-            cts.Dispose();
         }
     }
 
@@ -566,16 +465,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             await player.SeekAsync(offset);
         }
-    }
-
-    private void CancelOverlayLoad()
-    {
-        var cts = _overlayCts;
-        if (cts is null)
-            return;
-
-        _overlayCts = null;
-        cts.Cancel();
     }
 
     private void ApplyPlaybackSpeed()
@@ -653,7 +542,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId) || IsLoading)
             return;
 
-        if (_currentChunkIndex >= 0 && _currentChunkIndex < _chunks.Count - 1)
+        if (_currentChunkIndex >= 0 && _currentChunkIndex < _timeline.Count - 1)
         {
             var requestId = Volatile.Read(ref _activeRequestId);
             await OpenNextChunkAsync(requestId, shouldContinue);
@@ -705,18 +594,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!ReferenceEquals(sender, FrontPlayer) || _isOpeningMedia || _currentChunkIndex < 0)
             return;
 
-        Position = Clamp(CurrentChunkStart + e.Position, TimeSpan.Zero, Duration);
-    }
-
-    private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max)
-    {
-        if (value < min)
-            return min;
-
-        if (max > TimeSpan.Zero && value > max)
-            return max;
-
-        return value;
+        Position = _timeline.ToAbsolutePosition(_currentChunkIndex, e.Position);
     }
 
     public void Dispose()
@@ -727,7 +605,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         _isDisposed = true;
 
         CancelAndDisposePlaybackCts();
-        CancelOverlayLoad();
+        OverlayLoader.Cancel();
 
         Playlist.CurrentClipChanged -= OnCurrentClipChanged;
         Playlist.PlaylistChanged -= OnPlaylistChanged;
@@ -742,6 +620,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         Playlist.Dispose();
+        OverlayLoader.Dispose();
         OpLock.Dispose();
     }
 }
