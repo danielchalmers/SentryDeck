@@ -11,18 +11,19 @@ public static class PackageManager
     private const string FFmpegVersion = "7.1";
     private static readonly string FFmpegBinFolderName = $"ffmpeg-{FFmpegVersion}-bin";
 
-    private static async Task DownloadFile(string url, string savePath)
+    private static async Task<long> DownloadFile(string url, string savePath)
     {
         using var client = new HttpClient();
         var response = await client.GetAsync(url);
-        if (response.IsSuccessStatusCode)
-        {
-            using var fileStream = File.Create(savePath);
-            await response.Content.CopyToAsync(fileStream);
-        }
+        response.EnsureSuccessStatusCode();
+
+        using var fileStream = File.Create(savePath);
+        await response.Content.CopyToAsync(fileStream);
+
+        return fileStream.Length;
     }
 
-    private static void ExtractFFmpegBin(string zipFilePath, string destinationBinPath, string archiveRoot)
+    private static int ExtractFFmpegBin(string zipFilePath, string destinationBinPath, string archiveRoot)
     {
         if (Directory.Exists(destinationBinPath))
         {
@@ -30,6 +31,7 @@ public static class PackageManager
         }
 
         Directory.CreateDirectory(destinationBinPath);
+        var extractedFileCount = 0;
 
         var binPrefix = $"{archiveRoot}/bin/";
         using var archive = ZipFile.OpenRead(zipFilePath);
@@ -54,7 +56,10 @@ public static class PackageManager
             }
 
             entry.ExtractToFile(outputPath, true);
+            extractedFileCount++;
         }
+
+        return extractedFileCount;
     }
 
     public static async Task DownloadAndExtractFFmpeg()
@@ -69,14 +74,42 @@ public static class PackageManager
         };
         var tempPath = Path.GetTempFileName();
         var archiveRoot = Path.GetFileNameWithoutExtension(new Uri(url).AbsolutePath);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-        Log.Information($"Downloading ffmpeg to {tempPath} from {url}");
-        await DownloadFile(url, tempPath);
+        try
+        {
+            Log.Information(
+                "Downloading FFmpeg. Url={Url}; TempPath={TempPath}; Architecture={Architecture}",
+                url,
+                tempPath,
+                RuntimeInformation.ProcessArchitecture);
+            var bytesDownloaded = await DownloadFile(url, tempPath);
+            Log.Information(
+                "Downloaded FFmpeg archive. TempPath={TempPath}; Bytes={Bytes}; ElapsedMs={ElapsedMs}",
+                tempPath,
+                bytesDownloaded,
+                stopwatch.ElapsedMilliseconds);
 
-        Log.Information($"Extracting ffmpeg bin to {destinationBinPath}");
-        ExtractFFmpegBin(tempPath, destinationBinPath, archiveRoot);
+            Log.Information(
+                "Extracting FFmpeg binaries. TempPath={TempPath}; Destination={Destination}; ArchiveRoot={ArchiveRoot}",
+                tempPath,
+                destinationBinPath,
+                archiveRoot);
+            var extractedFileCount = ExtractFFmpegBin(tempPath, destinationBinPath, archiveRoot);
 
-        File.Delete(tempPath);
+            Log.Information(
+                "FFmpeg binaries are ready. Destination={Destination}; ExtractedFileCount={ExtractedFileCount}; ElapsedMs={ElapsedMs}",
+                destinationBinPath,
+                extractedFileCount,
+                stopwatch.ElapsedMilliseconds);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 
     public static string FindFFmpegDirectory()

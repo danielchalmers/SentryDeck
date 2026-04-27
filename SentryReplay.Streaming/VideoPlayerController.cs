@@ -217,10 +217,24 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
                 if (_timeline.IsEmpty)
                 {
+                    Log.Warning(
+                        "Clip has no playable timeline. ClipName={ClipName}; ClipPath={ClipPath}; ChunkCount={ChunkCount}",
+                        clip.Name,
+                        clip.FullPath,
+                        clip.Chunks.Count);
                     ErrorMessage = "No playable footage found.";
                     return;
                 }
 
+                Log.Information(
+                    "Starting clip playback. ClipName={ClipName}; ClipPath={ClipPath}; ClipIndex={ClipIndex}; ClipCount={ClipCount}; ChunkCount={ChunkCount}; Duration={Duration}; RequestId={RequestId}",
+                    clip.Name,
+                    clip.FullPath,
+                    Playlist.CurrentIndex,
+                    Playlist.Clips.Count,
+                    _timeline.Count,
+                    Duration,
+                    requestId);
                 await OpenChunkInternalAsync(clip, chunkIndex: 0, offset: TimeSpan.Zero, playAfterOpen: true, requestId, ct);
             }, replacePlaybackCts: true);
         }
@@ -229,7 +243,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Playback error");
+            Log.Error(
+                ex,
+                "Playback error. ClipName={ClipName}; ClipPath={ClipPath}; RequestId={RequestId}",
+                clip.Name,
+                clip.FullPath,
+                requestId);
             ErrorMessage = $"Playback error: {ex.Message}";
         }
         finally
@@ -252,6 +271,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             if (Duration > TimeSpan.Zero && Position >= Duration - TimeSpan.FromMilliseconds(250))
             {
+                Log.Debug(
+                    "Restarting clip from beginning. ClipName={ClipName}; ClipPath={ClipPath}",
+                    clip.Name,
+                    clip.FullPath);
                 await SeekAsync(TimeSpan.Zero);
             }
 
@@ -259,6 +282,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             {
                 if (IsMediaOpen && _openedClip == clip)
                 {
+                    Log.Debug(
+                        "Resuming playback. ClipName={ClipName}; ClipPath={ClipPath}; Position={Position}",
+                        clip.Name,
+                        clip.FullPath,
+                        Position);
                     await PlayOpenPlayersAsync();
                     IsPlaying = true;
                 }
@@ -275,6 +303,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     {
         await RunSerializedPlaybackOperationAsync(async _ =>
         {
+            Log.Debug(
+                "Pausing playback. ClipName={ClipName}; ClipPath={ClipPath}; Position={Position}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                Position);
             await PauseOpenPlayersAsync();
             IsPlaying = false;
         });
@@ -297,6 +330,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         BeginNewRequest();
         await RunSerializedPlaybackOperationAsync(async _ =>
         {
+            Log.Debug(
+                "Stopping playback. ClipName={ClipName}; ClipPath={ClipPath}; Position={Position}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                Position);
             CancelAndDisposePlaybackCts();
             OverlayLoader.Cancel();
             await StopPlaybackInternalAsync(resetTimeline: true);
@@ -314,8 +352,24 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             {
                 var targetPosition = _timeline.GetPosition(position);
                 if (targetPosition is null)
+                {
+                    Log.Debug(
+                        "Ignoring seek outside timeline. ClipName={ClipName}; ClipPath={ClipPath}; RequestedPosition={RequestedPosition}; Duration={Duration}",
+                        CurrentClip.Name,
+                        CurrentClip.FullPath,
+                        position,
+                        Duration);
                     return;
+                }
 
+                Log.Debug(
+                    "Seeking playback. ClipName={ClipName}; ClipPath={ClipPath}; RequestedPosition={RequestedPosition}; TargetChunkIndex={TargetChunkIndex}; TargetOffset={TargetOffset}; CurrentChunkIndex={CurrentChunkIndex}",
+                    CurrentClip.Name,
+                    CurrentClip.FullPath,
+                    position,
+                    targetPosition.ChunkIndex,
+                    targetPosition.Offset,
+                    _currentChunkIndex);
                 OverlayLoader.Cancel();
 
                 if (IsMediaOpen && _openedClip == CurrentClip && targetPosition.ChunkIndex == _currentChunkIndex)
@@ -335,7 +389,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Seek error");
+            Log.Error(
+                ex,
+                "Seek error. ClipName={ClipName}; ClipPath={ClipPath}; RequestedPosition={RequestedPosition}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                position);
             ErrorMessage = $"Seek error: {ex.Message}";
         }
     }
@@ -384,6 +443,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         var chunk = _timeline.GetChunk(chunkIndex);
         if (!chunk.Files.ContainsKey("front"))
         {
+            Log.Warning(
+                "Cannot open chunk because front camera is missing. ClipName={ClipName}; ClipPath={ClipPath}; ChunkIndex={ChunkIndex}; Cameras={Cameras}; RequestId={RequestId}",
+                clip.Name,
+                clip.FullPath,
+                chunkIndex,
+                chunk.Files.Keys.Order().ToArray(),
+                requestId);
             ErrorMessage = "No front camera footage found.";
             return;
         }
@@ -399,9 +465,18 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             cancellationToken.ThrowIfCancellationRequested();
 
             var frontFile = chunk.Files["front"];
-            var opened = File.Exists(frontFile.FullPath) && await FrontPlayer.OpenAsync(new Uri(frontFile.FullPath));
+            var frontFileExists = File.Exists(frontFile.FullPath);
+            var opened = frontFileExists && await FrontPlayer.OpenAsync(new Uri(frontFile.FullPath));
             if (!opened)
             {
+                Log.Warning(
+                    "Failed to open front camera video. ClipName={ClipName}; ClipPath={ClipPath}; ChunkIndex={ChunkIndex}; FrontFile={FrontFile}; FileExists={FileExists}; RequestId={RequestId}",
+                    clip.Name,
+                    clip.FullPath,
+                    chunkIndex,
+                    frontFile.FullPath,
+                    frontFileExists,
+                    requestId);
                 ErrorMessage = "Failed to open front camera video.";
                 return;
             }
@@ -433,6 +508,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 IsPlaying = false;
             }
 
+            Log.Information(
+                "Opened playback chunk. ClipName={ClipName}; ClipPath={ClipPath}; ChunkIndex={ChunkIndex}; ChunkCount={ChunkCount}; ChunkTimestamp={ChunkTimestamp}; Offset={Offset}; IsPlaying={IsPlaying}; Cameras={Cameras}; RequestId={RequestId}",
+                clip.Name,
+                clip.FullPath,
+                chunkIndex,
+                _timeline.Count,
+                chunk.Timestamp,
+                offset,
+                IsPlaying,
+                chunk.Files.Keys.Order().ToArray(),
+                requestId);
             OverlayLoader.Start(chunk, offset, requestId, cancellationToken);
         }
         finally
@@ -469,23 +555,20 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private void ApplyPlaybackSpeed()
     {
-        foreach (var player in CameraPlayers.Values)
+        foreach (var (camera, player) in CameraPlayers)
         {
             try
             {
                 player.SpeedRatio = PlaybackSpeed;
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Debug(
+                    ex,
+                    "Failed to apply playback speed. Camera={Camera}; PlaybackSpeed={PlaybackSpeed}",
+                    camera,
+                    PlaybackSpeed);
             }
-        }
-    }
-
-    partial void OnErrorMessageChanged(string value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            Log.Error(value);
         }
     }
 
@@ -493,10 +576,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     {
         if (value <= 0)
         {
+            Log.Warning("Ignoring invalid playback speed. PlaybackSpeed={PlaybackSpeed}", value);
             PlaybackSpeed = 1.0;
             return;
         }
 
+        Log.Debug("Applying playback speed. PlaybackSpeed={PlaybackSpeed}", value);
         ApplyPlaybackSpeed();
     }
 
@@ -509,8 +594,18 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         if (clip is not null)
         {
+            Log.Debug(
+                "Current clip changed. ClipName={ClipName}; ClipPath={ClipPath}; ClipIndex={ClipIndex}; ClipCount={ClipCount}",
+                clip.Name,
+                clip.FullPath,
+                Playlist.CurrentIndex,
+                Playlist.Clips.Count);
             var requestId = BeginNewRequest();
             _ = PlayInternalAsync(requestId, clip);
+        }
+        else
+        {
+            Log.Debug("Current clip cleared. ClipCount={ClipCount}", Playlist.Clips.Count);
         }
     }
 
@@ -540,10 +635,23 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
         if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId) || IsLoading)
+        {
+            Log.Debug(
+                "Ignoring media ended event for inactive request. MediaRequestId={MediaRequestId}; ActiveRequestId={ActiveRequestId}; IsLoading={IsLoading}",
+                mediaRequestId,
+                Volatile.Read(ref _activeRequestId),
+                IsLoading);
             return;
+        }
 
         if (_currentChunkIndex >= 0 && _currentChunkIndex < _timeline.Count - 1)
         {
+            Log.Debug(
+                "Playback chunk ended; opening next chunk. ClipName={ClipName}; ClipPath={ClipPath}; CurrentChunkIndex={CurrentChunkIndex}; RequestId={RequestId}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                _currentChunkIndex,
+                mediaRequestId);
             var requestId = Volatile.Read(ref _activeRequestId);
             await OpenNextChunkAsync(requestId, shouldContinue);
             return;
@@ -551,6 +659,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         if (Playlist.HasNext)
         {
+            Log.Information(
+                "Clip finished; advancing to next clip. ClipName={ClipName}; ClipPath={ClipPath}; ClipIndex={ClipIndex}; ClipCount={ClipCount}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                Playlist.CurrentIndex,
+                Playlist.Clips.Count);
             await NextAsync();
         }
     }
@@ -569,20 +683,39 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Chunk transition error");
+            Log.Error(
+                ex,
+                "Chunk transition error. ClipName={ClipName}; ClipPath={ClipPath}; CurrentChunkIndex={CurrentChunkIndex}; RequestId={RequestId}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                _currentChunkIndex,
+                requestId);
             ErrorMessage = $"Chunk transition error: {ex.Message}";
         }
     }
 
     private void OnMediaFailed(object sender, MediaPlayerFailedEventArgs e)
     {
+        var camera = GetCameraName(sender);
         if (!ReferenceEquals(sender, FrontPlayer))
         {
-            Log.Warning(e.ErrorException, "Secondary camera playback failed");
+            Log.Warning(
+                e.ErrorException,
+                "Secondary camera playback failed. Camera={Camera}; ClipName={ClipName}; ClipPath={ClipPath}; ChunkIndex={ChunkIndex}",
+                camera,
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                _currentChunkIndex);
             return;
         }
 
-        Log.Error(e.ErrorException, "Media playback failed");
+        Log.Error(
+            e.ErrorException,
+            "Media playback failed. Camera={Camera}; ClipName={ClipName}; ClipPath={ClipPath}; ChunkIndex={ChunkIndex}",
+            camera,
+            CurrentClip?.Name,
+            CurrentClip?.FullPath,
+            _currentChunkIndex);
         ErrorMessage = $"Playback failed: {e.ErrorException?.Message}";
         IsPlaying = false;
         IsLoading = false;
@@ -595,6 +728,19 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return;
 
         Position = _timeline.ToAbsolutePosition(_currentChunkIndex, e.Position);
+    }
+
+    private string GetCameraName(object sender)
+    {
+        foreach (var (camera, player) in CameraPlayers)
+        {
+            if (ReferenceEquals(sender, player))
+            {
+                return camera;
+            }
+        }
+
+        return "unknown";
     }
 
     public void Dispose()

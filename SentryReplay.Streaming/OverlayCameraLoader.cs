@@ -54,6 +54,8 @@ public sealed class OverlayCameraLoader : IDisposable
     private async Task LoadOverlayPlayersAsync(CamChunk chunk, TimeSpan offset, long requestId, CancellationTokenSource cts)
     {
         var ct = cts.Token;
+        string cameraName = null;
+        string filePath = null;
 
         try
         {
@@ -61,14 +63,24 @@ public sealed class OverlayCameraLoader : IDisposable
 
             foreach (var (camera, player) in OverlayPlayers)
             {
+                cameraName = camera;
+                filePath = null;
                 ct.ThrowIfCancellationRequested();
 
                 if (!IsRequestActive(requestId) || chunk != GetCurrentChunk())
                     return;
 
                 if (!chunk.Files.TryGetValue(camera, out var file) || !File.Exists(file.FullPath))
+                {
+                    Log.Debug(
+                        "Overlay camera file not available. Camera={Camera}; ChunkTimestamp={ChunkTimestamp}; RequestId={RequestId}",
+                        camera,
+                        chunk.Timestamp,
+                        requestId);
                     continue;
+                }
 
+                filePath = file.FullPath;
                 if (player.IsOpen)
                 {
                     player.SpeedRatio = GetPlaybackSpeed();
@@ -78,7 +90,15 @@ public sealed class OverlayCameraLoader : IDisposable
                 await player.CloseAsync();
                 var opened = await player.OpenAsync(new Uri(file.FullPath));
                 if (!opened)
+                {
+                    Log.Warning(
+                        "Failed to open overlay camera. Camera={Camera}; File={File}; ChunkTimestamp={ChunkTimestamp}; RequestId={RequestId}",
+                        camera,
+                        file.FullPath,
+                        chunk.Timestamp,
+                        requestId);
                     continue;
+                }
 
                 if (ct.IsCancellationRequested || !IsRequestActive(requestId) || chunk != GetCurrentChunk())
                 {
@@ -114,7 +134,13 @@ public sealed class OverlayCameraLoader : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to load overlay camera");
+            Log.Warning(
+                ex,
+                "Failed to load overlay camera. Camera={Camera}; File={File}; ChunkTimestamp={ChunkTimestamp}; RequestId={RequestId}",
+                cameraName,
+                filePath,
+                chunk.Timestamp,
+                requestId);
         }
         finally
         {

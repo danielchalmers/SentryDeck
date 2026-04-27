@@ -239,6 +239,7 @@ public partial class MainWindow : Window
             return;
 
         _isInitialized = true;
+        Log.Debug("Initializing main window");
 
         if (TryLoadFFmpeg())
         {
@@ -256,11 +257,30 @@ public partial class MainWindow : Window
         var directory = PackageManager.FindFFmpegDirectory();
         if (directory is null)
         {
+            Log.Warning("FFmpeg binaries were not found");
             return false;
         }
 
-        Library.FFmpegDirectory = directory;
-        return Library.LoadFFmpeg();
+        try
+        {
+            Library.FFmpegDirectory = directory;
+            var loaded = Library.LoadFFmpeg();
+            if (loaded)
+            {
+                Log.Information("Loaded FFmpeg. Directory={FFmpegDirectory}", directory);
+            }
+            else
+            {
+                Log.Error("FFmpeg load returned false. Directory={FFmpegDirectory}", directory);
+            }
+
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to load FFmpeg. Directory={FFmpegDirectory}", directory);
+            return false;
+        }
     }
 
     private void InitializePlayer()
@@ -294,24 +314,35 @@ public partial class MainWindow : Window
             return;
         }
 
+        Log.Information("Loading dashcam clips. RootCount={RootCount}; Roots={Roots}", rootList.Count, rootList);
+        var totalStopwatch = Stopwatch.StartNew();
+        var failedRoots = 0;
+
         foreach (var root in rootList)
         {
-            Log.Information($"Loading clips from: {root}");
+            var rootStopwatch = Stopwatch.StartNew();
+            Log.Debug("Scanning dashcam root. Root={Root}", root);
 
             try
             {
                 var storage = CamStorage.Map(root);
                 AllClips.AddRange(storage.Clips);
-                Log.Information($"Found {storage.Clips.Count} clips in {root}");
+                Log.Information(
+                    "Scanned dashcam root. Root={Root}; ClipCount={ClipCount}; ElapsedMs={ElapsedMs}",
+                    root,
+                    storage.Clips.Count,
+                    rootStopwatch.ElapsedMilliseconds);
             }
             catch (UnauthorizedAccessException ex)
             {
-                Log.Error(ex, $"Access denied to {root}");
+                failedRoots++;
+                Log.Error(ex, "Access denied while loading dashcam root. Root={Root}", root);
                 ShowError("Access Denied", $"Cannot access folder: {root}\n\nCheck that you have permission to read this location.");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Failed to load clips from {root}");
+                failedRoots++;
+                Log.Error(ex, "Failed to load dashcam root. Root={Root}", root);
                 ShowError("Error Loading Clips", $"Failed to load clips from:\n{root}\n\nError: {ex.Message}");
             }
         }
@@ -322,12 +353,17 @@ public partial class MainWindow : Window
         OnPropertyChanged(nameof(HasNoClipSelected));
         OnPropertyChanged(nameof(CanGoNext));
         OnPropertyChanged(nameof(CanGoPrevious));
-        Log.Information($"Total clips loaded: {AllClips.Count}");
+        Log.Information(
+            "Finished loading dashcam clips. ClipCount={ClipCount}; RootCount={RootCount}; FailedRootCount={FailedRootCount}; ElapsedMs={ElapsedMs}",
+            AllClips.Count,
+            rootList.Count,
+            failedRoots,
+            totalStopwatch.ElapsedMilliseconds);
     }
 
     private async Task OpenFolderAsync()
     {
-        Log.Debug("User selecting folder");
+        Log.Debug("Opening folder picker");
 
         var dialog = new OpenFolderDialog
         {
@@ -337,12 +373,21 @@ public partial class MainWindow : Window
 
         if (dialog.ShowDialog() == true)
         {
+            Log.Information(
+                "User selected dashcam folders. FolderCount={FolderCount}; Folders={Folders}",
+                dialog.FolderNames.Length,
+                dialog.FolderNames);
+
             if (_playerController is not null)
             {
                 await _playerController.StopAsync();
             }
 
             LoadClips(dialog.FolderNames);
+        }
+        else
+        {
+            Log.Debug("Folder picker canceled");
         }
     }
 
@@ -388,6 +433,7 @@ public partial class MainWindow : Window
 
         try
         {
+            Log.Debug("Starting FFmpeg download workflow");
             await PackageManager.DownloadAndExtractFFmpeg();
             if (TryLoadFFmpeg())
             {
@@ -424,7 +470,11 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to play clip");
+            Log.Error(
+                ex,
+                "Failed to play selected clip. ClipName={ClipName}; ClipPath={ClipPath}",
+                SelectedClip.Name,
+                SelectedClip.FullPath);
             ShowError("Playback Failed", $"Could not play clip: {SelectedClip.Name}\n\nError: {ex.Message}");
         }
     }
@@ -610,6 +660,7 @@ public partial class MainWindow : Window
 
     private void ShowFFmpegMissingError()
     {
+        Log.Debug("Showing FFmpeg missing prompt");
         ShowFFmpegDownloadButton = true;
         ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
     }
@@ -638,6 +689,10 @@ public partial class MainWindow : Window
     {
         if (value is not null)
         {
+            Log.Debug(
+                "Selected clip changed. ClipName={ClipName}; ClipPath={ClipPath}",
+                value.Name,
+                value.FullPath);
             _ = PlaySelectedClipAsync();
         }
     }
@@ -646,6 +701,7 @@ public partial class MainWindow : Window
     {
         if (_playerController is not null)
         {
+            Log.Information("Playback speed changed. Speed={PlaybackSpeed}", value);
             _playerController.PlaybackSpeed = value;
         }
     }

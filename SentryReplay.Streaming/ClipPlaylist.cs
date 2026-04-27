@@ -51,7 +51,7 @@ public sealed class ClipPlaylist : IDisposable
         ClipsInternal.AddRange(clips);
         _currentIndex = -1; // Don't auto-select first clip
 
-        Log.Information($"Playlist set with {ClipsInternal.Count} clips");
+        Log.Debug("Playlist set. ClipCount={ClipCount}", ClipsInternal.Count);
         PlaylistChanged?.Invoke(this, EventArgs.Empty);
     }
 

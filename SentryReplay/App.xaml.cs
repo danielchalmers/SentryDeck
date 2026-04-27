@@ -10,8 +10,21 @@ public partial class App : Application
 {
     public App()
     {
-        AppDomain.CurrentDomain.UnhandledException += (_, _) => Log.Error("Unhandled Exception");
-        TaskScheduler.UnobservedTaskException += (_, e) => Log.Error(e.Exception, "Unhandled Exception");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                Log.Fatal(ex, "Unhandled application exception. IsTerminating={IsTerminating}", e.IsTerminating);
+            }
+            else
+            {
+                Log.Fatal("Unhandled application exception. IsTerminating={IsTerminating}; ExceptionObject={ExceptionObject}",
+                    e.IsTerminating,
+                    e.ExceptionObject);
+            }
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+            Log.Error(e.Exception, "Unobserved task exception");
     }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -28,6 +41,19 @@ public partial class App : Application
             .WriteTo.Debug()
             .CreateLogger();
 
-        Log.Information("Application starting...");
+        Log.Information(
+            "Application starting. Version={Version}; Runtime={Runtime}; OS={OS}; ProcessArchitecture={ProcessArchitecture}",
+            GetType().Assembly.GetName().Version,
+            System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Log.Information("Application exiting. ExitCode={ExitCode}", e.ApplicationExitCode);
+        Log.CloseAndFlush();
+
+        base.OnExit(e);
     }
 }
