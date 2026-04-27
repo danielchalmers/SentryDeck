@@ -152,6 +152,70 @@ public class ClipPlaylistTests
     }
 
     [Fact]
+    public void CurrentIndex_WithInvalidValue_DoesNotChangeOrRaiseEvent()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = CreateMockClips(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(1);
+        var changeCount = 0;
+        playlist.CurrentClipChanged += (_, _) => changeCount++;
+
+        playlist.CurrentIndex = -2;
+        playlist.CurrentIndex = 3;
+
+        playlist.CurrentIndex.ShouldBe(1);
+        playlist.CurrentClip.ShouldBe(clips[1]);
+        changeCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void PeekNextAndPeekPrevious_ReturnAdjacentClips()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = CreateMockClips(4);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+
+        playlist.PeekPrevious().ShouldBe(clips[1]);
+        playlist.PeekNext().ShouldBe(clips[3]);
+    }
+
+    [Fact]
+    public void Clear_RemovesClipsAndRaisesPlaylistChanged()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = CreateMockClips(2);
+        playlist.SetClips(clips);
+        var changeCount = 0;
+        playlist.PlaylistChanged += (_, _) => changeCount++;
+
+        playlist.Clear();
+
+        playlist.Clips.ShouldBeEmpty();
+        playlist.CurrentIndex.ShouldBe(-1);
+        playlist.CurrentClip.ShouldBeNull();
+        changeCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Dispose_ClearsPlaylistOnce()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = CreateMockClips(2);
+        playlist.SetClips(clips);
+        var changeCount = 0;
+        playlist.PlaylistChanged += (_, _) => changeCount++;
+
+        playlist.Dispose();
+        playlist.Dispose();
+
+        playlist.Clips.ShouldBeEmpty();
+        playlist.CurrentIndex.ShouldBe(-1);
+        changeCount.ShouldBe(1);
+    }
+
+    [Fact]
     public void MoveTo_WithClipReference_FindsAndSelects()
     {
         // Arrange
@@ -188,10 +252,10 @@ public class ClipPlaylistTests
 
         // If no real mocks available, return empty list
         // Tests will need to handle this gracefully
-        return clips.Count > 0 ? clips : CreateEmptyMockClips(count);
+        return clips.Count > 0 ? clips : CreateEmptyMockClips();
     }
 
-    private static List<CamClip> CreateEmptyMockClips(int count)
+    private static List<CamClip> CreateEmptyMockClips()
     {
         // For unit tests without file system, create minimal mock clips
         var clips = new List<CamClip>();

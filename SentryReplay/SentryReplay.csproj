@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SentryReplay.Data\SentryReplay.Data.csproj" />
+    <ProjectReference Include="..\SentryReplay.Streaming\SentryReplay.Streaming.csproj" />
   </ItemGroup>
 
 </Project>

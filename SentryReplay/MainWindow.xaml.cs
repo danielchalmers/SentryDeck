@@ -268,7 +268,11 @@ public partial class MainWindow : Window
         if (_playerController is not null)
             return;
 
-        _playerController = new VideoPlayerController(FrontMediaElement, BackMediaElement, LeftMediaElement, RightMediaElement);
+        _playerController = new VideoPlayerController(
+            new FfmeMediaPlayerAdapter(FrontMediaElement),
+            new FfmeMediaPlayerAdapter(BackMediaElement),
+            new FfmeMediaPlayerAdapter(LeftMediaElement),
+            new FfmeMediaPlayerAdapter(RightMediaElement));
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
