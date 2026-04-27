@@ -201,7 +201,10 @@ public partial class MainWindow : Window
             _playerController = null;
         }
 
-        await MediaElement.Close();
+        await FrontMediaElement.Close();
+        await BackMediaElement.Close();
+        await LeftMediaElement.Close();
+        await RightMediaElement.Close();
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
@@ -222,9 +225,12 @@ public partial class MainWindow : Window
         await EndSeekAsync();
     }
 
-    private async void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        await SeekDuringDragAsync();
+        if (_isSeeking)
+        {
+            OnPropertyChanged(nameof(PositionText));
+        }
     }
 
     private async Task InitializeAsync()
@@ -262,7 +268,7 @@ public partial class MainWindow : Window
         if (_playerController is not null)
             return;
 
-        _playerController = new VideoPlayerController(MediaElement);
+        _playerController = new VideoPlayerController(FrontMediaElement, BackMediaElement, LeftMediaElement, RightMediaElement);
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
@@ -481,14 +487,6 @@ public partial class MainWindow : Window
 
         await SeekToCurrentPositionAsync();
         _isSeeking = false;
-    }
-
-    private async Task SeekDuringDragAsync()
-    {
-        if (_isSeeking && _playerController is not null && CanSeek)
-        {
-            await SeekToCurrentPositionAsync();
-        }
     }
 
     private async Task SeekToCurrentPositionAsync()

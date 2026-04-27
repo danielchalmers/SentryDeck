@@ -271,11 +271,47 @@
                 <Grid Grid.Row="0">
                     <!--  Video Player  -->
                     <Viewbox Stretch="Uniform">
-                        <!--  HW3 = 1280x960, HW4 = 2896x1876  -->
-                        <ffme:MediaElement x:Name="MediaElement"
-                                           Height="960"
-                                           LoadedBehavior="Manual"
-                                           UnloadedBehavior="Manual" />
+                        <Grid Width="1280"
+                              Height="960"
+                              ClipToBounds="True"
+                              Background="Black">
+                            <ffme:MediaElement x:Name="FrontMediaElement"
+                                               LoadedBehavior="Manual"
+                                               UnloadedBehavior="Manual" />
+
+                            <Border Width="280"
+                                    Height="210"
+                                    Margin="0,15,15,0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Top"
+                                    Background="Black">
+                                <ffme:MediaElement x:Name="BackMediaElement"
+                                                   LoadedBehavior="Manual"
+                                                   UnloadedBehavior="Manual" />
+                            </Border>
+
+                            <Border Width="280"
+                                    Height="210"
+                                    Margin="15,0,0,15"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Bottom"
+                                    Background="Black">
+                                <ffme:MediaElement x:Name="LeftMediaElement"
+                                                   LoadedBehavior="Manual"
+                                                   UnloadedBehavior="Manual" />
+                            </Border>
+
+                            <Border Width="280"
+                                    Height="210"
+                                    Margin="0,0,15,15"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Background="Black">
+                                <ffme:MediaElement x:Name="RightMediaElement"
+                                                   LoadedBehavior="Manual"
+                                                   UnloadedBehavior="Manual" />
+                            </Border>
+                        </Grid>
                     </Viewbox>
 
                     <!--  Status Overlay (Loading/Rendering/Error)  -->
