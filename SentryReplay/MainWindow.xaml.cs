@@ -271,7 +271,7 @@ public partial class MainWindow : Window
 
         _isInitialized = true;
         Log.Debug("Initializing main window");
-        _ = CheckForUpdatesAsync();
+        _ = CheckForUpdatesSafelyAsync();
 
         if (TryLoadFFmpeg())
         {
@@ -732,6 +732,20 @@ public partial class MainWindow : Window
         finally
         {
             UpdateCheckCompleted = true;
+        }
+    }
+
+    private async Task CheckForUpdatesSafelyAsync()
+    {
+        try
+        {
+            await CheckForUpdatesAsync();
+        }
+        catch (Exception ex)
+        {
+            UpdateCheckFailed = true;
+            UpdateCheckCompleted = true;
+            Log.Information(ex, "Unexpected update check failure. CurrentVersion={CurrentVersion}", _currentVersion);
         }
     }
 

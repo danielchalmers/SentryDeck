@@ -7,7 +7,7 @@ namespace SentryReplay;
 
 public sealed class UpdateService(HttpClient client = null)
 {
-    public static readonly Uri ReleasesApiUri = new("https://api.github.com/repos/danielchalmers/SentryReplay/releases");
+    public static readonly Uri ReleasesApiUri = new("https://api.github.com/repos/danielchalmers/SentryReplay/releases?per_page=10");
     public static readonly Uri ReleasesPageUri = new("https://github.com/danielchalmers/SentryReplay/releases");
     private static readonly HttpClient SharedClient = CreateSharedClient();
 
@@ -42,7 +42,7 @@ public sealed class UpdateService(HttpClient client = null)
     private static HttpClient CreateSharedClient()
     {
         var client = new HttpClient();
-        client.DefaultRequestHeaders.UserAgent.ParseAdd($"SentryReplay/{GetCurrentVersion()}");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"SentryReplay/{GetCurrentVersion()} (.NET {Environment.Version}; {Environment.OSVersion.Platform})");
         return client;
     }
 
