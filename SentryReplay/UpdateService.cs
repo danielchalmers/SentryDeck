@@ -9,8 +9,9 @@ public sealed class UpdateService(HttpClient client = null)
 {
     public static readonly Uri ReleasesApiUri = new("https://api.github.com/repos/danielchalmers/SentryReplay/releases");
     public static readonly Uri ReleasesPageUri = new("https://github.com/danielchalmers/SentryReplay/releases");
+    private static readonly HttpClient SharedClient = CreateClient();
 
-    private readonly HttpClient _client = client ?? CreateClient();
+    private readonly HttpClient _client = client ?? SharedClient;
 
     public static Version GetCurrentVersion(Assembly assembly = null)
     {
