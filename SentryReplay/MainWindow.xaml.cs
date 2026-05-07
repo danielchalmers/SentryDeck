@@ -21,6 +21,8 @@ namespace SentryReplay;
 public partial class MainWindow : Window
 {
     private readonly List<CamClip> AllClips = [];
+    private readonly UpdateService _updateService = new();
+    private readonly Version _currentVersion = UpdateService.GetCurrentVersion();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
@@ -50,11 +52,22 @@ public partial class MainWindow : Window
     public IRelayCommand ToggleAboutCommand { get; }
 
     public bool ShowMainContent => !ShowAboutPage;
+    public bool IsUpdateAvailable => AvailableUpdateVersion is not null;
 
-    public string FileVersion => FileVersionInfo.GetVersionInfo(Environment.ProcessPath)?.FileVersion ?? "Unknown";
+    public string CurrentVersion => _currentVersion.ToString();
     public string RuntimeDescription => $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})";
     public string OsDescription => RuntimeInformation.OSDescription;
     public string ExecutablePath => Environment.ProcessPath;
+    public Uri ReleasesPageUri => UpdateService.ReleasesPageUri;
+    public Uri UpdateReleaseUri => AvailableUpdateUri ?? ReleasesPageUri;
+
+    public string UpdateStatusText => !UpdateCheckCompleted
+        ? "Checking for updates..."
+        : UpdateCheckFailed
+            ? "Unable to check for updates right now."
+            : IsUpdateAvailable
+                ? $"Version {AvailableUpdateVersion} is available."
+                : "You're up to date.";
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -154,6 +167,24 @@ public partial class MainWindow : Window
     private bool _showAboutPage;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsUpdateAvailable))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusText))]
+    [NotifyPropertyChangedFor(nameof(UpdateReleaseUri))]
+    private Version _availableUpdateVersion;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateReleaseUri))]
+    private Uri _availableUpdateUri;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusText))]
+    private bool _updateCheckCompleted;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusText))]
+    private bool _updateCheckFailed;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     [NotifyPropertyChangedFor(nameof(CanStop))]
     [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
@@ -240,6 +271,7 @@ public partial class MainWindow : Window
 
         _isInitialized = true;
         Log.Debug("Initializing main window");
+        _ = CheckForUpdatesAsync();
 
         if (TryLoadFFmpeg())
         {
@@ -668,6 +700,39 @@ public partial class MainWindow : Window
     private void ToggleAbout()
     {
         ShowAboutPage = !ShowAboutPage;
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var availableUpdate = await _updateService.GetAvailableUpdateAsync(_currentVersion);
+            if (availableUpdate is not null)
+            {
+                AvailableUpdateVersion = availableUpdate.Version;
+                AvailableUpdateUri = availableUpdate.ReleaseUri;
+                Log.Information(
+                    "Update available. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; ReleaseUri={ReleaseUri}",
+                    _currentVersion,
+                    availableUpdate.Version,
+                    availableUpdate.ReleaseUri);
+            }
+            else
+            {
+                Log.Information("No updates available. CurrentVersion={CurrentVersion}", _currentVersion);
+            }
+
+            UpdateCheckFailed = false;
+        }
+        catch (Exception ex)
+        {
+            UpdateCheckFailed = true;
+            Log.Warning(ex, "Failed to check for updates. CurrentVersion={CurrentVersion}", _currentVersion);
+        }
+        finally
+        {
+            UpdateCheckCompleted = true;
+        }
     }
 
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
