@@ -727,7 +727,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             UpdateCheckFailed = true;
-            Log.Warning(ex, "Failed to check for updates. CurrentVersion={CurrentVersion}", _currentVersion);
+            Log.Information(ex, "Failed to check for updates. CurrentVersion={CurrentVersion}", _currentVersion);
         }
         finally
         {

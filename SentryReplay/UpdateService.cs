@@ -9,7 +9,7 @@ public sealed class UpdateService(HttpClient client = null)
 {
     public static readonly Uri ReleasesApiUri = new("https://api.github.com/repos/danielchalmers/SentryReplay/releases");
     public static readonly Uri ReleasesPageUri = new("https://github.com/danielchalmers/SentryReplay/releases");
-    private static readonly HttpClient SharedClient = CreateClient();
+    private static readonly HttpClient SharedClient = CreateSharedClient();
 
     private readonly HttpClient _client = client ?? SharedClient;
 
@@ -39,10 +39,10 @@ public sealed class UpdateService(HttpClient client = null)
             .FirstOrDefault();
     }
 
-    private static HttpClient CreateClient()
+    private static HttpClient CreateSharedClient()
     {
         var client = new HttpClient();
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("SentryReplay");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"SentryReplay/{GetCurrentVersion()}");
         return client;
     }
 
