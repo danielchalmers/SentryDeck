@@ -218,7 +218,6 @@ public partial class MainWindow : Window
         await LeftMediaElement.Close();
         await RightMediaElement.Close();
 
-        _updateCheckCancellationTokenSource.Dispose();
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
@@ -748,9 +747,16 @@ public partial class MainWindow : Window
 
     private void OpenUri(string uri)
     {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsedUri) ||
+            (parsedUri.Scheme != Uri.UriSchemeHttp && parsedUri.Scheme != Uri.UriSchemeHttps))
+        {
+            Log.Warning("Refusing to open invalid URI. Uri={Uri}", uri);
+            return;
+        }
+
         try
         {
-            Process.Start(new ProcessStartInfo(uri)
+            Process.Start(new ProcessStartInfo(parsedUri.AbsoluteUri)
             {
                 UseShellExecute = true,
             });

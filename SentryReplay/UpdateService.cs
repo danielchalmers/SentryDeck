@@ -83,7 +83,7 @@ public sealed class UpdateService
     }
 
     /// <summary>
-    /// Parses a version string and returns null when the value is empty, invalid, or contains only unsupported suffix data.
+    /// Parses version strings like "v1.2.3", "1.2.3-beta", or "1.2.3+build" and returns null for empty or unparseable values.
     /// </summary>
     internal static Version ParseVersion(string value)
     {
