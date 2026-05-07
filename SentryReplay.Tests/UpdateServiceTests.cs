@@ -18,7 +18,7 @@ public sealed class UpdateServiceTests
             """);
         var service = new UpdateService(client);
 
-        var result = await service.CheckForUpdatesAsync("0.7.0+abc");
+        var result = await service.CheckForUpdatesAsync("0.7.0");
 
         result.IsUpdateAvailable.ShouldBeTrue();
         result.LatestTagName.ShouldBe("v0.8.0");
@@ -49,6 +49,22 @@ public sealed class UpdateServiceTests
             [
               { "tag_name": "v0.9.0", "draft": true, "prerelease": false },
               { "tag_name": "v0.8.0-beta.1", "draft": false, "prerelease": true },
+              { "tag_name": "v0.7.0", "draft": false, "prerelease": false }
+            ]
+            """);
+        var service = new UpdateService(client);
+
+        var result = await service.CheckForUpdatesAsync("0.7.0");
+
+        result.ShouldBe(UpdateCheckResult.None);
+    }
+
+    [Fact]
+    public async Task CheckForUpdatesAsync_IgnoresUnparseableReleaseTags()
+    {
+        using var client = CreateHttpClient("""
+            [
+              { "tag_name": "v0.8.0-beta1", "draft": false, "prerelease": false },
               { "tag_name": "v0.7.0", "draft": false, "prerelease": false }
             ]
             """);

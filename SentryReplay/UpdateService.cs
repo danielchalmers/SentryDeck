@@ -83,7 +83,7 @@ public sealed class UpdateService
     }
 
     /// <summary>
-    /// Parses version strings like "v1.2.3", "1.2.3-beta", or "1.2.3+build" and returns null for empty or unparseable values.
+    /// Parses version strings like "v1.2.3" and returns null for empty or unparseable values.
     /// </summary>
     internal static Version ParseVersion(string value)
     {
@@ -96,12 +96,6 @@ public sealed class UpdateService
         if (trimmedValue.StartsWith("v", StringComparison.OrdinalIgnoreCase))
         {
             trimmedValue = trimmedValue[1..];
-        }
-
-        var prereleaseSeparator = trimmedValue.IndexOfAny(['-', '+']);
-        if (prereleaseSeparator >= 0)
-        {
-            trimmedValue = trimmedValue[..prereleaseSeparator];
         }
 
         return Version.TryParse(trimmedValue, out var version)
