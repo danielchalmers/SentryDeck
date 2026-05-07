@@ -53,6 +53,41 @@
             </Setter>
         </Style>
 
+        <Style x:Key="UpdateButton"
+               TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource AccentFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource AccentFillColorTertiaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="{DynamicResource ControlFillColorDisabledBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextControlForegroundDisabled}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!--  Slider Style for Seek Bar  -->
         <Style x:Key="SeekSlider"
                TargetType="Slider">
@@ -121,6 +156,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
@@ -238,8 +274,16 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
+                <Button Grid.Row="2"
+                        Content="{Binding UpdateButtonText}"
+                        Command="{Binding OpenLatestReleaseCommand}"
+                        Margin="8,4,8,0"
+                        Padding="12"
+                        Style="{StaticResource UpdateButton}"
+                        Visibility="{Binding ShowUpdateButton, Converter={local:BoolToVisibilityConverter}}" />
+
                 <!--  Folder picker  -->
-                <StackPanel Grid.Row="2"
+                <StackPanel Grid.Row="3"
                             Margin="8">
                     <Button Content="📁 Select Folder"
                             Command="{Binding OpenFolderCommand}"

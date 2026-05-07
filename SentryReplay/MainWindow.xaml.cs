@@ -21,6 +21,7 @@ namespace SentryReplay;
 public partial class MainWindow : Window
 {
     private readonly List<CamClip> AllClips = [];
+    private readonly UpdateService _updateService = new();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
         NextCommand = new AsyncRelayCommand(NextAsync);
         DownloadFFmpegCommand = new AsyncRelayCommand(DownloadFFmpegAsync);
         DismissErrorCommand = new RelayCommand(ClearError);
+        OpenLatestReleaseCommand = new RelayCommand(OpenLatestReleasePage);
         ToggleAboutCommand = new RelayCommand(ToggleAbout);
     }
 
@@ -47,6 +49,7 @@ public partial class MainWindow : Window
     public IAsyncRelayCommand NextCommand { get; }
     public IAsyncRelayCommand DownloadFFmpegCommand { get; }
     public IRelayCommand DismissErrorCommand { get; }
+    public IRelayCommand OpenLatestReleaseCommand { get; }
     public IRelayCommand ToggleAboutCommand { get; }
 
     public bool ShowMainContent => !ShowAboutPage;
@@ -150,6 +153,12 @@ public partial class MainWindow : Window
     private bool _showFFmpegDownloadButton;
 
     [ObservableProperty]
+    private bool _showUpdateButton;
+
+    [ObservableProperty]
+    private string _updateButtonText = "⬇ Update available";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowMainContent))]
     private bool _showAboutPage;
 
@@ -240,6 +249,7 @@ public partial class MainWindow : Window
 
         _isInitialized = true;
         Log.Debug("Initializing main window");
+        _ = CheckForUpdatesAsync();
 
         if (TryLoadFFmpeg())
         {
@@ -670,6 +680,29 @@ public partial class MainWindow : Window
         ShowAboutPage = !ShowAboutPage;
     }
 
+    private async Task CheckForUpdatesAsync()
+    {
+        var result = await _updateService.CheckForUpdatesAsync(FileVersion);
+        if (!result.IsUpdateAvailable)
+        {
+            Log.Debug("No update is available. CurrentVersion={CurrentVersion}", FileVersion);
+            return;
+        }
+
+        Log.Information(
+            "Update available. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; LatestTag={LatestTag}",
+            FileVersion,
+            result.LatestVersion,
+            result.LatestTagName);
+        UpdateButtonText = $"⬇ Update to {result.LatestTagName}";
+        ShowUpdateButton = true;
+    }
+
+    private void OpenLatestReleasePage()
+    {
+        OpenUri(UpdateService.LatestReleasePageUrl);
+    }
+
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
     {
         if (e.Uri is null)
@@ -677,12 +710,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri)
+        OpenUri(e.Uri.AbsoluteUri);
+
+        e.Handled = true;
+    }
+
+    private static void OpenUri(string uri)
+    {
+        Process.Start(new ProcessStartInfo(uri)
         {
             UseShellExecute = true,
         });
-
-        e.Handled = true;
     }
 
     partial void OnSelectedClipChanged(CamClip value)
