@@ -715,12 +715,19 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private static void OpenUri(string uri)
+    private void OpenUri(string uri)
     {
-        Process.Start(new ProcessStartInfo(uri)
+        try
         {
-            UseShellExecute = true,
-        });
+            Process.Start(new ProcessStartInfo(uri)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open URI. Uri={Uri}", uri);
+        }
     }
 
     partial void OnSelectedClipChanged(CamClip value)

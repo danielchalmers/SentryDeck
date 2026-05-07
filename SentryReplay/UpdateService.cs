@@ -10,7 +10,7 @@ namespace SentryReplay;
 
 public sealed class UpdateService
 {
-    internal const string ReleasesApiUrl = "https://api.github.com/repos/danielchalmers/SentryReplay/releases";
+    public const string ReleasesApiUrl = "https://api.github.com/repos/danielchalmers/SentryReplay/releases";
     public const string LatestReleasePageUrl = "https://github.com/danielchalmers/SentryReplay/releases/latest";
 
     private static readonly HttpClient SharedHttpClient = CreateHttpClient();
