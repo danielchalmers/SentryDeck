@@ -22,6 +22,7 @@ public partial class MainWindow : Window
 {
     private readonly List<CamClip> AllClips = [];
     private readonly UpdateService _updateService = new();
+    private readonly CancellationTokenSource _updateCheckCancellationTokenSource = new();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
@@ -202,6 +203,8 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object sender, CancelEventArgs e)
     {
+        _updateCheckCancellationTokenSource.Cancel();
+
         if (_playerController is not null)
         {
             await _playerController.StopAsync();
@@ -214,6 +217,8 @@ public partial class MainWindow : Window
         await BackMediaElement.Close();
         await LeftMediaElement.Close();
         await RightMediaElement.Close();
+
+        _updateCheckCancellationTokenSource.Dispose();
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
@@ -249,7 +254,7 @@ public partial class MainWindow : Window
 
         _isInitialized = true;
         Log.Debug("Initializing main window");
-        _ = CheckForUpdatesAsync();
+        StartUpdateCheck();
 
         if (TryLoadFFmpeg())
         {
@@ -680,9 +685,35 @@ public partial class MainWindow : Window
         ShowAboutPage = !ShowAboutPage;
     }
 
-    private async Task CheckForUpdatesAsync()
+    private void StartUpdateCheck()
     {
-        var result = await _updateService.CheckForUpdatesAsync(FileVersion);
+        _ = CheckForUpdatesInBackgroundAsync();
+    }
+
+    private async Task CheckForUpdatesInBackgroundAsync()
+    {
+        try
+        {
+            await CheckForUpdatesAsync(_updateCheckCancellationTokenSource.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("Update check canceled");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Update check failed unexpectedly");
+        }
+    }
+
+    private async Task CheckForUpdatesAsync(CancellationToken cancellationToken)
+    {
+        var result = await _updateService.CheckForUpdatesAsync(FileVersion, cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
         if (!result.IsUpdateAvailable)
         {
             Log.Debug("No update is available. CurrentVersion={CurrentVersion}", FileVersion);

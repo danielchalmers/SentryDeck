@@ -82,6 +82,9 @@ public sealed class UpdateService
         }
     }
 
+    /// <summary>
+    /// Parses a version string and returns null when the value is empty, invalid, or contains only unsupported suffix data.
+    /// </summary>
     internal static Version ParseVersion(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
