@@ -8,8 +8,10 @@ namespace SentryReplay;
 
 public static class PackageManager
 {
-    private const string FFmpegVersion = "7.1";
-    private static readonly string FFmpegBinFolderName = $"ffmpeg-{FFmpegVersion}-bin";
+    private const string FFmpegReleaseBranch = "8.1";
+    private static readonly string FFmpegBinFolderName = $"ffmpeg-{FFmpegReleaseBranch}-bin";
+
+    private static string FFmpegInstallRoot => AppContext.BaseDirectory;
 
     private static async Task<long> DownloadFile(string url, string savePath)
     {
@@ -64,12 +66,11 @@ public static class PackageManager
 
     public static async Task DownloadAndExtractFFmpeg()
     {
-        var outputFolder = Path.GetFullPath(".");
-        var destinationBinPath = Path.Combine(outputFolder, FFmpegBinFolderName);
+        var destinationBinPath = Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName);
         var url = RuntimeInformation.ProcessArchitecture switch
         {
-            Architecture.X64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-win64-gpl-shared-{FFmpegVersion}.zip",
-            Architecture.Arm64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegVersion}-latest-winarm64-gpl-shared-{FFmpegVersion}.zip",
+            Architecture.X64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegReleaseBranch}-latest-win64-gpl-shared-{FFmpegReleaseBranch}.zip",
+            Architecture.Arm64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegReleaseBranch}-latest-winarm64-gpl-shared-{FFmpegReleaseBranch}.zip",
             _ => throw new NotSupportedException($"FFmpeg download is not supported for {RuntimeInformation.ProcessArchitecture}."),
         };
         var tempPath = Path.GetTempFileName();
@@ -114,8 +115,7 @@ public static class PackageManager
 
     public static string FindFFmpegDirectory()
     {
-        var outputFolder = Path.GetFullPath(".");
-        var binPath = Path.Combine(outputFolder, FFmpegBinFolderName);
+        var binPath = Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName);
 
         if (File.Exists(Path.Combine(binPath, "ffmpeg.exe")))
         {

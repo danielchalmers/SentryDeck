@@ -6,10 +6,11 @@ using System.Windows.Input;
 using System.Windows.Navigation;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Flyleaf.FFmpeg;
+using FlyleafLib;
 using Microsoft.Win32;
 using SentryReplay.Data;
 using Serilog;
-using Unosquare.FFME;
 
 namespace SentryReplay;
 
@@ -24,6 +25,7 @@ public partial class MainWindow : Window
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
+    private bool _isFlyleafStarted;
 
     public MainWindow()
     {
@@ -109,6 +111,7 @@ public partial class MainWindow : Window
     public string PlayPauseIcon => IsPlaying ? "\u23F8" : "\u25B6";
 
     public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay;
+    public bool ShowVideoHosts => !ShowStatusOverlay;
 
     public bool HasError => ShowErrorOverlay;
 
@@ -139,6 +142,7 @@ public partial class MainWindow : Window
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
+    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(HasError))]
     private bool _showErrorOverlay;
@@ -159,6 +163,7 @@ public partial class MainWindow : Window
     [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
     [NotifyPropertyChangedFor(nameof(IsIndeterminateProgress))]
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
+    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(CanSeek))]
     private bool _isLoading;
@@ -201,10 +206,6 @@ public partial class MainWindow : Window
             _playerController = null;
         }
 
-        await FrontMediaElement.Close();
-        await BackMediaElement.Close();
-        await LeftMediaElement.Close();
-        await RightMediaElement.Close();
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
@@ -241,7 +242,7 @@ public partial class MainWindow : Window
         _isInitialized = true;
         Log.Debug("Initializing main window");
 
-        if (TryLoadFFmpeg())
+        if (TryStartFlyleaf())
         {
             InitializePlayer();
             LoadClips(CamStorage.FindCommonRoots());
@@ -252,8 +253,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool TryLoadFFmpeg()
+    private bool TryStartFlyleaf()
     {
+        if (_isFlyleafStarted)
+        {
+            return true;
+        }
+
         var directory = PackageManager.FindFFmpegDirectory();
         if (directory is null)
         {
@@ -263,22 +269,23 @@ public partial class MainWindow : Window
 
         try
         {
-            Library.FFmpegDirectory = directory;
-            var loaded = Library.LoadFFmpeg();
-            if (loaded)
+            Engine.Start(new EngineConfig
             {
-                Log.Information("Loaded FFmpeg. Directory={FFmpegDirectory}", directory);
-            }
-            else
-            {
-                Log.Error("FFmpeg load returned false. Directory={FFmpegDirectory}", directory);
-            }
+                FFmpegPath = directory,
+                FFmpegLoadProfile = LoadProfile.Main,
+                FFmpegLogLevel = Flyleaf.FFmpeg.LogLevel.Warn,
+                LogLevel = FlyleafLib.LogLevel.Warn,
+                LogOutput = ":debug",
+                UIRefresh = true,
+            });
 
-            return loaded;
+            _isFlyleafStarted = true;
+            Log.Information("Started Flyleaf. FFmpegDirectory={FFmpegDirectory}", directory);
+            return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to load FFmpeg. Directory={FFmpegDirectory}", directory);
+            Log.Error(ex, "Failed to start Flyleaf. FFmpegDirectory={FFmpegDirectory}", directory);
             return false;
         }
     }
@@ -289,10 +296,10 @@ public partial class MainWindow : Window
             return;
 
         _playerController = new VideoPlayerController(
-            new FfmeMediaPlayerAdapter(FrontMediaElement),
-            new FfmeMediaPlayerAdapter(BackMediaElement),
-            new FfmeMediaPlayerAdapter(LeftMediaElement),
-            new FfmeMediaPlayerAdapter(RightMediaElement));
+            new FlyleafMediaPlayerAdapter(FrontFlyleafHost, audioEnabled: true),
+            new FlyleafMediaPlayerAdapter(BackFlyleafHost, audioEnabled: false),
+            new FlyleafMediaPlayerAdapter(LeftFlyleafHost, audioEnabled: false),
+            new FlyleafMediaPlayerAdapter(RightFlyleafHost, audioEnabled: false));
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
@@ -435,7 +442,7 @@ public partial class MainWindow : Window
         {
             Log.Debug("Starting FFmpeg download workflow");
             await PackageManager.DownloadAndExtractFFmpeg();
-            if (TryLoadFFmpeg())
+            if (TryStartFlyleaf())
             {
                 InitializePlayer();
                 LoadClips(CamStorage.FindCommonRoots());

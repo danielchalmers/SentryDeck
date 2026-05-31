@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:ffme="clr-namespace:Unosquare.FFME;assembly=ffme.win"
+        xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
         xmlns:local="clr-namespace:SentryReplay"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         Title="Sentry Replay"
@@ -270,49 +270,38 @@
                 <!--  Video Container  -->
                 <Grid Grid.Row="0">
                     <!--  Video Player  -->
-                    <Viewbox Stretch="Uniform">
-                        <Grid Width="1280"
-                              Height="960"
-                              ClipToBounds="True"
-                              Background="Black">
-                            <ffme:MediaElement x:Name="FrontMediaElement"
-                                               LoadedBehavior="Manual"
-                                               UnloadedBehavior="Manual" />
+                    <Grid ClipToBounds="True"
+                          Background="Black"
+                          Visibility="{Binding ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
+                        <fl:FlyleafHost x:Name="FrontFlyleafHost" />
 
-                            <Border Width="280"
-                                    Height="210"
-                                    Margin="0,15,15,0"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Top"
-                                    Background="Black">
-                                <ffme:MediaElement x:Name="BackMediaElement"
-                                                   LoadedBehavior="Manual"
-                                                   UnloadedBehavior="Manual" />
-                            </Border>
+                        <Border Width="280"
+                                Height="210"
+                                Margin="0,15,15,0"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Background="Black">
+                            <fl:FlyleafHost x:Name="BackFlyleafHost" />
+                        </Border>
 
-                            <Border Width="280"
-                                    Height="210"
-                                    Margin="15,0,0,15"
-                                    HorizontalAlignment="Left"
-                                    VerticalAlignment="Bottom"
-                                    Background="Black">
-                                <ffme:MediaElement x:Name="LeftMediaElement"
-                                                   LoadedBehavior="Manual"
-                                                   UnloadedBehavior="Manual" />
-                            </Border>
+                        <Border Width="280"
+                                Height="210"
+                                Margin="15,0,0,15"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Bottom"
+                                Background="Black">
+                            <fl:FlyleafHost x:Name="LeftFlyleafHost" />
+                        </Border>
 
-                            <Border Width="280"
-                                    Height="210"
-                                    Margin="0,0,15,15"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Bottom"
-                                    Background="Black">
-                                <ffme:MediaElement x:Name="RightMediaElement"
-                                                   LoadedBehavior="Manual"
-                                                   UnloadedBehavior="Manual" />
-                            </Border>
-                        </Grid>
-                    </Viewbox>
+                        <Border Width="280"
+                                Height="210"
+                                Margin="0,0,15,15"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom"
+                                Background="Black">
+                            <fl:FlyleafHost x:Name="RightFlyleafHost" />
+                        </Border>
+                    </Grid>
 
                     <!--  Status Overlay (Loading/Rendering/Error)  -->
                     <Border Background="#80000000"
@@ -635,7 +624,7 @@
                                            FontSize="16"
                                            FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextControlForeground}" />
-                                <TextBlock Text="FFmpeg is required for playback. Use the Download FFmpeg button when prompted."
+                                <TextBlock Text="FFmpeg 8.1 shared binaries are required for playback. Use the Download FFmpeg button when prompted."
                                            Margin="0,8,0,0"
                                            Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
