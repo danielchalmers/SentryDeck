@@ -5,7 +5,7 @@ These instructions apply to Codex and other coding agents working in this repo.
 ## Scope
 - This repo is the **Sentry Replay** WPF desktop app (XAML + C#).
 - Preserve existing MVVM patterns, bindings, and XAML style conventions unless asked to refactor.
-- Media playback uses `FFME.Windows`; logging uses `Serilog`.
+- Media playback uses Flyleaf; logging uses `Serilog`.
 
 ## XAML
 - Keep XAML readable: group related properties and follow `Settings.XamlStyler`.

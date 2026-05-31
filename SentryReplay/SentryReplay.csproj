@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-    <PackageReference Include="FFME.Windows" Version="7.0.361-beta.1" />
     <PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.1" />
     <PackageReference Include="FlyleafLib" Version="3.10.4" />
     <PackageReference Include="FlyleafLib.Controls.WPF" Version="1.6.3" />
