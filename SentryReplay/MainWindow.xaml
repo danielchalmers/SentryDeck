@@ -617,6 +617,8 @@
                                                Foreground="{DynamicResource TextControlForeground}" />
                                     <TextBlock Text="Ctrl+Left/Right: Previous/Next clip"
                                                Foreground="{DynamicResource TextControlForeground}" />
+                                    <TextBlock Text="Ctrl+F or F3: Focus Search clips"
+                                               Foreground="{DynamicResource TextControlForeground}" />
                                 </StackPanel>
 
                                 <TextBlock Text="Playback notes"

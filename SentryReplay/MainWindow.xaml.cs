@@ -488,8 +488,17 @@ public partial class MainWindow : Window
 
     private async Task<bool> HandleKeyDownAsync(Key key, ModifierKeys modifiers)
     {
+        if ((key == Key.F && modifiers == ModifierKeys.Control) ||
+            (key == Key.F3 && modifiers == ModifierKeys.None))
+        {
+            FocusSearchBox();
+            return true;
+        }
+
         if (_playerController is null)
+        {
             return false;
+        }
 
         switch (key)
         {
@@ -528,6 +537,13 @@ public partial class MainWindow : Window
         }
 
         return false;
+    }
+
+    private void FocusSearchBox()
+    {
+        ShowAboutPage = false;
+        SearchBox.Focus();
+        SearchBox.SelectAll();
     }
 
     private void BeginSeek()
