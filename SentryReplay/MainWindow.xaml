@@ -173,6 +173,23 @@
                             <Setter Property="Margin" Value="4" />
                             <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
                             <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+                            <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                            <Setter Property="ContextMenu">
+                                <Setter.Value>
+                                    <ContextMenu>
+                                        <MenuItem Header="Open Clip Folder"
+                                                  Command="{Binding PlacementTarget.Tag.OpenClipFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                        <Separator />
+                                        <MenuItem Header="Copy Folder Path"
+                                                  Command="{Binding PlacementTarget.Tag.CopyClipPathCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                        <MenuItem Header="Copy Clip Name"
+                                                  Command="{Binding PlacementTarget.Tag.CopyClipNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    </ContextMenu>
+                                </Setter.Value>
+                            </Setter>
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
