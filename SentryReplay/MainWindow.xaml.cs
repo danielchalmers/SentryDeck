@@ -32,31 +32,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = this;
-
-        OpenFolderCommand = new AsyncRelayCommand(OpenFolderAsync);
-        PlayPauseCommand = new AsyncRelayCommand(TogglePlayPauseAsync);
-        StopCommand = new AsyncRelayCommand(StopAsync);
-        PreviousCommand = new AsyncRelayCommand(PreviousAsync);
-        NextCommand = new AsyncRelayCommand(NextAsync);
-        DownloadFFmpegCommand = new AsyncRelayCommand(DownloadFFmpegAsync);
-        DismissErrorCommand = new RelayCommand(ClearError);
-        ToggleAboutCommand = new RelayCommand(ToggleAbout);
-        OpenClipFolderCommand = new RelayCommand<CamClip>(OpenClipFolder, CanUseClip);
-        CopyClipPathCommand = new RelayCommand<CamClip>(CopyClipPath, CanUseClip);
-        CopyClipNameCommand = new RelayCommand<CamClip>(CopyClipName, CanUseClip);
     }
-
-    public IAsyncRelayCommand OpenFolderCommand { get; }
-    public IAsyncRelayCommand PlayPauseCommand { get; }
-    public IAsyncRelayCommand StopCommand { get; }
-    public IAsyncRelayCommand PreviousCommand { get; }
-    public IAsyncRelayCommand NextCommand { get; }
-    public IAsyncRelayCommand DownloadFFmpegCommand { get; }
-    public IRelayCommand DismissErrorCommand { get; }
-    public IRelayCommand ToggleAboutCommand { get; }
-    public IRelayCommand<CamClip> OpenClipFolderCommand { get; }
-    public IRelayCommand<CamClip> CopyClipPathCommand { get; }
-    public IRelayCommand<CamClip> CopyClipNameCommand { get; }
 
     public bool ShowMainContent => !ShowAboutPage;
 
@@ -375,6 +351,7 @@ public partial class MainWindow : Window
             totalStopwatch.ElapsedMilliseconds);
     }
 
+    [RelayCommand]
     private async Task OpenFolderAsync()
     {
         Log.Debug("Opening folder picker");
@@ -405,7 +382,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task TogglePlayPauseAsync()
+    [RelayCommand]
+    private async Task PlayPauseAsync()
     {
         if (_playerController is null)
             return;
@@ -413,6 +391,7 @@ public partial class MainWindow : Window
         await _playerController.TogglePlayPauseAsync();
     }
 
+    [RelayCommand]
     private async Task StopAsync()
     {
         if (_playerController is null)
@@ -422,6 +401,7 @@ public partial class MainWindow : Window
         SeekPosition = 0;
     }
 
+    [RelayCommand]
     private async Task PreviousAsync()
     {
         if (_playerController is null)
@@ -431,6 +411,7 @@ public partial class MainWindow : Window
         SelectedClip = _playerController.CurrentClip;
     }
 
+    [RelayCommand]
     private async Task NextAsync()
     {
         if (_playerController is null)
@@ -440,6 +421,7 @@ public partial class MainWindow : Window
         SelectedClip = _playerController.CurrentClip;
     }
 
+    [RelayCommand]
     private async Task DownloadFFmpegAsync()
     {
         IsLoading = true;
@@ -688,6 +670,12 @@ public partial class MainWindow : Window
         ErrorDetails = null;
     }
 
+    [RelayCommand]
+    private void DismissError()
+    {
+        ClearError();
+    }
+
     private void ShowFFmpegMissingError()
     {
         Log.Debug("Showing FFmpeg missing prompt");
@@ -695,6 +683,7 @@ public partial class MainWindow : Window
         ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
     }
 
+    [RelayCommand]
     private void ToggleAbout()
     {
         ShowAboutPage = !ShowAboutPage;
@@ -705,6 +694,7 @@ public partial class MainWindow : Window
         return clip is not null;
     }
 
+    [RelayCommand(CanExecute = nameof(CanUseClip))]
     private void OpenClipFolder(CamClip clip)
     {
         if (clip is null)
@@ -724,6 +714,7 @@ public partial class MainWindow : Window
         });
     }
 
+    [RelayCommand(CanExecute = nameof(CanUseClip))]
     private void CopyClipPath(CamClip clip)
     {
         if (clip is null)
@@ -734,6 +725,7 @@ public partial class MainWindow : Window
         Clipboard.SetText(clip.FullPath);
     }
 
+    [RelayCommand(CanExecute = nameof(CanUseClip))]
     private void CopyClipName(CamClip clip)
     {
         if (clip is null)
