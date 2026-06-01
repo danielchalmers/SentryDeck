@@ -414,6 +414,7 @@
                             <Slider x:Name="SeekSlider"
                                     Grid.Column="1"
                                     IsEnabled="{Binding CanSeek}"
+                                    IsMoveToPointEnabled="True"
                                     Maximum="1"
                                     Minimum="0"
                                     PreviewMouseDown="SeekSlider_PreviewMouseDown"
