@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -40,6 +41,9 @@ public partial class MainWindow : Window
         DownloadFFmpegCommand = new AsyncRelayCommand(DownloadFFmpegAsync);
         DismissErrorCommand = new RelayCommand(ClearError);
         ToggleAboutCommand = new RelayCommand(ToggleAbout);
+        OpenClipFolderCommand = new RelayCommand<CamClip>(OpenClipFolder, CanUseClip);
+        CopyClipPathCommand = new RelayCommand<CamClip>(CopyClipPath, CanUseClip);
+        CopyClipNameCommand = new RelayCommand<CamClip>(CopyClipName, CanUseClip);
     }
 
     public IAsyncRelayCommand OpenFolderCommand { get; }
@@ -50,6 +54,9 @@ public partial class MainWindow : Window
     public IAsyncRelayCommand DownloadFFmpegCommand { get; }
     public IRelayCommand DismissErrorCommand { get; }
     public IRelayCommand ToggleAboutCommand { get; }
+    public IRelayCommand<CamClip> OpenClipFolderCommand { get; }
+    public IRelayCommand<CamClip> CopyClipPathCommand { get; }
+    public IRelayCommand<CamClip> CopyClipNameCommand { get; }
 
     public bool ShowMainContent => !ShowAboutPage;
 
@@ -675,6 +682,50 @@ public partial class MainWindow : Window
     private void ToggleAbout()
     {
         ShowAboutPage = !ShowAboutPage;
+    }
+
+    private static bool CanUseClip(CamClip clip)
+    {
+        return clip is not null;
+    }
+
+    private void OpenClipFolder(CamClip clip)
+    {
+        if (clip is null)
+        {
+            return;
+        }
+
+        if (!Directory.Exists(clip.FullPath))
+        {
+            ShowError("Clip Folder Not Found", $"Could not find folder:\n{clip.FullPath}");
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(clip.FullPath)
+        {
+            UseShellExecute = true,
+        });
+    }
+
+    private void CopyClipPath(CamClip clip)
+    {
+        if (clip is null)
+        {
+            return;
+        }
+
+        Clipboard.SetText(clip.FullPath);
+    }
+
+    private void CopyClipName(CamClip clip)
+    {
+        if (clip is null)
+        {
+            return;
+        }
+
+        Clipboard.SetText(clip.Name);
     }
 
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
