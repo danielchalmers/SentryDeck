@@ -16,12 +16,9 @@
     <ProjectReference Include="..\SentryReplay.Streaming\SentryReplay.Streaming.csproj" />
     <ProjectReference Include="..\SentryReplay\SentryReplay.csproj" />
 
-    <Using Include="Xunit" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Using Include="SentryReplay" />
     <Using Include="Shouldly" />
+    <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
