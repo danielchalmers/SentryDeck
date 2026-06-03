@@ -602,19 +602,12 @@
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Grid>
-                                <StackPanel Margin="0,0,0,16"
-                                            Orientation="Horizontal">
-                                    <Button Content="Check again"
-                                            Command="{Binding CheckForUpdatesCommand}"
-                                            Padding="12,8"
-                                            Style="{StaticResource PlayerButton}" />
-                                    <TextBlock Margin="12,8,0,0">
-                                        <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
-                                                   RequestNavigate="Hyperlink_RequestNavigate">
-                                            Open releases
-                                        </Hyperlink>
-                                    </TextBlock>
-                                </StackPanel>
+                                <TextBlock Margin="0,0,0,16">
+                                    <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
+                                               RequestNavigate="Hyperlink_RequestNavigate">
+                                        Open releases
+                                    </Hyperlink>
+                                </TextBlock>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />

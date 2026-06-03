@@ -46,21 +46,17 @@ public partial class MainWindow : Window
     public string LatestVersionText => LatestRelease is null ? "Unknown" : FormatVersion(LatestRelease.Version);
     public string LatestReleaseUrl => LatestRelease?.ReleaseUrl ?? UpdateService.ReleasesPageUrl;
     public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
-    public string UpdateStatusTitle => IsCheckingForUpdates
-        ? "Checking for updates"
-        : IsUpdateAvailable
-            ? "Update available"
-            : HasCheckedForUpdates
-                ? "You're up to date"
-                : "Updates";
+    public string UpdateStatusTitle => IsUpdateAvailable
+        ? "Update available"
+        : HasCheckedForUpdates
+            ? "You're up to date"
+            : "Updates";
 
-    public string UpdateStatusDetails => IsCheckingForUpdates
-        ? "Looking for the latest Sentry Replay release."
-        : IsUpdateAvailable
-            ? $"Version {LatestVersionText} is available."
-            : HasCheckedForUpdates
-                ? "No newer release was found."
-                : "Updates are checked after launch.";
+    public string UpdateStatusDetails => IsUpdateAvailable
+        ? $"Version {LatestVersionText} is available."
+        : HasCheckedForUpdates
+            ? "No newer release was found."
+            : "Updates are checked after launch.";
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -204,11 +200,6 @@ public partial class MainWindow : Window
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
-    private bool _isCheckingForUpdates;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
     private bool _hasCheckedForUpdates;
 
     [ObservableProperty]
@@ -268,7 +259,7 @@ public partial class MainWindow : Window
         _isInitialized = true;
         Log.Debug("Initializing main window");
 
-        _ = CheckForUpdatesAsync();
+        _ = UpdateLatestReleaseAsync();
 
         if (TryStartFlyleaf())
         {
@@ -751,28 +742,18 @@ public partial class MainWindow : Window
         ShowAboutPage = !ShowAboutPage;
     }
 
-    [RelayCommand(AllowConcurrentExecutions = false)]
-    private async Task CheckForUpdatesAsync()
+    private async Task UpdateLatestReleaseAsync()
     {
-        IsCheckingForUpdates = true;
+        var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
+        LatestRelease = result.LatestRelease;
+        IsUpdateAvailable = result.IsUpdateAvailable;
+        HasCheckedForUpdates = true;
 
-        try
-        {
-            var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
-            LatestRelease = result.LatestRelease;
-            IsUpdateAvailable = result.IsUpdateAvailable;
-            HasCheckedForUpdates = true;
-
-            Log.Information(
-                "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
-                FormatVersion(CurrentVersion),
-                LatestVersionText,
-                IsUpdateAvailable);
-        }
-        finally
-        {
-            IsCheckingForUpdates = false;
-        }
+        Log.Information(
+            "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
+            FormatVersion(CurrentVersion),
+            LatestVersionText,
+            IsUpdateAvailable);
     }
 
     private static bool CanUseClip(CamClip clip)
