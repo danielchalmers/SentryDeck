@@ -1,16 +1,9 @@
 name: Release and deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number for the app'
-        required: true
-        default: ''
-      updateRelease:
-        description: 'Update existing release'
-        required: true
-        default: 'false'
+  push:
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -20,27 +13,17 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5
-    
+
       - uses: ./.github/actions/full-build
         with:
-          version: ${{ github.event.inputs.version }}
+          version: ${{ github.ref_name }}
 
-      # - name: Remove existing release with the same tag
-      #   if: ${{ inputs.updateRelease == 'true' }}
-      #   run: |
-      #     gh release delete "v${{ github.event.inputs.version }}" --yes || echo "Release not found for this tag"
-
-      - name: Create GitHub release
+      # The release is created alongside the tag in GitHub; this workflow only replaces its artifacts.
+      - name: Attach release artifacts
         uses: ncipollo/release-action@v1.21.0
-        env:
-          GH_TOKEN: ${{ github.token }}
         with:
-          tag: "v${{ github.event.inputs.version }}"
-          artifacts: |
-            publish/*.zip
-            publish/*.msi
-          generateReleaseNotes: true
-          prerelease: ${{ contains(github.event.inputs.version, 'preview') }}
-          allowUpdates: ${{ github.event.inputs.updateRelease }}
+          tag: ${{ github.ref_name }}
+          artifacts: "publish/*.zip,publish/*.msi"
+          allowUpdates: true
           removeArtifacts: true
           omitBodyDuringUpdate: true
