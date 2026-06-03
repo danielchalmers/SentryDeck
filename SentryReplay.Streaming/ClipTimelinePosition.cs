@@ -1,4 +1,3 @@
-﻿
 namespace SentryReplay;
 
 public sealed record class ClipTimelinePosition(

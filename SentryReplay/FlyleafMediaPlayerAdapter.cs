@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Windows.Media;
 using FlyleafLib;
 using FlyleafLib.Controls.WPF;

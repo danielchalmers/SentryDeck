@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 public sealed class MediaPlayerFailedEventArgs : EventArgs
 {

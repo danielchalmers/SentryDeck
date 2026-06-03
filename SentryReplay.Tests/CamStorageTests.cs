@@ -1,6 +1,3 @@
-﻿using SentryReplay;
-using Shouldly;
-
 namespace SentryReplay.Tests;
 
 public static class CamStorageTests

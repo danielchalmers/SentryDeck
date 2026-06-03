@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 /// <summary>
 /// The root folder.
