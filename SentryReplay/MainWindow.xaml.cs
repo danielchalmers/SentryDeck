@@ -1,6 +1,7 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -22,6 +23,7 @@ namespace SentryReplay;
 public partial class MainWindow : Window
 {
     private readonly List<CamClip> AllClips = [];
+    private readonly UpdateService _updateService = new();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
@@ -35,10 +37,30 @@ public partial class MainWindow : Window
 
     public bool ShowMainContent => !ShowAboutPage;
 
-    public string FileVersion => FileVersionInfo.GetVersionInfo(Environment.ProcessPath)?.FileVersion ?? "Unknown";
+    public Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+    public string FileVersion => FormatVersion(CurrentVersion);
     public string RuntimeDescription => $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})";
     public string OsDescription => RuntimeInformation.OSDescription;
     public string ExecutablePath => Environment.ProcessPath;
+    public bool HasUpdateBadge => IsUpdateAvailable;
+    public string LatestVersionText => LatestRelease is null ? "Unknown" : FormatVersion(LatestRelease.Version);
+    public string LatestReleaseUrl => LatestRelease?.ReleaseUrl ?? UpdateService.ReleasesPageUrl;
+    public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
+    public string UpdateStatusTitle => IsCheckingForUpdates
+        ? "Checking for updates"
+        : IsUpdateAvailable
+            ? "Update available"
+            : HasCheckedForUpdates
+                ? "You're up to date"
+                : "Updates";
+
+    public string UpdateStatusDetails => IsCheckingForUpdates
+        ? "Looking for the latest Sentry Replay release."
+        : IsUpdateAvailable
+            ? $"Version {LatestVersionText} is available."
+            : HasCheckedForUpdates
+                ? "No newer release was found."
+                : "Updates are checked after launch.";
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -173,6 +195,28 @@ public partial class MainWindow : Window
     [ObservableProperty]
     private double _selectedPlaybackSpeed = 1.0;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private bool _isUpdateAvailable;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private bool _isCheckingForUpdates;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private bool _hasCheckedForUpdates;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LatestVersionText))]
+    [NotifyPropertyChangedFor(nameof(LatestReleaseUrl))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private UpdateRelease _latestRelease;
+
     private async void Window_ContentRendered(object sender, EventArgs e)
     {
         await InitializeAsync();
@@ -223,6 +267,8 @@ public partial class MainWindow : Window
 
         _isInitialized = true;
         Log.Debug("Initializing main window");
+
+        _ = CheckForUpdatesAsync();
 
         if (TryStartFlyleaf())
         {
@@ -652,6 +698,23 @@ public partial class MainWindow : Window
             : ts.ToString(@"m\:ss");
     }
 
+    private static string FormatVersion(Version version)
+    {
+        if (version is null)
+        {
+            return "Unknown";
+        }
+
+        if (version.Revision >= 0)
+        {
+            return version.ToString(4);
+        }
+
+        return version.Build >= 0
+            ? version.ToString(3)
+            : version.ToString(2);
+    }
+
     private void ShowError(string title, string details, bool canDismiss = true)
     {
         ErrorTitle = title;
@@ -686,6 +749,30 @@ public partial class MainWindow : Window
     private void ToggleAbout()
     {
         ShowAboutPage = !ShowAboutPage;
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task CheckForUpdatesAsync()
+    {
+        IsCheckingForUpdates = true;
+
+        try
+        {
+            var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
+            LatestRelease = result.LatestRelease;
+            IsUpdateAvailable = result.IsUpdateAvailable;
+            HasCheckedForUpdates = true;
+
+            Log.Information(
+                "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
+                FormatVersion(CurrentVersion),
+                LatestVersionText,
+                IsUpdateAvailable);
+        }
+        finally
+        {
+            IsCheckingForUpdates = false;
+        }
     }
 
     private static bool CanUseClip(CamClip clip)

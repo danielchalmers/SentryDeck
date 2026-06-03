@@ -262,11 +262,20 @@
                             Command="{Binding OpenFolderCommand}"
                             Padding="12"
                             Style="{StaticResource PlayerButton}" />
-                    <Button Content="ℹ️ About / Help"
-                            Command="{Binding ToggleAboutCommand}"
-                            Margin="0,8,0,0"
-                            Padding="12"
-                            Style="{StaticResource PlayerButton}" />
+                    <Grid Margin="0,8,0,0">
+                        <Button Content="ℹ️ About / Help"
+                                Command="{Binding ToggleAboutCommand}"
+                                Padding="12"
+                                Style="{StaticResource PlayerButton}" />
+                        <Border Width="9"
+                                Height="9"
+                                Margin="0,8,8,0"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                CornerRadius="4.5"
+                                Visibility="{Binding HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
+                    </Grid>
                 </StackPanel>
             </Grid>
 
@@ -555,71 +564,116 @@
                                            Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock Text="App info"
-                                       Margin="0,16,0,0"
-                                       FontSize="16"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextControlForeground}" />
-                            <Grid Margin="0,8,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="8" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0"
-                                           Grid.Column="0"
-                                           Text="Version:"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                           TextAlignment="Right" />
-                                <TextBlock Grid.Row="0"
-                                           Grid.Column="2"
-                                           Text="{Binding FileVersion}"
-                                           Foreground="{DynamicResource TextControlForeground}" />
-                                <TextBlock Grid.Row="1"
-                                           Grid.Column="0"
-                                           Text="Runtime:"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                           TextAlignment="Right" />
-                                <TextBlock Grid.Row="1"
-                                           Grid.Column="2"
-                                           Text="{Binding RuntimeDescription}"
-                                           Foreground="{DynamicResource TextControlForeground}" />
-                                <TextBlock Grid.Row="2"
-                                           Grid.Column="0"
-                                           Text="OS:"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                           TextAlignment="Right" />
-                                <TextBlock Grid.Row="2"
-                                           Grid.Column="2"
-                                           Text="{Binding OsDescription}"
-                                           Foreground="{DynamicResource TextControlForeground}" />
-                                <TextBlock Grid.Row="3"
-                                           Grid.Column="0"
-                                           Text="Exe:"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                           TextAlignment="Right" />
-                                <TextBlock Grid.Row="3"
-                                           Grid.Column="2"
-                                           Text="{Binding ExecutablePath}"
-                                           Foreground="{DynamicResource TextControlForeground}"
-                                           TextWrapping="Wrap" />
-                            </Grid>
                         </StackPanel>
                     </Border>
 
                     <StackPanel Grid.Column="1"
                                 Margin="12,0,0,0">
                         <Border Padding="20"
+                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock Text="Updates"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextControlForeground}" />
+                                <Grid Margin="0,8,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0"
+                                            Width="12"
+                                            Height="12"
+                                            Margin="0,4,0,0"
+                                            VerticalAlignment="Top"
+                                            Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                            CornerRadius="6"
+                                            Visibility="{Binding HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="{Binding UpdateStatusTitle}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextControlForeground}"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding UpdateStatusDetails}"
+                                                   Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource TextControlForeground}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel Margin="0,0,0,16"
+                                            Orientation="Horizontal">
+                                    <Button Content="Check again"
+                                            Command="{Binding CheckForUpdatesCommand}"
+                                            Padding="12,8"
+                                            Style="{StaticResource PlayerButton}" />
+                                    <TextBlock Margin="12,8,0,0">
+                                        <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
+                                                   RequestNavigate="Hyperlink_RequestNavigate">
+                                            Open releases
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="8" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0"
+                                               Grid.Column="0"
+                                               Text="Version:"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                               TextAlignment="Right" />
+                                    <TextBlock Grid.Row="0"
+                                               Grid.Column="2"
+                                               Text="{Binding FileVersion}"
+                                               Foreground="{DynamicResource TextControlForeground}" />
+                                    <TextBlock Grid.Row="1"
+                                               Grid.Column="0"
+                                               Text="Runtime:"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                               TextAlignment="Right" />
+                                    <TextBlock Grid.Row="1"
+                                               Grid.Column="2"
+                                               Text="{Binding RuntimeDescription}"
+                                               Foreground="{DynamicResource TextControlForeground}" />
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="0"
+                                               Text="OS:"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                               TextAlignment="Right" />
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="2"
+                                               Text="{Binding OsDescription}"
+                                               Foreground="{DynamicResource TextControlForeground}" />
+                                    <TextBlock Grid.Row="3"
+                                               Grid.Column="0"
+                                               Text="Exe:"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                               TextAlignment="Right" />
+                                    <TextBlock Grid.Row="3"
+                                               Grid.Column="2"
+                                               Text="{Binding ExecutablePath}"
+                                               Foreground="{DynamicResource TextControlForeground}"
+                                               TextWrapping="Wrap" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                Padding="20"
                                 Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
                                 CornerRadius="8">
                             <StackPanel>
@@ -674,12 +728,6 @@
                                         <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay/issues"
                                                    RequestNavigate="Hyperlink_RequestNavigate">
                                             🐛 Report a Bug / Request a Feature
-                                        </Hyperlink>
-                                    </TextBlock>
-                                    <TextBlock>
-                                        <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay/releases"
-                                                   RequestNavigate="Hyperlink_RequestNavigate">
-                                            🚀 Check for Updates
                                         </Hyperlink>
                                     </TextBlock>
                                 </StackPanel>
