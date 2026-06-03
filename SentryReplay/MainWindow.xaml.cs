@@ -515,6 +515,7 @@ public partial class MainWindow : Window
         Sidebar.FocusSearchBox();
     }
 
+    [RelayCommand]
     internal void BeginSeek()
     {
         if (CanSeek)
@@ -523,6 +524,7 @@ public partial class MainWindow : Window
         }
     }
 
+    [RelayCommand]
     internal async Task EndSeekAsync()
     {
         if (_playerController is null || !CanSeek)
@@ -535,6 +537,7 @@ public partial class MainWindow : Window
         _isSeeking = false;
     }
 
+    [RelayCommand]
     internal void UpdateSeekTextDuringDrag()
     {
         if (_isSeeking)

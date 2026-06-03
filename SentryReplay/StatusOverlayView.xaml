@@ -4,10 +4,11 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:SentryReplay"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             d:DataContext="{d:DesignInstance Type=local:MainWindow}"
+             d:DataContext="{d:DesignInstance Type=local:StatusOverlayView}"
              mc:Ignorable="d">
 
-    <Border Background="#80000000"
+    <Border x:Name="Root"
+            Background="#80000000"
             Visibility="{Binding ShowStatusOverlay, Converter={local:BoolToVisibilityConverter}}">
         <StackPanel MaxWidth="500"
                     HorizontalAlignment="Center"

@@ -5,10 +5,11 @@
              xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
              xmlns:local="clr-namespace:SentryReplay"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             d:DataContext="{d:DesignInstance Type=local:MainWindow}"
+             d:DataContext="{d:DesignInstance Type=local:VideoPlayerView}"
              mc:Ignorable="d">
 
-    <Grid Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}">
+    <Grid x:Name="Root"
+          Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -50,7 +51,18 @@
                 </Border>
             </Grid>
 
-            <local:StatusOverlayView />
+            <local:StatusOverlayView CanDismissError="{Binding CanDismissError}"
+                                     DismissErrorCommand="{Binding DismissErrorCommand}"
+                                     DownloadFFmpegCommand="{Binding DownloadFFmpegCommand}"
+                                     ErrorDetails="{Binding ErrorDetails}"
+                                     ErrorTitle="{Binding ErrorTitle}"
+                                     IsIndeterminateProgress="{Binding IsIndeterminateProgress}"
+                                     IsLoading="{Binding IsLoading}"
+                                     LoadingStatusText="{Binding LoadingStatusText}"
+                                     RenderProgressPercent="{Binding RenderProgressPercent}"
+                                     ShowErrorOverlay="{Binding ShowErrorOverlay}"
+                                     ShowFFmpegDownloadButton="{Binding ShowFFmpegDownloadButton}"
+                                     ShowStatusOverlay="{Binding ShowStatusOverlay}" />
 
             <!--  No Clip Selected  -->
             <TextBlock Text="Select a clip to play"

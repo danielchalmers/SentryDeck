@@ -24,7 +24,15 @@
             </Grid.ColumnDefinitions>
 
             <local:SidebarView x:Name="Sidebar"
-                               Grid.Column="0" />
+                               Grid.Column="0"
+                               CopyClipNameCommand="{Binding CopyClipNameCommand}"
+                               CopyClipPathCommand="{Binding CopyClipPathCommand}"
+                               FilteredClips="{Binding FilteredClips}"
+                               FilterText="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               OpenClipFolderCommand="{Binding OpenClipFolderCommand}"
+                               OpenFolderCommand="{Binding OpenFolderCommand}"
+                               SelectedClip="{Binding SelectedClip, Mode=TwoWay}"
+                               ToggleAboutCommand="{Binding ToggleAboutCommand}" />
 
             <GridSplitter Grid.Column="1"
                           Width="8"
@@ -32,9 +40,46 @@
                           Background="{DynamicResource ControlStrokeColorDefaultBrush}" />
 
             <local:VideoPlayerView x:Name="PlayerView"
-                                   Grid.Column="2" />
+                                   Grid.Column="2"
+                                   BeginSeekCommand="{Binding BeginSeekCommand}"
+                                   CanDismissError="{Binding CanDismissError}"
+                                   CanGoNext="{Binding CanGoNext}"
+                                   CanGoPrevious="{Binding CanGoPrevious}"
+                                   CanPlayPause="{Binding CanPlayPause}"
+                                   CanSeek="{Binding CanSeek}"
+                                   CanStop="{Binding CanStop}"
+                                   DismissErrorCommand="{Binding DismissErrorCommand}"
+                                   DownloadFFmpegCommand="{Binding DownloadFFmpegCommand}"
+                                   DurationText="{Binding DurationText}"
+                                   EndSeekCommand="{Binding EndSeekCommand}"
+                                   ErrorDetails="{Binding ErrorDetails}"
+                                   ErrorTitle="{Binding ErrorTitle}"
+                                   HasNoClipSelected="{Binding HasNoClipSelected}"
+                                   IsIndeterminateProgress="{Binding IsIndeterminateProgress}"
+                                   IsLoading="{Binding IsLoading}"
+                                   LoadingStatusText="{Binding LoadingStatusText}"
+                                   NextCommand="{Binding NextCommand}"
+                                   PlaybackSpeedOptions="{Binding PlaybackSpeedOptions}"
+                                   PlayPauseCommand="{Binding PlayPauseCommand}"
+                                   PlayPauseIcon="{Binding PlayPauseIcon}"
+                                   PositionText="{Binding PositionText}"
+                                   PreviousCommand="{Binding PreviousCommand}"
+                                   RenderProgressPercent="{Binding RenderProgressPercent}"
+                                   SeekPosition="{Binding SeekPosition, Mode=TwoWay}"
+                                   SelectedPlaybackSpeed="{Binding SelectedPlaybackSpeed, Mode=TwoWay}"
+                                   ShowErrorOverlay="{Binding ShowErrorOverlay}"
+                                   ShowFFmpegDownloadButton="{Binding ShowFFmpegDownloadButton}"
+                                   ShowStatusOverlay="{Binding ShowStatusOverlay}"
+                                   ShowVideoHosts="{Binding ShowVideoHosts}"
+                                   StopCommand="{Binding StopCommand}"
+                                   UpdateSeekTextDuringDragCommand="{Binding UpdateSeekTextDuringDragCommand}" />
         </Grid>
 
-        <local:AboutView Visibility="{Binding ShowAboutPage, Converter={local:BoolToVisibilityConverter}}" />
+        <local:AboutView ExecutablePath="{Binding ExecutablePath}"
+                         FileVersion="{Binding FileVersion}"
+                         OsDescription="{Binding OsDescription}"
+                         RuntimeDescription="{Binding RuntimeDescription}"
+                         ToggleAboutCommand="{Binding ToggleAboutCommand}"
+                         Visibility="{Binding ShowAboutPage, Converter={local:BoolToVisibilityConverter}}" />
     </Grid>
 </Window>
