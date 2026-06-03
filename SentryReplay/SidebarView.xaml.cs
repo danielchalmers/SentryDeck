@@ -1,6 +1,6 @@
 ﻿using System.Windows.Controls;
 
-namespace SentryReplay.Controls;
+namespace SentryReplay;
 
 /// <summary>
 /// Interaction logic for SidebarView.xaml

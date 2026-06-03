@@ -1,7 +1,6 @@
 ﻿<Window x:Class="SentryReplay.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:controls="clr-namespace:SentryReplay.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:local="clr-namespace:SentryReplay"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -24,18 +23,18 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <controls:SidebarView x:Name="Sidebar"
-                                  Grid.Column="0" />
+            <local:SidebarView x:Name="Sidebar"
+                               Grid.Column="0" />
 
             <GridSplitter Grid.Column="1"
                           Width="8"
                           HorizontalAlignment="Stretch"
                           Background="{DynamicResource ControlStrokeColorDefaultBrush}" />
 
-            <controls:VideoPlayerView x:Name="PlayerView"
-                                      Grid.Column="2" />
+            <local:VideoPlayerView x:Name="PlayerView"
+                                   Grid.Column="2" />
         </Grid>
 
-        <controls:AboutHelpView Visibility="{Binding ShowAboutPage, Converter={local:BoolToVisibilityConverter}}" />
+        <local:AboutView Visibility="{Binding ShowAboutPage, Converter={local:BoolToVisibilityConverter}}" />
     </Grid>
 </Window>

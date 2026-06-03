@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using FlyleafLib.Controls.WPF;
 
-namespace SentryReplay.Controls;
+namespace SentryReplay;
 
 /// <summary>
 /// Interaction logic for VideoPlayerView.xaml

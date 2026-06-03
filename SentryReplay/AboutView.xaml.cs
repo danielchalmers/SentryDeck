@@ -2,14 +2,14 @@
 using System.Windows.Controls;
 using System.Windows.Navigation;
 
-namespace SentryReplay.Controls;
+namespace SentryReplay;
 
 /// <summary>
-/// Interaction logic for AboutHelpView.xaml
+/// Interaction logic for AboutView.xaml
 /// </summary>
-public partial class AboutHelpView : UserControl
+public partial class AboutView : UserControl
 {
-    public AboutHelpView()
+    public AboutView()
     {
         InitializeComponent();
     }
