@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace SentryReplay.Data;
+namespace SentryReplay;
 
 /// <summary>
 /// The <c>event.json</c> metadata for a <see cref="CamClip"/>.

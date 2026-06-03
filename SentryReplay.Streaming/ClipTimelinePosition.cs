@@ -1,5 +1,4 @@
-﻿using SentryReplay.Data;
-
+﻿
 namespace SentryReplay;
 
 public sealed record class ClipTimelinePosition(

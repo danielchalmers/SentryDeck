@@ -1,6 +1,5 @@
 ﻿using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
-using SentryReplay.Data;
 using Serilog;
 
 namespace SentryReplay;

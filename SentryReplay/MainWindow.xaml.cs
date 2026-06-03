@@ -10,7 +10,6 @@ using CommunityToolkit.Mvvm.Input;
 using Flyleaf.FFmpeg;
 using FlyleafLib;
 using Microsoft.Win32;
-using SentryReplay.Data;
 using Serilog;
 
 namespace SentryReplay;
