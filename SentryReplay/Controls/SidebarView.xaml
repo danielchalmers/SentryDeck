@@ -1,0 +1,162 @@
+﻿<UserControl x:Class="SentryReplay.Controls.SidebarView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:SentryReplay"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=local:MainWindow}"
+             mc:Ignorable="d">
+
+    <Grid Background="{DynamicResource ControlAltFillColorSecondaryBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!--  Search box  -->
+        <Border Grid.Row="0"
+                Margin="8,8,8,4"
+                Background="{DynamicResource TextControlBackground}">
+            <Grid>
+                <TextBox x:Name="SearchBox"
+                         Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                         Padding="12,10"
+                         VerticalContentAlignment="Center"
+                         FontSize="14"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="{DynamicResource TextControlForeground}" />
+                <TextBlock Text="Search clips..."
+                           Padding="12,10"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                           IsHitTestVisible="False">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Hidden" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding FilterText}"
+                                             Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+        </Border>
+
+        <!--  Clip list  -->
+        <ListBox x:Name="ClipListBox"
+                 Grid.Row="1"
+                 Margin="4,0"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ItemsSource="{Binding FilteredClips}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 SelectedItem="{Binding SelectedClip, Mode=TwoWay}">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="8" />
+                    <Setter Property="Margin" Value="4" />
+                    <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+                    <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                    <Setter Property="ContextMenu">
+                        <Setter.Value>
+                            <ContextMenu>
+                                <MenuItem Header="Open Clip Folder"
+                                          Command="{Binding PlacementTarget.Tag.OpenClipFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                          CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                <Separator />
+                                <MenuItem Header="Copy Folder Path"
+                                          Command="{Binding PlacementTarget.Tag.CopyClipPathCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                          CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                <MenuItem Header="Copy Clip Name"
+                                          Command="{Binding PlacementTarget.Tag.CopyClipNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                          CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                            </ContextMenu>
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border Padding="{TemplateBinding Padding}"
+                                        Background="{TemplateBinding Background}"
+                                        CornerRadius="6">
+                                    <ContentPresenter />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Height="72">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="96" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!--  Thumbnail  -->
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource ControlFillColorDisabledBrush}"
+                                CornerRadius="4">
+                            <Image HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Source="{Binding ThumbnailPath}"
+                                   Stretch="UniformToFill" />
+                        </Border>
+
+                        <!--  Info  -->
+                        <StackPanel Grid.Column="1"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       Style="{StaticResource ClipListTextBlock}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}"
+                                       Margin="0,4,0,0"
+                                       FontSize="12"
+                                       Style="{StaticResource ClipListSecondaryTextBlock}" />
+                            <TextBlock Margin="0,2,0,0"
+                                       FontSize="11"
+                                       Style="{StaticResource ClipListTertiaryTextBlock}">
+                                <Run Text="{Binding Chunks.Count, Mode=OneWay}" />
+                                <Run Text="chunks" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!--  Folder picker  -->
+        <StackPanel Grid.Row="2"
+                    Margin="8">
+            <Button Content="📁 Select Folder"
+                    Command="{Binding OpenFolderCommand}"
+                    Padding="12"
+                    Style="{StaticResource PlayerButton}" />
+            <Button Content="ℹ️ About / Help"
+                    Command="{Binding ToggleAboutCommand}"
+                    Margin="0,8,0,0"
+                    Padding="12"
+                    Style="{StaticResource PlayerButton}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

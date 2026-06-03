@@ -4,7 +4,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Navigation;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Flyleaf.FFmpeg;
@@ -199,24 +198,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        BeginSeek();
-    }
-
-    private async void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        await EndSeekAsync();
-    }
-
-    private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_isSeeking)
-        {
-            OnPropertyChanged(nameof(PositionText));
-        }
-    }
-
     private async Task InitializeAsync()
     {
         if (_isInitialized)
@@ -279,10 +260,10 @@ public partial class MainWindow : Window
             return;
 
         _playerController = new VideoPlayerController(
-            new FlyleafMediaPlayerAdapter(FrontFlyleafHost, audioEnabled: true),
-            new FlyleafMediaPlayerAdapter(BackFlyleafHost, audioEnabled: false),
-            new FlyleafMediaPlayerAdapter(LeftFlyleafHost, audioEnabled: false),
-            new FlyleafMediaPlayerAdapter(RightFlyleafHost, audioEnabled: false));
+            new FlyleafMediaPlayerAdapter(PlayerView.FrontHost, audioEnabled: true),
+            new FlyleafMediaPlayerAdapter(PlayerView.BackHost, audioEnabled: false),
+            new FlyleafMediaPlayerAdapter(PlayerView.LeftHost, audioEnabled: false),
+            new FlyleafMediaPlayerAdapter(PlayerView.RightHost, audioEnabled: false));
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
@@ -531,11 +512,10 @@ public partial class MainWindow : Window
     private void FocusSearchBox()
     {
         ShowAboutPage = false;
-        SearchBox.Focus();
-        SearchBox.SelectAll();
+        Sidebar.FocusSearchBox();
     }
 
-    private void BeginSeek()
+    internal void BeginSeek()
     {
         if (CanSeek)
         {
@@ -543,7 +523,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task EndSeekAsync()
+    internal async Task EndSeekAsync()
     {
         if (_playerController is null || !CanSeek)
         {
@@ -553,6 +533,14 @@ public partial class MainWindow : Window
 
         await SeekToCurrentPositionAsync();
         _isSeeking = false;
+    }
+
+    internal void UpdateSeekTextDuringDrag()
+    {
+        if (_isSeeking)
+        {
+            OnPropertyChanged(nameof(PositionText));
+        }
     }
 
     private async Task SeekToCurrentPositionAsync()
@@ -734,21 +722,6 @@ public partial class MainWindow : Window
         }
 
         Clipboard.SetText(clip.Name);
-    }
-
-    private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
-    {
-        if (e.Uri is null)
-        {
-            return;
-        }
-
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri)
-        {
-            UseShellExecute = true,
-        });
-
-        e.Handled = true;
     }
 
     partial void OnSelectedClipChanged(CamClip value)
