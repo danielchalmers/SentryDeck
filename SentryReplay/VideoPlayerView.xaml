@@ -50,61 +50,7 @@
                 </Border>
             </Grid>
 
-            <!--  Status Overlay (Loading/Rendering/Error)  -->
-            <Border Background="#80000000"
-                    Visibility="{Binding ShowStatusOverlay, Converter={local:BoolToVisibilityConverter}}">
-                <StackPanel MaxWidth="500"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center">
-                    <!--  Loading/Rendering status  -->
-                    <StackPanel Visibility="{Binding IsLoading, Converter={local:BoolToVisibilityConverter}}">
-                        <TextBlock Text="{Binding LoadingStatusText}"
-                                   Margin="0,0,0,16"
-                                   HorizontalAlignment="Center"
-                                   FontSize="18"
-                                   Foreground="{DynamicResource TextControlForeground}" />
-                        <ProgressBar Width="300"
-                                     Height="8"
-                                     IsIndeterminate="{Binding IsIndeterminateProgress}"
-                                     Maximum="100"
-                                     Value="{Binding RenderProgressPercent, Mode=OneWay}" />
-                    </StackPanel>
-
-                    <!--  Error display  -->
-                    <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={local:BoolToVisibilityConverter}}">
-                        <TextBlock Text="⚠️"
-                                   Margin="0,0,0,16"
-                                   HorizontalAlignment="Center"
-                                   FontSize="48" />
-                        <TextBlock Text="{Binding ErrorTitle}"
-                                   Margin="0,0,0,8"
-                                   HorizontalAlignment="Center"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-                        <TextBlock Text="{Binding ErrorDetails}"
-                                   HorizontalAlignment="Center"
-                                   FontSize="14"
-                                   Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap" />
-                        <Button Content="Download FFmpeg"
-                                Command="{Binding DownloadFFmpegCommand}"
-                                Margin="0,20,0,0"
-                                Padding="24,10"
-                                HorizontalAlignment="Center"
-                                Style="{StaticResource PlayerButton}"
-                                Visibility="{Binding ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}" />
-                        <Button Content="Dismiss"
-                                Command="{Binding DismissErrorCommand}"
-                                Margin="0,20,0,0"
-                                Padding="24,10"
-                                HorizontalAlignment="Center"
-                                Style="{StaticResource PlayerButton}"
-                                Visibility="{Binding CanDismissError, Converter={local:BoolToVisibilityConverter}}" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
+            <local:StatusOverlayView />
 
             <!--  No Clip Selected  -->
             <TextBlock Text="Select a clip to play"
