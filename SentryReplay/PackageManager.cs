@@ -2,6 +2,7 @@
 using System.IO.Compression;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Serilog;
 
 namespace SentryReplay;
@@ -13,9 +14,17 @@ public static class PackageManager
 
     private static string FFmpegInstallRoot => AppContext.BaseDirectory;
 
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("SentryReplay");
+
+        return client;
+    }
+
     private static async Task<long> DownloadFile(string url, string savePath)
     {
-        using var client = new HttpClient();
+        using var client = CreateHttpClient();
         var response = await client.GetAsync(url);
         response.EnsureSuccessStatusCode();
 
@@ -64,15 +73,52 @@ public static class PackageManager
         return extractedFileCount;
     }
 
+    private static string GetFFmpegAssetSuffix()
+    {
+        return RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.X64 => $"win64-gpl-shared-{FFmpegReleaseBranch}.zip",
+            Architecture.Arm64 => $"winarm64-gpl-shared-{FFmpegReleaseBranch}.zip",
+            _ => throw new NotSupportedException($"FFmpeg download is not supported for {RuntimeInformation.ProcessArchitecture}."),
+        };
+    }
+
+    private static async Task<string> FindFFmpegDownloadUrl()
+    {
+        const string releasesUrl = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=30";
+        var assetSuffix = GetFFmpegAssetSuffix();
+
+        using var client = CreateHttpClient();
+        var json = await client.GetStringAsync(releasesUrl);
+        using var document = JsonDocument.Parse(json);
+
+        foreach (var release in document.RootElement.EnumerateArray())
+        {
+            if (!release.TryGetProperty("assets", out var assets))
+            {
+                continue;
+            }
+
+            foreach (var asset in assets.EnumerateArray())
+            {
+                var name = asset.GetProperty("name").GetString();
+                if (name is null || !name.EndsWith(assetSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return asset.GetProperty("browser_download_url").GetString()
+                    ?? throw new InvalidOperationException($"FFmpeg release asset {name} does not include a download URL.");
+            }
+        }
+
+        throw new InvalidOperationException($"Could not find an FFmpeg release asset ending with {assetSuffix}.");
+    }
+
     public static async Task DownloadAndExtractFFmpeg()
     {
         var destinationBinPath = Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName);
-        var url = RuntimeInformation.ProcessArchitecture switch
-        {
-            Architecture.X64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegReleaseBranch}-latest-win64-gpl-shared-{FFmpegReleaseBranch}.zip",
-            Architecture.Arm64 => $"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n{FFmpegReleaseBranch}-latest-winarm64-gpl-shared-{FFmpegReleaseBranch}.zip",
-            _ => throw new NotSupportedException($"FFmpeg download is not supported for {RuntimeInformation.ProcessArchitecture}."),
-        };
+        var url = await FindFFmpegDownloadUrl();
         var tempPath = Path.GetTempFileName();
         var archiveRoot = Path.GetFileNameWithoutExtension(new Uri(url).AbsolutePath);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
