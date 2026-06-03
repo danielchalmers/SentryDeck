@@ -573,7 +573,7 @@
                                 Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
                                 CornerRadius="8">
                             <StackPanel>
-                                <TextBlock Text="Updates"
+                                <TextBlock Text="App Info"
                                            FontSize="16"
                                            FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextControlForeground}" />
