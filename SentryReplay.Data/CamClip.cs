@@ -1,8 +1,8 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace SentryReplay.Data;
+namespace SentryReplay;
 
 /// <summary>
 /// A folder containing a collection of <see cref="CamChunk"/>s that make up a single continuous dashcam clip.

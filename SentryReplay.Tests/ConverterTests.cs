@@ -1,5 +1,3 @@
-﻿using Shouldly;
-
 namespace SentryReplay.Tests;
 
 /// <summary>

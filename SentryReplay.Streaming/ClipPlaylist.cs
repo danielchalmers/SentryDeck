@@ -1,4 +1,3 @@
-﻿using SentryReplay.Data;
 using Serilog;
 
 namespace SentryReplay;

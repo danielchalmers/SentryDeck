@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 public interface IMediaPlayer : IDisposable
 {

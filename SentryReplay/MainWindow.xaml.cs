@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -10,7 +10,6 @@ using CommunityToolkit.Mvvm.Input;
 using Flyleaf.FFmpeg;
 using FlyleafLib;
 using Microsoft.Win32;
-using SentryReplay.Data;
 using Serilog;
 
 namespace SentryReplay;

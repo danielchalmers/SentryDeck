@@ -1,4 +1,4 @@
-﻿namespace SentryReplay.Data;
+namespace SentryReplay;
 
 /// <summary>
 /// All the dashcam clips that were recorded at the same time from different angles.

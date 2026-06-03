@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using Shouldly;
+using System.Diagnostics;
 
 namespace SentryReplay.Tests;
 

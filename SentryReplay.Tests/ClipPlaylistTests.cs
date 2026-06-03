@@ -1,6 +1,4 @@
-﻿using System.IO;
-using SentryReplay.Data;
-using Shouldly;
+using System.IO;
 
 namespace SentryReplay.Tests;
 
