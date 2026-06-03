@@ -599,11 +599,11 @@
                                         <TextBlock Margin="0,4,0,0"
                                                    Foreground="{DynamicResource TextControlForeground}"
                                                    TextWrapping="Wrap">
-                                            <Run Text="{Binding UpdateStatusDetails}" />
+                                            <Run Text="{Binding UpdateStatusDetails, Mode=OneWay}" />
                                             <Run Text=" " />
                                             <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
                                                        RequestNavigate="Hyperlink_RequestNavigate">
-                                                <Run Text="{Binding UpdateStatusLinkText}" />
+                                                <Run Text="{Binding UpdateStatusLinkText, Mode=OneWay}" />
                                             </Hyperlink>
                                         </TextBlock>
                                     </StackPanel>
