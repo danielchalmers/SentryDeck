@@ -267,7 +267,11 @@ public partial class MainWindow : Window
         _isInitialized = true;
         Log.Debug("Initializing main window");
 
+#if DEBUG
+        Log.Debug("Skipping update check in debug build");
+#else
         _ = UpdateLatestReleaseAsync();
+#endif
 
         if (TryStartFlyleaf())
         {
