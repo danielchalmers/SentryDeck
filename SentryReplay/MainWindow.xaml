@@ -596,18 +596,18 @@
                                                    FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextControlForeground}"
                                                    TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding UpdateStatusDetails}"
-                                                   Margin="0,4,0,0"
+                                        <TextBlock Margin="0,4,0,0"
                                                    Foreground="{DynamicResource TextControlForeground}"
-                                                   TextWrapping="Wrap" />
+                                                   TextWrapping="Wrap">
+                                            <Run Text="{Binding UpdateStatusDetails}" />
+                                            <Run Text=" " />
+                                            <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
+                                                       RequestNavigate="Hyperlink_RequestNavigate">
+                                                <Run Text="{Binding UpdateStatusLinkText}" />
+                                            </Hyperlink>
+                                        </TextBlock>
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Margin="0,0,0,16">
-                                    <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
-                                               RequestNavigate="Hyperlink_RequestNavigate">
-                                        Open releases
-                                    </Hyperlink>
-                                </TextBlock>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />

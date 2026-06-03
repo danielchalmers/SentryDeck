@@ -58,6 +58,12 @@ public partial class MainWindow : Window
             ? "No newer release was found."
             : "Updates are checked after launch.";
 
+    public string UpdateStatusLinkText => IsUpdateAvailable
+        ? "Learn more"
+        : HasCheckedForUpdates
+            ? "View all releases"
+            : string.Empty;
+
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
         0.25,
@@ -195,11 +201,13 @@ public partial class MainWindow : Window
     [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusLinkText))]
     private bool _isUpdateAvailable;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusLinkText))]
     private bool _hasCheckedForUpdates;
 
     [ObservableProperty]
