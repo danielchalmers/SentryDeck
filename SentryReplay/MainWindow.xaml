@@ -603,7 +603,7 @@
                                             <Run Text=" " />
                                             <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
                                                        RequestNavigate="Hyperlink_RequestNavigate">
-                                                <Run Text="{Binding UpdateStatusLinkText, Mode=OneWay}" />
+                                                Learn more
                                             </Hyperlink>
                                         </TextBlock>
                                     </StackPanel>

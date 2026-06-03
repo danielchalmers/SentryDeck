@@ -48,21 +48,11 @@ public partial class MainWindow : Window
     public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
     public string UpdateStatusTitle => IsUpdateAvailable
         ? "Update available"
-        : HasCheckedForUpdates
-            ? "You're up to date"
-            : "Updates";
+        : "You're up to date";
 
     public string UpdateStatusDetails => IsUpdateAvailable
         ? $"Version {LatestVersionText} is available."
-        : HasCheckedForUpdates
-            ? "No newer release was found."
-            : "Updates are checked after launch.";
-
-    public string UpdateStatusLinkText => IsUpdateAvailable
-        ? "Learn more"
-        : HasCheckedForUpdates
-            ? "View all releases"
-            : string.Empty;
+        : "No newer release was found.";
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -201,14 +191,7 @@ public partial class MainWindow : Window
     [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusLinkText))]
     private bool _isUpdateAvailable;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusLinkText))]
-    private bool _hasCheckedForUpdates;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LatestVersionText))]
@@ -759,7 +742,6 @@ public partial class MainWindow : Window
         var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
         LatestRelease = result.LatestRelease;
         IsUpdateAvailable = result.IsUpdateAvailable;
-        HasCheckedForUpdates = true;
 
         Log.Information(
             "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
