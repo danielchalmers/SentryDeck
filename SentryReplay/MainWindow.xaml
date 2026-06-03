@@ -564,6 +564,40 @@
                                            Foreground="{DynamicResource TextControlForeground}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
+
+                            <TextBlock Text="Shortcuts"
+                                       Margin="0,16,0,0"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextControlForeground}" />
+                            <StackPanel Margin="0,8,0,0">
+                                <TextBlock Text="Space: Play/Pause"
+                                           Foreground="{DynamicResource TextControlForeground}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="Left/Right: Seek 5 seconds"
+                                           Foreground="{DynamicResource TextControlForeground}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="Ctrl+Left/Right: Previous/Next clip"
+                                           Foreground="{DynamicResource TextControlForeground}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="Ctrl+F or F3: Focus Search clips"
+                                           Foreground="{DynamicResource TextControlForeground}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <TextBlock Text="Playback notes"
+                                       Margin="0,16,0,0"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextControlForeground}" />
+                            <TextBlock Text="FFmpeg 8.1 shared binaries are required for playback. Use the Download FFmpeg button when prompted."
+                                       Margin="0,8,0,0"
+                                       Foreground="{DynamicResource TextControlForeground}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Text="If clips do not appear, confirm the folder contains a TeslaCam directory."
+                                       Margin="0,12,0,0"
+                                       Foreground="{DynamicResource TextControlForeground}"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 
@@ -662,42 +696,6 @@
                                                Foreground="{DynamicResource TextControlForeground}"
                                                TextWrapping="Wrap" />
                                 </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Margin="0,12,0,0"
-                                Padding="20"
-                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
-                                CornerRadius="8">
-                            <StackPanel>
-                                <TextBlock Text="Shortcuts"
-                                           FontSize="16"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextControlForeground}" />
-                                <StackPanel Margin="0,8,0,0">
-                                    <TextBlock Text="Space: Play/Pause"
-                                               Foreground="{DynamicResource TextControlForeground}" />
-                                    <TextBlock Text="Left/Right: Seek 5 seconds"
-                                               Foreground="{DynamicResource TextControlForeground}" />
-                                    <TextBlock Text="Ctrl+Left/Right: Previous/Next clip"
-                                               Foreground="{DynamicResource TextControlForeground}" />
-                                    <TextBlock Text="Ctrl+F or F3: Focus Search clips"
-                                               Foreground="{DynamicResource TextControlForeground}" />
-                                </StackPanel>
-
-                                <TextBlock Text="Playback notes"
-                                           Margin="0,16,0,0"
-                                           FontSize="16"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextControlForeground}" />
-                                <TextBlock Text="FFmpeg 8.1 shared binaries are required for playback. Use the Download FFmpeg button when prompted."
-                                           Margin="0,8,0,0"
-                                           Foreground="{DynamicResource TextControlForeground}"
-                                           TextWrapping="Wrap" />
-                                <TextBlock Text="If clips do not appear, confirm the folder contains a TeslaCam directory."
-                                           Margin="0,12,0,0"
-                                           Foreground="{DynamicResource TextControlForeground}"
-                                           TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
 
