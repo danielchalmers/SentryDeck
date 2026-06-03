@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="SentryReplay" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="Mocks\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
