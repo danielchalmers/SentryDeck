@@ -1,6 +1,7 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -22,6 +23,7 @@ namespace SentryReplay;
 public partial class MainWindow : Window
 {
     private readonly List<CamClip> AllClips = [];
+    private readonly UpdateService _updateService = new();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
@@ -35,10 +37,22 @@ public partial class MainWindow : Window
 
     public bool ShowMainContent => !ShowAboutPage;
 
-    public string FileVersion => FileVersionInfo.GetVersionInfo(Environment.ProcessPath)?.FileVersion ?? "Unknown";
+    public Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+    public string FileVersion => FormatVersion(CurrentVersion);
     public string RuntimeDescription => $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})";
     public string OsDescription => RuntimeInformation.OSDescription;
     public string ExecutablePath => Environment.ProcessPath;
+    public bool HasUpdateBadge => IsUpdateAvailable;
+    public string LatestVersionText => LatestRelease is null ? "Unknown" : FormatVersion(LatestRelease.Version);
+    public string LatestReleaseUrl => LatestRelease?.ReleaseUrl ?? UpdateService.ReleasesPageUrl;
+    public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
+    public string UpdateStatusTitle => IsUpdateAvailable
+        ? "Update available"
+        : "You're up to date";
+
+    public string UpdateStatusDetails => IsUpdateAvailable
+        ? $"Version {LatestVersionText} is available."
+        : "No newer release was found.";
 
     public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
     [
@@ -173,6 +187,18 @@ public partial class MainWindow : Window
     [ObservableProperty]
     private double _selectedPlaybackSpeed = 1.0;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private bool _isUpdateAvailable;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LatestVersionText))]
+    [NotifyPropertyChangedFor(nameof(LatestReleaseUrl))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private UpdateRelease _latestRelease;
+
     private async void Window_ContentRendered(object sender, EventArgs e)
     {
         await InitializeAsync();
@@ -223,6 +249,12 @@ public partial class MainWindow : Window
 
         _isInitialized = true;
         Log.Debug("Initializing main window");
+
+#if DEBUG
+        Log.Debug("Skipping update check in debug build");
+#else
+        _ = UpdateLatestReleaseAsync();
+#endif
 
         if (TryStartFlyleaf())
         {
@@ -652,6 +684,23 @@ public partial class MainWindow : Window
             : ts.ToString(@"m\:ss");
     }
 
+    private static string FormatVersion(Version version)
+    {
+        if (version is null)
+        {
+            return "Unknown";
+        }
+
+        if (version.Revision >= 0)
+        {
+            return version.ToString(4);
+        }
+
+        return version.Build >= 0
+            ? version.ToString(3)
+            : version.ToString(2);
+    }
+
     private void ShowError(string title, string details, bool canDismiss = true)
     {
         ErrorTitle = title;
@@ -686,6 +735,19 @@ public partial class MainWindow : Window
     private void ToggleAbout()
     {
         ShowAboutPage = !ShowAboutPage;
+    }
+
+    private async Task UpdateLatestReleaseAsync()
+    {
+        var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
+        LatestRelease = result.LatestRelease;
+        IsUpdateAvailable = result.IsUpdateAvailable;
+
+        Log.Information(
+            "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
+            FormatVersion(CurrentVersion),
+            LatestVersionText,
+            IsUpdateAvailable);
     }
 
     private static bool CanUseClip(CamClip clip)
