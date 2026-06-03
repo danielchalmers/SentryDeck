@@ -233,7 +233,7 @@
                     <!--  Video Player  -->
                     <Grid ClipToBounds="True"
                           Background="Black"
-                          Visibility="{Binding StatusOverlay.ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
+                          Visibility="{Binding ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
                         <fl:FlyleafHost x:Name="FrontFlyleafHost" />
 
                         <Border Width="280"
@@ -264,7 +264,15 @@
                         </Border>
                     </Grid>
 
-                    <local:StatusOverlayView State="{Binding StatusOverlay}" />
+                    <local:StatusOverlayView CanDismissError="{Binding CanDismissError}"
+                                             DownloadFFmpegCommand="{Binding DownloadFFmpegCommand}"
+                                             ErrorDetails="{Binding ErrorDetails}"
+                                             ErrorTitle="{Binding ErrorTitle}"
+                                             IsLoading="{Binding IsLoading}"
+                                             IsRendering="{Binding IsRendering}"
+                                             RenderProgress="{Binding RenderProgress}"
+                                             ShowErrorOverlay="{Binding ShowErrorOverlay}"
+                                             ShowFFmpegDownloadButton="{Binding ShowFFmpegDownloadButton}" />
 
                     <!--  No Clip Selected  -->
                     <TextBlock Text="Select a clip to play"

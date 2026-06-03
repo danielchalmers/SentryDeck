@@ -28,14 +28,9 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
-        StatusOverlay = new StatusOverlayViewModel(DownloadFFmpegAsync);
-        StatusOverlay.PropertyChanged += StatusOverlayOnPropertyChanged;
-
         InitializeComponent();
         DataContext = this;
     }
-
-    public StatusOverlayViewModel StatusOverlay { get; }
 
     public bool ShowMainContent => !ShowAboutPage;
 
@@ -79,11 +74,11 @@ public partial class MainWindow : Window
         }
     }
 
-    public bool CanSeek => _playerController?.IsMediaOpen == true && !StatusOverlay.IsLoading && _playerController.Duration > TimeSpan.Zero;
+    public bool CanSeek => _playerController?.IsMediaOpen == true && !IsLoading && _playerController.Duration > TimeSpan.Zero;
 
-    public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !StatusOverlay.IsLoading;
+    public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
 
-    public bool CanStop => IsPlaying || StatusOverlay.IsLoading;
+    public bool CanStop => IsPlaying || IsLoading;
 
     public bool CanGoNext => _playerController?.Playlist.HasNext == true;
 
@@ -91,13 +86,11 @@ public partial class MainWindow : Window
 
     public string PlayPauseIcon => IsPlaying ? "\u23F8" : "\u25B6";
 
-    public bool ShowStatusOverlay => StatusOverlay.ShowOverlay;
+    public bool ShowVideoHosts => !IsLoading && !ShowErrorOverlay;
 
-    public bool ShowVideoHosts => !ShowStatusOverlay;
+    public bool HasError => ShowErrorOverlay;
 
-    public bool HasError => StatusOverlay.HasError;
-
-    public bool HasNoClipSelected => SelectedClip is null && !StatusOverlay.IsLoading && !StatusOverlay.ShowErrorOverlay;
+    public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !ShowErrorOverlay;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FilteredClips))]
@@ -109,8 +102,40 @@ public partial class MainWindow : Window
     private CamClip _selectedClip;
 
     [ObservableProperty]
+    private string _errorTitle;
+
+    [ObservableProperty]
+    private string _errorDetails;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
+    [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    private bool _showErrorOverlay;
+
+    [ObservableProperty]
+    private bool _canDismissError = true;
+
+    [ObservableProperty]
+    private bool _showFFmpegDownloadButton;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowMainContent))]
     private bool _showAboutPage;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPlayPause))]
+    [NotifyPropertyChangedFor(nameof(CanStop))]
+    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
+    [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
+    [NotifyPropertyChangedFor(nameof(CanSeek))]
+    private bool _isLoading;
+
+    [ObservableProperty]
+    private bool _isRendering;
+
+    [ObservableProperty]
+    private double _renderProgress;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PositionText))]
@@ -147,29 +172,6 @@ public partial class MainWindow : Window
         if (await HandleKeyDownAsync(e.Key, Keyboard.Modifiers))
         {
             e.Handled = true;
-        }
-    }
-
-    private void StatusOverlayOnPropertyChanged(object sender, PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(StatusOverlayViewModel.IsLoading):
-                OnPropertyChanged(nameof(CanPlayPause));
-                OnPropertyChanged(nameof(CanStop));
-                OnPropertyChanged(nameof(CanSeek));
-                OnPropertyChanged(nameof(HasNoClipSelected));
-                break;
-
-            case nameof(StatusOverlayViewModel.ShowErrorOverlay):
-                OnPropertyChanged(nameof(HasNoClipSelected));
-                OnPropertyChanged(nameof(HasError));
-                break;
-
-            case nameof(StatusOverlayViewModel.ShowOverlay):
-                OnPropertyChanged(nameof(ShowStatusOverlay));
-                OnPropertyChanged(nameof(ShowVideoHosts));
-                break;
         }
     }
 
@@ -395,9 +397,10 @@ public partial class MainWindow : Window
         SelectedClip = _playerController.CurrentClip;
     }
 
+    [RelayCommand]
     private async Task DownloadFFmpegAsync()
     {
-        StatusOverlay.IsLoading = true;
+        IsLoading = true;
         ClearError();
 
         try
@@ -418,11 +421,11 @@ public partial class MainWindow : Window
         {
             Log.Error(ex, "Failed to download FFmpeg");
             ShowError("Download Failed", $"Failed to download FFmpeg: {ex.Message}");
-            StatusOverlay.ShowFFmpegDownloadButton = true;
+            ShowFFmpegDownloadButton = true;
         }
         finally
         {
-            StatusOverlay.IsLoading = false;
+            IsLoading = false;
         }
     }
 
@@ -579,13 +582,13 @@ public partial class MainWindow : Window
         switch (propertyName)
         {
             case nameof(VideoPlayerController.IsLoading):
-                StatusOverlay.IsLoading = _playerController.IsLoading;
+                IsLoading = _playerController.IsLoading;
                 break;
             case nameof(VideoPlayerController.IsRendering):
-                StatusOverlay.IsRendering = _playerController.IsRendering;
+                IsRendering = _playerController.IsRendering;
                 break;
             case nameof(VideoPlayerController.RenderProgress):
-                StatusOverlay.RenderProgress = _playerController.RenderProgress;
+                RenderProgress = _playerController.RenderProgress;
                 break;
             case nameof(VideoPlayerController.IsPlaying):
                 IsPlaying = _playerController.IsPlaying;
@@ -628,18 +631,25 @@ public partial class MainWindow : Window
 
     private void ShowError(string title, string details, bool canDismiss = true)
     {
-        StatusOverlay.ShowError(title, details, canDismiss);
+        ErrorTitle = title;
+        ErrorDetails = details;
+        CanDismissError = canDismiss;
+        ShowErrorOverlay = true;
     }
 
     private void ClearError()
     {
-        StatusOverlay.ClearError();
+        ShowErrorOverlay = false;
+        ShowFFmpegDownloadButton = false;
+        CanDismissError = true;
+        ErrorTitle = null;
+        ErrorDetails = null;
     }
 
     private void ShowFFmpegMissingError()
     {
         Log.Debug("Showing FFmpeg missing prompt");
-        StatusOverlay.ShowFFmpegDownloadButton = true;
+        ShowFFmpegDownloadButton = true;
         ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
     }
 
