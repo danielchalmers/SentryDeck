@@ -4,14 +4,12 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Navigation;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Flyleaf.FFmpeg;
 using FlyleafLib;
-using FlyleafLib.Controls.WPF;
 using Microsoft.Win32;
 using Serilog;
 
@@ -25,10 +23,6 @@ namespace SentryReplay;
 public partial class MainWindow : Window
 {
     private readonly List<CamClip> AllClips = [];
-    private readonly FlyleafHost FrontFlyleafHost = new();
-    private readonly FlyleafHost BackFlyleafHost = new();
-    private readonly FlyleafHost LeftFlyleafHost = new();
-    private readonly FlyleafHost RightFlyleafHost = new();
     private readonly UpdateService _updateService = new();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
@@ -39,7 +33,6 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = this;
-        UpdateCameraHostLayout();
     }
 
     public bool ShowMainContent => !ShowAboutPage;
@@ -119,11 +112,6 @@ public partial class MainWindow : Window
     public bool HasError => ShowErrorOverlay;
 
     public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !ShowErrorOverlay;
-    public bool IsGridCameraViewSelected => SelectedCameraView == "Grid";
-    public bool IsFrontCameraViewSelected => SelectedCameraView == "Front";
-    public bool IsRearCameraViewSelected => SelectedCameraView == "Rear";
-    public bool IsLeftCameraViewSelected => SelectedCameraView == "Left";
-    public bool IsRightCameraViewSelected => SelectedCameraView == "Right";
 
     public bool IsIndeterminateProgress => IsLoading && !IsRendering;
 
@@ -198,14 +186,6 @@ public partial class MainWindow : Window
 
     [ObservableProperty]
     private double _selectedPlaybackSpeed = 1.0;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsGridCameraViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsFrontCameraViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsRearCameraViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsLeftCameraViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsRightCameraViewSelected))]
-    private string _selectedCameraView = "Grid";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
@@ -336,71 +316,6 @@ public partial class MainWindow : Window
             new FlyleafMediaPlayerAdapter(RightFlyleafHost, audioEnabled: false));
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
-    }
-
-    [RelayCommand]
-    private void SelectCameraView(string cameraView)
-    {
-        if (string.IsNullOrWhiteSpace(cameraView) || SelectedCameraView == cameraView)
-        {
-            return;
-        }
-
-        SelectedCameraView = cameraView;
-    }
-
-    private void UpdateCameraHostLayout()
-    {
-        MainCameraHostSlot.Content = null;
-        GridFrontCameraHostSlot.Content = null;
-        GridBackCameraHostSlot.Content = null;
-        GridLeftCameraHostSlot.Content = null;
-        GridRightCameraHostSlot.Content = null;
-        FrontCameraTileHostSlot.Content = null;
-        BackCameraTileHostSlot.Content = null;
-        LeftCameraTileHostSlot.Content = null;
-        RightCameraTileHostSlot.Content = null;
-
-        if (SelectedCameraView == "Grid")
-        {
-            SetHostContent(GridFrontCameraHostSlot, FrontFlyleafHost);
-            SetHostContent(GridBackCameraHostSlot, BackFlyleafHost);
-            SetHostContent(GridLeftCameraHostSlot, LeftFlyleafHost);
-            SetHostContent(GridRightCameraHostSlot, RightFlyleafHost);
-            return;
-        }
-
-        SetHostContent(MainCameraHostSlot, GetMainCameraHost());
-        SetHostContent(FrontCameraTileHostSlot, SelectedCameraView == "Front" ? null : FrontFlyleafHost);
-        SetHostContent(BackCameraTileHostSlot, SelectedCameraView == "Rear" ? null : BackFlyleafHost);
-        SetHostContent(LeftCameraTileHostSlot, SelectedCameraView == "Left" ? null : LeftFlyleafHost);
-        SetHostContent(RightCameraTileHostSlot, SelectedCameraView == "Right" ? null : RightFlyleafHost);
-    }
-
-    private FlyleafHost GetMainCameraHost()
-    {
-        return SelectedCameraView switch
-        {
-            "Rear" => BackFlyleafHost,
-            "Left" => LeftFlyleafHost,
-            "Right" => RightFlyleafHost,
-            _ => FrontFlyleafHost,
-        };
-    }
-
-    private static void SetHostContent(ContentControl slot, FlyleafHost host)
-    {
-        if (slot is null)
-        {
-            return;
-        }
-
-        if (host?.Parent is ContentControl parent)
-        {
-            parent.Content = null;
-        }
-
-        slot.Content = host;
     }
 
     private void LoadClips(IEnumerable<string> roots)
@@ -916,10 +831,5 @@ public partial class MainWindow : Window
             Log.Information("Playback speed changed. Speed={PlaybackSpeed}", value);
             _playerController.PlaybackSpeed = value;
         }
-    }
-
-    partial void OnSelectedCameraViewChanged(string value)
-    {
-        UpdateCameraHostLayout();
     }
 }
