@@ -264,14 +264,14 @@ public partial class MainWindow : Window
         IsEnabled = false;
 
         // Let WPF finish this Closing callback before requesting the real close.
-        _ = Dispatcher.InvokeAsync(CloseAfterShutdownAsync);
+        _ = Dispatcher.InvokeAsync(CloseAfterShutdown);
     }
 
-    private async Task CloseAfterShutdownAsync()
+    private void CloseAfterShutdown()
     {
         try
         {
-            await ShutdownAsync();
+            Shutdown();
         }
         catch (Exception ex)
         {
@@ -335,7 +335,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ShutdownAsync()
+    private void Shutdown()
     {
         var controller = _playerController;
         _playerController = null;
@@ -343,15 +343,8 @@ public partial class MainWindow : Window
         if (controller is null)
             return;
 
-        try
-        {
-            await controller.StopAsync();
-        }
-        finally
-        {
-            controller.PropertyChanged -= PlayerControllerOnPropertyChanged;
-            controller.Dispose();
-        }
+        controller.PropertyChanged -= PlayerControllerOnPropertyChanged;
+        controller.Dispose();
     }
 
     private void InitializePlayer()
