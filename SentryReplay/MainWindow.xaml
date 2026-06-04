@@ -291,6 +291,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!--  Video Container  -->
@@ -299,34 +300,28 @@
                     <Grid ClipToBounds="True"
                           Background="Black"
                           Visibility="{Binding ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost" />
+                        <ContentControl x:Name="MainCameraHostSlot" />
 
-                        <Border Width="280"
-                                Height="210"
-                                Margin="0,15,15,0"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Top"
-                                Background="Black">
-                            <fl:FlyleafHost x:Name="BackFlyleafHost" />
-                        </Border>
-
-                        <Border Width="280"
-                                Height="210"
-                                Margin="15,0,0,15"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Bottom"
-                                Background="Black">
-                            <fl:FlyleafHost x:Name="LeftFlyleafHost" />
-                        </Border>
-
-                        <Border Width="280"
-                                Height="210"
-                                Margin="0,0,15,15"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Bottom"
-                                Background="Black">
-                            <fl:FlyleafHost x:Name="RightFlyleafHost" />
-                        </Border>
+                        <UniformGrid x:Name="MainGridHostSlot"
+                                     Columns="2"
+                                     Visibility="{Binding IsGridCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
+                            <Border Margin="1"
+                                    Background="Black">
+                                <ContentControl x:Name="GridFrontCameraHostSlot" />
+                            </Border>
+                            <Border Margin="1"
+                                    Background="Black">
+                                <ContentControl x:Name="GridBackCameraHostSlot" />
+                            </Border>
+                            <Border Margin="1"
+                                    Background="Black">
+                                <ContentControl x:Name="GridLeftCameraHostSlot" />
+                            </Border>
+                            <Border Margin="1"
+                                    Background="Black">
+                                <ContentControl x:Name="GridRightCameraHostSlot" />
+                            </Border>
+                        </UniformGrid>
                     </Grid>
 
                     <!--  Status Overlay (Loading/Rendering/Error)  -->
@@ -394,8 +389,127 @@
                                Visibility="{Binding HasNoClipSelected, Converter={local:BoolToVisibilityConverter}}" />
                 </Grid>
 
-                <!--  Player Controls  -->
+                <!--  Camera Bar  -->
                 <Border Grid.Row="1"
+                        Padding="12,10"
+                        Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="0,1,0,0">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Command="{Binding SelectCameraViewCommand}"
+                                    CommandParameter="Grid"
+                                    Style="{StaticResource PlayerButton}">
+                                <Grid Width="150"
+                                      Height="86">
+                                    <UniformGrid Columns="2"
+                                                 Margin="0,0,0,20">
+                                        <Border Margin="1"
+                                                Background="#FF202020" />
+                                        <Border Margin="1"
+                                                Background="#FF202020" />
+                                        <Border Margin="1"
+                                                Background="#FF202020" />
+                                        <Border Margin="1"
+                                                Background="#FF202020" />
+                                    </UniformGrid>
+                                    <TextBlock Text="Grid"
+                                               VerticalAlignment="Bottom"
+                                               HorizontalAlignment="Center"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                    <Border BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="2"
+                                            Visibility="{Binding IsGridCameraViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                </Grid>
+                            </Button>
+
+                            <Button Command="{Binding SelectCameraViewCommand}"
+                                    CommandParameter="Front"
+                                    Style="{StaticResource PlayerButton}">
+                                <Grid Width="150"
+                                      Height="86">
+                                    <Border Margin="0,0,0,20"
+                                            Background="Black">
+                                        <ContentControl x:Name="FrontCameraTileHostSlot" />
+                                    </Border>
+                                    <TextBlock Text="Front"
+                                               VerticalAlignment="Bottom"
+                                               HorizontalAlignment="Center"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                    <Border BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="2"
+                                            Visibility="{Binding IsFrontCameraViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                </Grid>
+                            </Button>
+
+                            <Button Command="{Binding SelectCameraViewCommand}"
+                                    CommandParameter="Rear"
+                                    Style="{StaticResource PlayerButton}">
+                                <Grid Width="150"
+                                      Height="86">
+                                    <Border Margin="0,0,0,20"
+                                            Background="Black">
+                                        <ContentControl x:Name="BackCameraTileHostSlot" />
+                                    </Border>
+                                    <TextBlock Text="Rear"
+                                               VerticalAlignment="Bottom"
+                                               HorizontalAlignment="Center"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                    <Border BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="2"
+                                            Visibility="{Binding IsRearCameraViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                </Grid>
+                            </Button>
+
+                            <Button Command="{Binding SelectCameraViewCommand}"
+                                    CommandParameter="Left"
+                                    Style="{StaticResource PlayerButton}">
+                                <Grid Width="150"
+                                      Height="86">
+                                    <Border Margin="0,0,0,20"
+                                            Background="Black">
+                                        <ContentControl x:Name="LeftCameraTileHostSlot" />
+                                    </Border>
+                                    <TextBlock Text="Left"
+                                               VerticalAlignment="Bottom"
+                                               HorizontalAlignment="Center"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                    <Border BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="2"
+                                            Visibility="{Binding IsLeftCameraViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                </Grid>
+                            </Button>
+
+                            <Button Command="{Binding SelectCameraViewCommand}"
+                                    CommandParameter="Right"
+                                    Style="{StaticResource PlayerButton}">
+                                <Grid Width="150"
+                                      Height="86">
+                                    <Border Margin="0,0,0,20"
+                                            Background="Black">
+                                        <ContentControl x:Name="RightCameraTileHostSlot" />
+                                    </Border>
+                                    <TextBlock Text="Right"
+                                               VerticalAlignment="Bottom"
+                                               HorizontalAlignment="Center"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                    <Border BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                                            BorderThickness="2"
+                                            Visibility="{Binding IsRightCameraViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                </Grid>
+                            </Button>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <!--  Player Controls  -->
+                <Border Grid.Row="2"
                         Padding="16"
                         Background="{DynamicResource ControlAltFillColorSecondaryBrush}">
                     <Grid>
