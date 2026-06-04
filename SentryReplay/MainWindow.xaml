@@ -2,7 +2,6 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
         xmlns:local="clr-namespace:SentryReplay"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         Title="Sentry Replay"
@@ -46,6 +45,40 @@
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Background" Value="{DynamicResource ControlFillColorDisabledBrush}" />
                                 <Setter Property="Foreground" Value="{DynamicResource TextControlForegroundDisabled}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CameraTileButton"
+               TargetType="Button">
+            <Setter Property="Background" Value="#FF181818" />
+            <Setter Property="Foreground" Value="#FFF4F4F4" />
+            <Setter Property="BorderBrush" Value="#FF303030" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Margin" Value="4,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF242424" />
+                                <Setter Property="BorderBrush" Value="#FF505050" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#FF303030" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -287,7 +320,7 @@
 
             <!--  Video Player Area  -->
             <Grid Grid.Column="2"
-                  Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}">
+                  Background="#FF101010">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
@@ -392,15 +425,15 @@
                 <!--  Camera Bar  -->
                 <Border Grid.Row="1"
                         Padding="12,10"
-                        Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
-                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="#FF151515"
+                        BorderBrush="#FF303030"
                         BorderThickness="0,1,0,0">
                     <ScrollViewer HorizontalScrollBarVisibility="Auto"
                                   VerticalScrollBarVisibility="Disabled">
                         <StackPanel Orientation="Horizontal">
                             <Button Command="{Binding SelectCameraViewCommand}"
                                     CommandParameter="Grid"
-                                    Style="{StaticResource PlayerButton}">
+                                    Style="{StaticResource CameraTileButton}">
                                 <Grid Width="150"
                                       Height="86">
                                     <UniformGrid Columns="2"
@@ -427,7 +460,7 @@
 
                             <Button Command="{Binding SelectCameraViewCommand}"
                                     CommandParameter="Front"
-                                    Style="{StaticResource PlayerButton}">
+                                    Style="{StaticResource CameraTileButton}">
                                 <Grid Width="150"
                                       Height="86">
                                     <Border Margin="0,0,0,20"
@@ -447,7 +480,7 @@
 
                             <Button Command="{Binding SelectCameraViewCommand}"
                                     CommandParameter="Rear"
-                                    Style="{StaticResource PlayerButton}">
+                                    Style="{StaticResource CameraTileButton}">
                                 <Grid Width="150"
                                       Height="86">
                                     <Border Margin="0,0,0,20"
@@ -467,7 +500,7 @@
 
                             <Button Command="{Binding SelectCameraViewCommand}"
                                     CommandParameter="Left"
-                                    Style="{StaticResource PlayerButton}">
+                                    Style="{StaticResource CameraTileButton}">
                                 <Grid Width="150"
                                       Height="86">
                                     <Border Margin="0,0,0,20"
@@ -487,7 +520,7 @@
 
                             <Button Command="{Binding SelectCameraViewCommand}"
                                     CommandParameter="Right"
-                                    Style="{StaticResource PlayerButton}">
+                                    Style="{StaticResource CameraTileButton}">
                                 <Grid Width="150"
                                       Height="86">
                                     <Border Margin="0,0,0,20"
