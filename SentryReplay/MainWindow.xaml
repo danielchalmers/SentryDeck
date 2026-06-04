@@ -62,6 +62,46 @@
             <Setter Property="Margin" Value="8,0" />
         </Style>
 
+        <Style x:Key="CameraViewTileButton"
+               TargetType="RadioButton">
+            <Setter Property="MinHeight" Value="116" />
+            <Setter Property="Margin" Value="4" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="TileBorder"
+                                Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TileBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="TileBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                <Setter TargetName="TileBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                <Setter TargetName="TileBorder" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="TileBorder" Property="Background" Value="{DynamicResource ControlFillColorDisabledBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextControlForegroundDisabled}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="Hyperlink"
                BasedOn="{StaticResource {x:Type Hyperlink}}">
             <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
@@ -294,43 +334,326 @@
                 </Grid.RowDefinitions>
 
                 <!--  Video Container  -->
-                <Grid Grid.Row="0">
-                    <!--  Video Player  -->
-                    <Grid ClipToBounds="True"
-                          Background="Black"
-                          Visibility="{Binding ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
+                <Grid Grid.Row="0"
+                      Margin="16,16,16,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid x:Name="FlyleafHostPool"
+                          Visibility="Collapsed">
                         <fl:FlyleafHost x:Name="FrontFlyleafHost" />
+                        <fl:FlyleafHost x:Name="BackFlyleafHost" />
+                        <fl:FlyleafHost x:Name="LeftFlyleafHost" />
+                        <fl:FlyleafHost x:Name="RightFlyleafHost" />
+                    </Grid>
 
-                        <Border Width="280"
-                                Height="210"
-                                Margin="0,15,15,0"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Top"
-                                Background="Black">
-                            <fl:FlyleafHost x:Name="BackFlyleafHost" />
+                    <!--  Video Player  -->
+                    <Grid Grid.RowSpan="2"
+                          Visibility="{Binding ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0"
+                                Background="Black"
+                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                ClipToBounds="True"
+                                CornerRadius="6">
+                            <Grid>
+                                <Grid Visibility="{Binding IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Row="0"
+                                            Grid.Column="0"
+                                            Margin="0,0,1,1"
+                                            Background="Black"
+                                            ClipToBounds="True">
+                                        <Grid>
+                                            <ContentControl x:Name="GridFrontHostSlot" />
+                                            <Border Margin="10"
+                                                    Padding="8,3"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Top"
+                                                    Background="#A0000000"
+                                                    CornerRadius="4">
+                                                <TextBlock Text="Front"
+                                                           FontSize="12"
+                                                           Foreground="White" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Grid.Row="0"
+                                            Grid.Column="1"
+                                            Margin="1,0,0,1"
+                                            Background="Black"
+                                            ClipToBounds="True">
+                                        <Grid>
+                                            <ContentControl x:Name="GridRearHostSlot" />
+                                            <Border Margin="10"
+                                                    Padding="8,3"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Top"
+                                                    Background="#A0000000"
+                                                    CornerRadius="4">
+                                                <TextBlock Text="Rear"
+                                                           FontSize="12"
+                                                           Foreground="White" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Grid.Row="1"
+                                            Grid.Column="0"
+                                            Margin="0,1,1,0"
+                                            Background="Black"
+                                            ClipToBounds="True">
+                                        <Grid>
+                                            <ContentControl x:Name="GridLeftHostSlot" />
+                                            <Border Margin="10"
+                                                    Padding="8,3"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Top"
+                                                    Background="#A0000000"
+                                                    CornerRadius="4">
+                                                <TextBlock Text="Left"
+                                                           FontSize="12"
+                                                           Foreground="White" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Grid.Row="1"
+                                            Grid.Column="1"
+                                            Margin="1,1,0,0"
+                                            Background="Black"
+                                            ClipToBounds="True">
+                                        <Grid>
+                                            <ContentControl x:Name="GridRightHostSlot" />
+                                            <Border Margin="10"
+                                                    Padding="8,3"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Top"
+                                                    Background="#A0000000"
+                                                    CornerRadius="4">
+                                                <TextBlock Text="Right"
+                                                           FontSize="12"
+                                                           Foreground="White" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <Grid Visibility="{Binding IsSingleCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
+                                    <ContentControl x:Name="PrimaryCameraHostSlot" />
+                                    <Border Margin="14"
+                                            Padding="10,4"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"
+                                            Background="#A0000000"
+                                            CornerRadius="4">
+                                        <TextBlock Text="{Binding ActiveCameraLabel}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="White" />
+                                    </Border>
+                                </Grid>
+                            </Grid>
                         </Border>
 
-                        <Border Width="280"
-                                Height="210"
-                                Margin="15,0,0,15"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Bottom"
-                                Background="Black">
-                            <fl:FlyleafHost x:Name="LeftFlyleafHost" />
-                        </Border>
+                        <Border Grid.Row="1"
+                                Margin="0,10,0,0"
+                                Padding="6"
+                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <UniformGrid Columns="5"
+                                         Rows="1">
+                                <RadioButton Command="{Binding SelectCameraViewCommand}"
+                                             CommandParameter="grid"
+                                             GroupName="CameraViewMode"
+                                             IsChecked="{Binding IsGridViewSelected, Mode=OneWay}"
+                                             Style="{StaticResource CameraViewTileButton}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="0"
+                                                Background="Black"
+                                                CornerRadius="4">
+                                            <UniformGrid Margin="18"
+                                                         Columns="2"
+                                                         Rows="2">
+                                                <Border Margin="2"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                                <Border Margin="2"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                                <Border Margin="2"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                                <Border Margin="2"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                            </UniformGrid>
+                                        </Border>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="Grid"
+                                                   Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </Grid>
+                                </RadioButton>
 
-                        <Border Width="280"
-                                Height="210"
-                                Margin="0,0,15,15"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Bottom"
-                                Background="Black">
-                            <fl:FlyleafHost x:Name="RightFlyleafHost" />
+                                <RadioButton Command="{Binding SelectCameraViewCommand}"
+                                             CommandParameter="front"
+                                             GroupName="CameraViewMode"
+                                             IsChecked="{Binding IsFrontViewSelected, Mode=OneWay}"
+                                             Style="{StaticResource CameraViewTileButton}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="0"
+                                                Background="Black"
+                                                ClipToBounds="True"
+                                                CornerRadius="4">
+                                            <Grid>
+                                                <ContentControl x:Name="FrontTileHostSlot" />
+                                                <TextBlock Text="Main view"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                           Visibility="{Binding IsFrontViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="Front"
+                                                   Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </Grid>
+                                </RadioButton>
+
+                                <RadioButton Command="{Binding SelectCameraViewCommand}"
+                                             CommandParameter="rear"
+                                             GroupName="CameraViewMode"
+                                             IsChecked="{Binding IsRearViewSelected, Mode=OneWay}"
+                                             Style="{StaticResource CameraViewTileButton}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="0"
+                                                Background="Black"
+                                                ClipToBounds="True"
+                                                CornerRadius="4">
+                                            <Grid>
+                                                <ContentControl x:Name="RearTileHostSlot" />
+                                                <TextBlock Text="Main view"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                           Visibility="{Binding IsRearViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="Rear"
+                                                   Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </Grid>
+                                </RadioButton>
+
+                                <RadioButton Command="{Binding SelectCameraViewCommand}"
+                                             CommandParameter="left"
+                                             GroupName="CameraViewMode"
+                                             IsChecked="{Binding IsLeftViewSelected, Mode=OneWay}"
+                                             Style="{StaticResource CameraViewTileButton}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="0"
+                                                Background="Black"
+                                                ClipToBounds="True"
+                                                CornerRadius="4">
+                                            <Grid>
+                                                <ContentControl x:Name="LeftTileHostSlot" />
+                                                <TextBlock Text="Main view"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                           Visibility="{Binding IsLeftViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="Left"
+                                                   Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </Grid>
+                                </RadioButton>
+
+                                <RadioButton Command="{Binding SelectCameraViewCommand}"
+                                             CommandParameter="right"
+                                             GroupName="CameraViewMode"
+                                             IsChecked="{Binding IsRightViewSelected, Mode=OneWay}"
+                                             Style="{StaticResource CameraViewTileButton}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Grid.Row="0"
+                                                Background="Black"
+                                                ClipToBounds="True"
+                                                CornerRadius="4">
+                                            <Grid>
+                                                <ContentControl x:Name="RightTileHostSlot" />
+                                                <TextBlock Text="Main view"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                           Visibility="{Binding IsRightViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="Right"
+                                                   Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </Grid>
+                                </RadioButton>
+                            </UniformGrid>
                         </Border>
                     </Grid>
 
                     <!--  Status Overlay (Loading/Rendering/Error)  -->
-                    <Border Background="#80000000"
+                    <Border Grid.RowSpan="2"
+                            Background="#80000000"
                             Visibility="{Binding ShowStatusOverlay, Converter={local:BoolToVisibilityConverter}}">
                         <StackPanel MaxWidth="500"
                                     HorizontalAlignment="Center"
@@ -351,10 +674,12 @@
 
                             <!--  Error display  -->
                             <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={local:BoolToVisibilityConverter}}">
-                                <TextBlock Text="⚠️"
+                                <TextBlock Text="!"
                                            Margin="0,0,0,16"
                                            HorizontalAlignment="Center"
-                                           FontSize="48" />
+                                           FontSize="48"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                                 <TextBlock Text="{Binding ErrorTitle}"
                                            Margin="0,0,0,8"
                                            HorizontalAlignment="Center"
@@ -386,7 +711,8 @@
                     </Border>
 
                     <!--  No Clip Selected  -->
-                    <TextBlock Text="Select a clip to play"
+                    <TextBlock Grid.RowSpan="2"
+                               Text="Select a clip to play"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                FontSize="24"

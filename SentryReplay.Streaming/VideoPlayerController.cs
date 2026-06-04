@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Serilog;
 
@@ -11,7 +11,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 {
     private readonly IMediaPlayer FrontPlayer;
     private readonly IReadOnlyDictionary<string, IMediaPlayer> CameraPlayers;
-    private readonly OverlayCameraLoader OverlayLoader;
     private readonly ClipPlaylistOrchestrator PlaylistOrchestrator;
     private readonly SemaphoreSlim OpLock = new(1, 1);
     private CancellationTokenSource _playbackCts;
@@ -65,13 +64,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             ["left_repeater"] = leftPlayer ?? throw new ArgumentNullException(nameof(leftPlayer)),
             ["right_repeater"] = rightPlayer ?? throw new ArgumentNullException(nameof(rightPlayer)),
         };
-        OverlayLoader = new OverlayCameraLoader(
-            OverlayPlayers,
-            () => CurrentChunk,
-            IsRequestActive,
-            () => PlaybackSpeed,
-            () => IsPlaying);
-
         Playlist = new ClipPlaylist();
         PlaylistOrchestrator = new ClipPlaylistOrchestrator(Playlist, StopAsync, () => BeginNewRequest());
 
@@ -93,10 +85,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
     public bool CanGoNext => PlaylistOrchestrator.CanGoNext;
     public bool CanGoPrevious => PlaylistOrchestrator.CanGoPrevious;
-
-    private CamChunk CurrentChunk => _timeline.GetChunk(_currentChunkIndex);
-    private IEnumerable<KeyValuePair<string, IMediaPlayer>> OverlayPlayers => CameraPlayers
-        .Where(player => !ReferenceEquals(player.Value, FrontPlayer));
 
     private long BeginNewRequest()
     {
@@ -152,7 +140,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private async Task StopPlaybackInternalAsync(bool resetTimeline)
     {
         Volatile.Write(ref _currentMediaRequestId, 0);
-        OverlayLoader.Cancel();
         await StopAndClosePlayersAsync();
 
         IsMediaOpen = false;
@@ -335,7 +322,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 CurrentClip?.FullPath,
                 Position);
             CancelAndDisposePlaybackCts();
-            OverlayLoader.Cancel();
             await StopPlaybackInternalAsync(resetTimeline: true);
         });
     }
@@ -369,13 +355,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     targetPosition.ChunkIndex,
                     targetPosition.Offset,
                     _currentChunkIndex);
-                OverlayLoader.Cancel();
-
                 if (IsMediaOpen && _openedClip == CurrentClip && targetPosition.ChunkIndex == _currentChunkIndex)
                 {
                     await SeekOpenPlayersAsync(targetPosition.Offset);
                     Position = targetPosition.AbsolutePosition;
-                    OverlayLoader.Start(targetPosition.Chunk, targetPosition.Offset, Volatile.Read(ref _currentMediaRequestId), ct);
                     return;
                 }
 
@@ -457,28 +440,40 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         try
         {
-            OverlayLoader.Cancel();
-
             await StopAndClosePlayersAsync();
+            IsMediaOpen = false;
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var frontFile = chunk.Files["front"];
-            var frontFileExists = File.Exists(frontFile.FullPath);
-            var opened = frontFileExists && await FrontPlayer.OpenAsync(new Uri(frontFile.FullPath));
-            if (!opened)
+            var frontOpened = await OpenCameraPlayerAsync(
+                "front",
+                FrontPlayer,
+                chunk,
+                offset,
+                required: true,
+                requestId,
+                cancellationToken);
+
+            if (!frontOpened)
             {
-                Log.Warning(
-                    "Failed to open front camera video. ClipName={ClipName}; ClipPath={ClipPath}; ChunkIndex={ChunkIndex}; FrontFile={FrontFile}; FileExists={FileExists}; RequestId={RequestId}",
-                    clip.Name,
-                    clip.FullPath,
-                    chunkIndex,
-                    frontFile.FullPath,
-                    frontFileExists,
-                    requestId);
-                ErrorMessage = "Failed to open front camera video.";
+                IsPlaying = false;
                 return;
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var secondaryOpenTasks = CameraPlayers
+                .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, FrontPlayer))
+                .Select(cameraPlayer => OpenCameraPlayerAsync(
+                    cameraPlayer.Key,
+                    cameraPlayer.Value,
+                    chunk,
+                    offset,
+                    required: false,
+                    requestId,
+                    cancellationToken));
+
+            await Task.WhenAll(secondaryOpenTasks);
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -488,22 +483,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             ApplyPlaybackSpeed();
 
-            if (offset > TimeSpan.Zero)
-            {
-                await FrontPlayer.SeekAsync(offset);
-            }
-
             Position = _timeline.ToAbsolutePosition(chunkIndex, offset);
             Volatile.Write(ref _currentMediaRequestId, requestId);
 
             if (playAfterOpen)
             {
-                await FrontPlayer.PlayAsync();
+                await PlayOpenPlayersAsync();
                 IsPlaying = true;
             }
             else
             {
-                await FrontPlayer.PauseAsync();
+                await PauseOpenPlayersAsync();
                 IsPlaying = false;
             }
 
@@ -518,12 +508,78 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 IsPlaying,
                 chunk.Files.Keys.Order().ToArray(),
                 requestId);
-            OverlayLoader.Start(chunk, offset, requestId, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            await StopAndClosePlayersAsync();
+            IsMediaOpen = false;
+            throw;
         }
         finally
         {
             _isOpeningMedia = false;
         }
+    }
+
+    private async Task<bool> OpenCameraPlayerAsync(
+        string camera,
+        IMediaPlayer player,
+        CamChunk chunk,
+        TimeSpan offset,
+        bool required,
+        long requestId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!chunk.Files.TryGetValue(camera, out var file) || !File.Exists(file.FullPath))
+        {
+            Log.Debug(
+                "Camera file not available. Camera={Camera}; ChunkTimestamp={ChunkTimestamp}; RequestId={RequestId}",
+                camera,
+                chunk.Timestamp,
+                requestId);
+
+            if (required)
+            {
+                ErrorMessage = "Failed to open front camera video.";
+            }
+
+            return false;
+        }
+
+        var opened = await player.OpenAsync(new Uri(file.FullPath));
+        if (!opened)
+        {
+            var messageTemplate = required
+                ? "Failed to open required camera video. Camera={Camera}; File={File}; ChunkTimestamp={ChunkTimestamp}; RequestId={RequestId}"
+                : "Failed to open secondary camera video. Camera={Camera}; File={File}; ChunkTimestamp={ChunkTimestamp}; RequestId={RequestId}";
+
+            Log.Warning(
+                messageTemplate,
+                camera,
+                file.FullPath,
+                chunk.Timestamp,
+                requestId);
+
+            if (required)
+            {
+                ErrorMessage = "Failed to open front camera video.";
+            }
+
+            return false;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        player.SpeedRatio = PlaybackSpeed;
+
+        if (offset > TimeSpan.Zero)
+        {
+            await player.SeekAsync(offset);
+        }
+
+        return true;
     }
 
     private async Task PlayOpenPlayersAsync()
@@ -750,7 +806,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         _isDisposed = true;
 
         CancelAndDisposePlaybackCts();
-        OverlayLoader.Cancel();
 
         Playlist.CurrentClipChanged -= OnCurrentClipChanged;
         Playlist.PlaylistChanged -= OnPlaylistChanged;
@@ -765,7 +820,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         Playlist.Dispose();
-        OverlayLoader.Dispose();
         OpLock.Dispose();
     }
 }
