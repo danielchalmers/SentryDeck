@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private bool _isSeeking;
     private bool _isInitialized;
     private bool _isClosing;
+    private bool _isReadyToClose;
 
     public MainWindow()
     {
@@ -245,17 +246,29 @@ public partial class MainWindow : Window
         await InitializeAsync();
     }
 
-    private async void Window_Closing(object sender, CancelEventArgs e)
+    private void Window_Closing(object sender, CancelEventArgs e)
     {
-        if (_isClosing)
+        if (_isReadyToClose)
         {
             return;
         }
 
         e.Cancel = true;
+
+        if (_isClosing)
+        {
+            return;
+        }
+
         _isClosing = true;
         IsEnabled = false;
 
+        // Let WPF finish this Closing callback before requesting the real close.
+        _ = Dispatcher.InvokeAsync(CloseAfterShutdownAsync);
+    }
+
+    private async Task CloseAfterShutdownAsync()
+    {
         try
         {
             await ShutdownAsync();
@@ -266,6 +279,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _isReadyToClose = true;
             Close();
         }
     }
