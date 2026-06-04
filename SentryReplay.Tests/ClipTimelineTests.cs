@@ -1,4 +1,4 @@
-namespace SentryReplay.Tests;
+﻿namespace SentryReplay.Tests;
 
 public sealed class ClipTimelineTests
 {

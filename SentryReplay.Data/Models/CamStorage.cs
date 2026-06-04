@@ -1,34 +1,36 @@
-namespace SentryReplay;
+﻿namespace SentryReplay;
 
 /// <summary>
-/// The root folder.
-/// Typically contains <c>SavedClips</c>, <c>SentryClips</c>, and <c>RecentClips</c> but that's not a requirement.
+/// A TeslaCam root and the clips found under it.
 /// </summary>
 public record class CamStorage
 {
     /// <summary>
-    /// The full path to the root folder.
+    /// Full path to the mapped root folder.
     /// </summary>
     public string FullPath { get; private init; }
 
     /// <summary>
-    /// Every clip found recursively in the storage, ordered by timestamp.
+    /// Clips found recursively in the storage.
     /// </summary>
-    public IReadOnlySet<CamClip> Clips { get; private init; }
+    public IReadOnlyList<CamClip> Clips { get; private init; }
 
     /// <summary>
-    /// Typical name of the folder that ultimately contains the dashcam clips.
+    /// Typical TeslaCam folder name.
     /// </summary>
     public static string ExpectedName { get; } = "TeslaCam";
 
     public CamStorage(string path, IEnumerable<CamClip> clips)
     {
         FullPath = Path.GetFullPath(path);
-        Clips = clips.ToHashSet();
+        Clips = clips
+            .OrderBy(clip => clip.Timestamp)
+            .ThenBy(clip => clip.Name)
+            .ToList();
     }
 
     /// <summary>
-    /// Traverses the specified path and constructs an object represntation of its structure.
+    /// Maps the specified folder into clips.
     /// </summary>
     public static CamStorage Map(string path)
     {
@@ -36,11 +38,23 @@ public record class CamStorage
         return new(path, clips);
     }
 
+    /// <summary>
+    /// Finds likely TeslaCam roots without deep-scanning fixed drives.
+    /// </summary>
     public static IEnumerable<string> FindCommonRoots()
     {
-        if (Directory.Exists(ExpectedName))
+        var localRoots = new[]
         {
-            yield return Path.GetFullPath(ExpectedName);
+            Path.GetFullPath(ExpectedName),
+            Path.Combine(AppContext.BaseDirectory, ExpectedName),
+        };
+
+        foreach (var root in localRoots.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (Directory.Exists(root))
+            {
+                yield return root;
+            }
         }
 
         var drives = DriveInfo.GetDrives();
@@ -49,7 +63,6 @@ public record class CamStorage
             var include = drive.DriveType == DriveType.Removable && drive.IsReady;
 
 #if DEBUG
-            // We only check USB sticks as to not wake regular drives, but it's useful to include them while debugging.
             include = true;
 #endif
 
@@ -60,13 +73,10 @@ public record class CamStorage
 
             var expectedFolderPath = Path.Combine(drive.RootDirectory.FullName, ExpectedName);
 
-            if (!Directory.Exists(expectedFolderPath))
+            if (Directory.Exists(expectedFolderPath))
             {
-                // The folder does not exist at the standard location. We won't search any further.
-                continue;
+                yield return expectedFolderPath;
             }
-
-            yield return expectedFolderPath;
         }
     }
 

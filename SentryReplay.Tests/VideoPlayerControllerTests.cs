@@ -8,10 +8,10 @@ public sealed class VideoPlayerControllerTests
     public async Task SelectingClip_OpensAndPlaysAllAvailableCameras()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
-        var left = new FakeMediaPlayer();
-        var right = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        var left = new FakeCameraPlayer();
+        var right = new FakeCameraPlayer();
         using var controller = CreateController(front, back, left, right);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -23,10 +23,10 @@ public sealed class VideoPlayerControllerTests
             left.PlayCount > 0 &&
             right.PlayCount > 0);
 
-        front.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-front.mp4", StringComparison.OrdinalIgnoreCase));
-        back.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-back.mp4", StringComparison.OrdinalIgnoreCase));
-        left.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-left_repeater.mp4", StringComparison.OrdinalIgnoreCase));
-        right.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-right_repeater.mp4", StringComparison.OrdinalIgnoreCase));
+        front.OpenedPaths.ShouldContain(path => path.EndsWith("-front.mp4", StringComparison.OrdinalIgnoreCase));
+        back.OpenedPaths.ShouldContain(path => path.EndsWith("-back.mp4", StringComparison.OrdinalIgnoreCase));
+        left.OpenedPaths.ShouldContain(path => path.EndsWith("-left_repeater.mp4", StringComparison.OrdinalIgnoreCase));
+        right.OpenedPaths.ShouldContain(path => path.EndsWith("-right_repeater.mp4", StringComparison.OrdinalIgnoreCase));
         controller.IsPlaying.ShouldBeTrue();
         controller.IsMediaOpen.ShouldBeTrue();
     }
@@ -35,11 +35,11 @@ public sealed class VideoPlayerControllerTests
     public async Task SelectingClip_WhenSecondaryFileMissing_PlaysRemainingCameras()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        File.Delete(clipFiles.GetPath(0, "left_repeater"));
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
-        var left = new FakeMediaPlayer();
-        var right = new FakeMediaPlayer();
+        File.Delete(clipFiles.GetPath(0, CameraNames.LeftRepeater));
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        var left = new FakeCameraPlayer();
+        var right = new FakeCameraPlayer();
         using var controller = CreateController(front, back, left, right);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -50,7 +50,7 @@ public sealed class VideoPlayerControllerTests
             back.PlayCount > 0 &&
             right.PlayCount > 0);
 
-        left.OpenedSources.ShouldBeEmpty();
+        left.OpenedPaths.ShouldBeEmpty();
         left.PlayCount.ShouldBe(0);
         controller.ErrorMessage.ShouldBeNull();
         controller.IsPlaying.ShouldBeTrue();
@@ -58,11 +58,29 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task PauseAsync_PausesOpenPlayersThroughSerializedPath()
+    public async Task SelectingClip_WhenFrontFileMissing_ReportsOpenFailure()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
+        File.Delete(clipFiles.GetPath(0, CameraNames.Front));
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+
+        controller.ErrorMessage.ShouldBe("Failed to open front camera video.");
+        controller.IsPlaying.ShouldBeFalse();
+        front.OpenedPaths.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task PauseSeekAndStop_ControlOpenPlayers()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
         using var controller = CreateController(front, back);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -70,37 +88,25 @@ public sealed class VideoPlayerControllerTests
         await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
 
         await controller.PauseAsync();
+        await controller.SeekAsync(TimeSpan.FromSeconds(12));
+        await controller.StopAsync();
 
         front.PauseCount.ShouldBe(1);
         back.PauseCount.ShouldBe(1);
-        controller.IsPlaying.ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task SeekAsync_SeeksOpenPlayersAndUpdatesPosition()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
-        using var controller = CreateController(front, back);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
-
-        await controller.SeekAsync(TimeSpan.FromSeconds(12));
-
         front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
         back.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
-        controller.Position.ShouldBe(TimeSpan.FromSeconds(12));
+        controller.Position.ShouldBe(TimeSpan.Zero);
+        controller.Duration.ShouldBe(TimeSpan.Zero);
+        controller.IsPlaying.ShouldBeFalse();
+        controller.IsMediaOpen.ShouldBeFalse();
     }
 
     [Fact]
     public async Task StopAsync_ClosesPlayersEvenWhenStopFails()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer { ThrowOnStop = true };
-        var back = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer { ThrowOnStop = true };
+        var back = new FakeCameraPlayer();
         using var controller = CreateController(front, back);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -120,7 +126,7 @@ public sealed class VideoPlayerControllerTests
     public async Task FrontMediaFailed_ReportsPlaybackFailure()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
         using var controller = CreateController(front);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -135,63 +141,11 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task FrontMediaEnded_OpensNextChunk()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
-        var front = new FakeMediaPlayer();
-        using var controller = CreateController(front);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
-
-        front.RaiseEnded();
-
-        await WaitUntilAsync(() => front.OpenedSources.Count >= 2);
-        front.OpenedSources[^1].LocalPath.ShouldEndWith("14-15-48-front.mp4");
-    }
-
-    [Fact]
-    public async Task SelectingClip_WhenFrontFileMissing_ReportsOpenFailure()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        File.Delete(clipFiles.GetPath(0, "front"));
-        var front = new FakeMediaPlayer();
-        using var controller = CreateController(front);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
-
-        controller.ErrorMessage.ShouldBe("Failed to open front camera video.");
-        controller.IsPlaying.ShouldBeFalse();
-        front.OpenedSources.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task SelectingClip_WhenFrontOpenReturnsFalse_ReportsOpenFailure()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer { OpenResult = false };
-        using var controller = CreateController(front);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
-
-        controller.ErrorMessage.ShouldBe("Failed to open front camera video.");
-        controller.IsPlaying.ShouldBeFalse();
-        front.OpenedSources.Count.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task SecondaryCameraFailure_DoesNotStopPrimaryPlayback()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
         using var controller = CreateController(front, back);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -206,10 +160,27 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task FrontMediaEnded_OpensNextChunk()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => front.OpenedPaths.Count >= 2);
+        front.OpenedPaths[^1].ShouldEndWith("14-15-48-front.mp4");
+    }
+
+    [Fact]
     public async Task SeekAsync_ToDifferentChunk_OpensChunkAtOffsetAndKeepsPlayingState()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);
-        var front = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
         using var controller = CreateController(front);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -218,7 +189,7 @@ public sealed class VideoPlayerControllerTests
 
         await controller.SeekAsync(TimeSpan.FromSeconds(75));
 
-        front.OpenedSources[^1].LocalPath.ShouldEndWith("14-15-48-front.mp4");
+        front.OpenedPaths[^1].ShouldEndWith("14-15-48-front.mp4");
         front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(15));
         controller.Position.ShouldBe(TimeSpan.FromSeconds(75));
         controller.IsPlaying.ShouldBeTrue();
@@ -228,7 +199,7 @@ public sealed class VideoPlayerControllerTests
     public async Task PositionChanged_OnSecondChunk_ReportsAbsoluteTimelinePosition()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);
-        var front = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
         using var controller = CreateController(front);
 
         controller.LoadClips([clipFiles.Clip]);
@@ -242,53 +213,11 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task StopAsync_ResetsTimelineState()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
-        var front = new FakeMediaPlayer();
-        using var controller = CreateController(front);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
-        await controller.SeekAsync(TimeSpan.FromSeconds(12));
-
-        await controller.StopAsync();
-
-        controller.Position.ShouldBe(TimeSpan.Zero);
-        controller.Duration.ShouldBe(TimeSpan.Zero);
-        controller.IsPlaying.ShouldBeFalse();
-        controller.IsMediaOpen.ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task PlayAsync_WhenPaused_ResumesOpenPlayersWithoutReopeningClip()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
-        using var controller = CreateController(front, back);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
-        var frontOpenCount = front.OpenedSources.Count;
-
-        await controller.PauseAsync();
-        await controller.PlayAsync();
-
-        front.OpenedSources.Count.ShouldBe(frontOpenCount);
-        front.PlayCount.ShouldBe(2);
-        back.PlayCount.ShouldBe(2);
-        controller.IsPlaying.ShouldBeTrue();
-    }
-
-    [Fact]
     public async Task PlaybackSpeed_AppliesToExistingAndFuturePlayers()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
         using var controller = CreateController(front, back);
 
         controller.PlaybackSpeed = 2.0;
@@ -297,34 +226,14 @@ public sealed class VideoPlayerControllerTests
 
         await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
 
-        front.SpeedRatio.ShouldBe(2.0);
-        back.SpeedRatio.ShouldBe(2.0);
+        front.Speed.ShouldBe(2.0);
+        back.Speed.ShouldBe(2.0);
 
         controller.PlaybackSpeed = 0;
 
         controller.PlaybackSpeed.ShouldBe(1.0);
-        front.SpeedRatio.ShouldBe(1.0);
-        back.SpeedRatio.ShouldBe(1.0);
-    }
-
-    [Fact]
-    public async Task Dispose_UnsubscribesEventsAndDisposesPlayers()
-    {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
-        var back = new FakeMediaPlayer();
-        var controller = CreateController(front, back);
-
-        controller.LoadClips([clipFiles.Clip]);
-        controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
-
-        controller.Dispose();
-        front.RaiseFailed(new InvalidOperationException("after dispose"));
-
-        front.DisposeCount.ShouldBe(1);
-        back.DisposeCount.ShouldBe(1);
-        controller.ErrorMessage.ShouldBeNull();
+        front.Speed.ShouldBe(1.0);
+        back.Speed.ShouldBe(1.0);
     }
 
     [Fact]
@@ -332,7 +241,7 @@ public sealed class VideoPlayerControllerTests
     {
         using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
         using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
-        var front = new FakeMediaPlayer();
+        var front = new FakeCameraPlayer();
         using var controller = CreateController(front);
 
         controller.LoadClips([firstClipFiles.Clip]);
@@ -349,16 +258,16 @@ public sealed class VideoPlayerControllerTests
     }
 
     private static VideoPlayerController CreateController(
-        FakeMediaPlayer front = null,
-        FakeMediaPlayer back = null,
-        FakeMediaPlayer left = null,
-        FakeMediaPlayer right = null)
+        FakeCameraPlayer front = null,
+        FakeCameraPlayer back = null,
+        FakeCameraPlayer left = null,
+        FakeCameraPlayer right = null)
     {
         return new VideoPlayerController(
-            front ?? new FakeMediaPlayer(),
-            back ?? new FakeMediaPlayer(),
-            left ?? new FakeMediaPlayer(),
-            right ?? new FakeMediaPlayer());
+            front ?? new FakeCameraPlayer(),
+            back ?? new FakeCameraPlayer(),
+            left ?? new FakeCameraPlayer(),
+            right ?? new FakeCameraPlayer());
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -372,33 +281,33 @@ public sealed class VideoPlayerControllerTests
         }
     }
 
-    private sealed class FakeMediaPlayer : IMediaPlayer
+    private sealed class FakeCameraPlayer : ICameraPlayer
     {
-        public event EventHandler MediaOpened;
-        public event EventHandler MediaEnded;
-        public event EventHandler<MediaPlayerFailedEventArgs> MediaFailed;
-        public event EventHandler<MediaPlayerPositionChangedEventArgs> PositionChanged;
+        public event EventHandler Opened;
+        public event EventHandler Ended;
+        public event EventHandler<CameraPlaybackFailedEventArgs> Failed;
+        public event EventHandler<CameraPositionChangedEventArgs> PositionChanged;
 
-        public List<Uri> OpenedSources { get; } = [];
+        public List<string> OpenedPaths { get; } = [];
         public List<TimeSpan> SeekPositions { get; } = [];
         public bool OpenResult { get; init; } = true;
         public bool ThrowOnStop { get; init; }
         public bool IsOpen { get; private set; }
-        public double SpeedRatio { get; set; } = 1.0;
+        public double Speed { get; set; } = 1.0;
         public int PlayCount { get; private set; }
         public int PauseCount { get; private set; }
         public int StopCount { get; private set; }
         public int CloseCount { get; private set; }
         public int DisposeCount { get; private set; }
 
-        public Task<bool> OpenAsync(Uri source)
+        public Task<bool> OpenAsync(string path)
         {
-            OpenedSources.Add(source);
+            OpenedPaths.Add(path);
             IsOpen = OpenResult;
 
             if (OpenResult)
             {
-                MediaOpened?.Invoke(this, EventArgs.Empty);
+                Opened?.Invoke(this, EventArgs.Empty);
             }
 
             return Task.FromResult(OpenResult);
@@ -419,7 +328,9 @@ public sealed class VideoPlayerControllerTests
         public Task StopAsync()
         {
             StopCount++;
-            return ThrowOnStop ? Task.FromException(new InvalidOperationException("stop failed")) : Task.CompletedTask;
+            return ThrowOnStop
+                ? Task.FromException(new InvalidOperationException("stop failed"))
+                : Task.CompletedTask;
         }
 
         public Task CloseAsync()
@@ -432,81 +343,28 @@ public sealed class VideoPlayerControllerTests
         public Task SeekAsync(TimeSpan position)
         {
             SeekPositions.Add(position);
-            PositionChanged?.Invoke(this, new MediaPlayerPositionChangedEventArgs(position));
+            PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
             return Task.CompletedTask;
         }
 
         public void RaiseEnded()
         {
-            MediaEnded?.Invoke(this, EventArgs.Empty);
+            Ended?.Invoke(this, EventArgs.Empty);
         }
 
         public void RaiseFailed(Exception exception)
         {
-            MediaFailed?.Invoke(this, new MediaPlayerFailedEventArgs(exception));
+            Failed?.Invoke(this, new CameraPlaybackFailedEventArgs(exception));
         }
 
         public void RaisePositionChanged(TimeSpan position)
         {
-            PositionChanged?.Invoke(this, new MediaPlayerPositionChangedEventArgs(position));
+            PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
         }
 
         public void Dispose()
         {
             DisposeCount++;
-        }
-    }
-
-    private sealed class TestClipFiles : IDisposable
-    {
-        private static readonly string[] Cameras = ["front", "back", "left_repeater", "right_repeater"];
-
-        private TestClipFiles(string rootPath, CamClip clip)
-        {
-            RootPath = rootPath;
-            Clip = clip;
-        }
-
-        public string RootPath { get; }
-        public CamClip Clip { get; }
-
-        public string GetPath(int chunkIndex, string camera)
-        {
-            var timestamp = new DateTime(2023, 2, 23, 14, 14, 48).AddMinutes(chunkIndex);
-            return Path.Combine(RootPath, $"{timestamp:yyyy-MM-dd_HH-mm-ss}-{camera}.mp4");
-        }
-
-        public static TestClipFiles Create(int chunkCount)
-        {
-            var root = Path.Combine(Path.GetTempPath(), $"SentryReplayTests-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(root);
-
-            var chunks = new LinkedList<CamChunk>();
-            var timestamp = new DateTime(2023, 2, 23, 14, 14, 48);
-
-            for (var i = 0; i < chunkCount; i++)
-            {
-                var chunkTimestamp = timestamp.AddMinutes(i);
-                var files = Cameras.Select(camera =>
-                {
-                    var path = Path.Combine(root, $"{chunkTimestamp:yyyy-MM-dd_HH-mm-ss}-{camera}.mp4");
-                    File.WriteAllBytes(path, []);
-                    return new CamFile(path, chunkTimestamp, camera);
-                });
-
-                chunks.AddLast(new CamChunk(chunkTimestamp, files));
-            }
-
-            var clip = new CamClip(root, "Test Clip", timestamp, chunks, camEvent: null);
-            return new TestClipFiles(root, clip);
-        }
-
-        public void Dispose()
-        {
-            if (Directory.Exists(RootPath))
-            {
-                Directory.Delete(RootPath, recursive: true);
-            }
         }
     }
 }

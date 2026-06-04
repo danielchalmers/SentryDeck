@@ -1,30 +1,33 @@
-namespace SentryReplay;
+﻿namespace SentryReplay;
 
+/// <summary>
+/// Maps clip chunks to one estimated continuous timeline.
+/// </summary>
 public sealed class ClipTimeline
 {
     public const double EstimatedChunkSeconds = 60;
 
-    private readonly IReadOnlyList<CamChunk> ChunksInternal;
+    private readonly IReadOnlyList<CamChunk> _chunks;
 
     public ClipTimeline(IEnumerable<CamChunk> chunks)
     {
-        ChunksInternal = chunks?.ToList() ?? [];
-        Duration = TimeSpan.FromSeconds(ChunksInternal.Count * EstimatedChunkSeconds);
+        _chunks = chunks?.ToList() ?? [];
+        Duration = TimeSpan.FromSeconds(_chunks.Count * EstimatedChunkSeconds);
     }
 
     public static ClipTimeline Empty { get; } = new([]);
 
-    public IReadOnlyList<CamChunk> Chunks => ChunksInternal;
+    public IReadOnlyList<CamChunk> Chunks => _chunks;
 
-    public int Count => ChunksInternal.Count;
+    public int Count => _chunks.Count;
 
-    public bool IsEmpty => ChunksInternal.Count == 0;
+    public bool IsEmpty => _chunks.Count == 0;
 
     public TimeSpan Duration { get; }
 
     public CamChunk GetChunk(int index)
     {
-        return index >= 0 && index < ChunksInternal.Count ? ChunksInternal[index] : null;
+        return index >= 0 && index < _chunks.Count ? _chunks[index] : null;
     }
 
     public TimeSpan GetChunkStart(int index)
@@ -38,11 +41,11 @@ public sealed class ClipTimeline
             return null;
 
         var clampedPosition = Clamp(absolutePosition, TimeSpan.Zero, Duration);
-        var chunkIndex = Math.Min(ChunksInternal.Count - 1, (int)(clampedPosition.TotalSeconds / EstimatedChunkSeconds));
+        var chunkIndex = Math.Min(_chunks.Count - 1, (int)(clampedPosition.TotalSeconds / EstimatedChunkSeconds));
         var chunkStart = GetChunkStart(chunkIndex);
 
         return new ClipTimelinePosition(
-            ChunksInternal[chunkIndex],
+            _chunks[chunkIndex],
             chunkIndex,
             chunkStart,
             clampedPosition - chunkStart,

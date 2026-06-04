@@ -1,13 +1,15 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Windows.Media;
 using FlyleafLib;
 using FlyleafLib.Controls.WPF;
 using FlyleafLib.MediaPlayer;
-using Serilog;
 
 namespace SentryReplay;
 
-public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
+/// <summary>
+/// Flyleaf-backed player for one camera view.
+/// </summary>
+internal sealed class FlyleafCameraPlayer : ICameraPlayer
 {
     private readonly FlyleafHost _host;
     private readonly Player _player;
@@ -15,7 +17,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
     private bool _isOpen;
     private bool _isStopping;
 
-    public FlyleafMediaPlayerAdapter(FlyleafHost host, bool audioEnabled)
+    public FlyleafCameraPlayer(FlyleafHost host, bool audioEnabled)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _player = new Player(CreateConfig(audioEnabled));
@@ -25,14 +27,14 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
         _player.PropertyChanged += OnPropertyChanged;
     }
 
-    public event EventHandler MediaOpened;
-    public event EventHandler MediaEnded;
-    public event EventHandler<MediaPlayerFailedEventArgs> MediaFailed;
-    public event EventHandler<MediaPlayerPositionChangedEventArgs> PositionChanged;
+    public event EventHandler Opened;
+    public event EventHandler Ended;
+    public event EventHandler<CameraPlaybackFailedEventArgs> Failed;
+    public event EventHandler<CameraPositionChangedEventArgs> PositionChanged;
 
     public bool IsOpen => _isOpen;
 
-    public double SpeedRatio
+    public double Speed
     {
         get => _player.Speed;
         set
@@ -44,16 +46,15 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
         }
     }
 
-    public async Task<bool> OpenAsync(Uri source)
+    public async Task<bool> OpenAsync(string path)
     {
-        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ThrowIfDisposed();
 
         _isStopping = false;
 
         try
         {
-            var path = source.IsFile ? source.LocalPath : source.AbsoluteUri;
             var result = await Task.Run(() => _player.Open(
                 path,
                 defaultPlaylistItem: true,
@@ -65,7 +66,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
             _isOpen = result.Success;
             if (result.Success)
             {
-                MediaOpened?.Invoke(this, EventArgs.Empty);
+                Opened?.Invoke(this, EventArgs.Empty);
             }
             else
             {
@@ -77,7 +78,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
         catch (Exception ex)
         {
             _isOpen = false;
-            MediaFailed?.Invoke(this, new MediaPlayerFailedEventArgs(ex));
+            Failed?.Invoke(this, new CameraPlaybackFailedEventArgs(ex));
             return false;
         }
     }
@@ -117,10 +118,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
             return Task.CompletedTask;
         }
 
-        var milliseconds = (int)Math.Clamp(
-            position.TotalMilliseconds,
-            0,
-            int.MaxValue);
+        var milliseconds = (int)Math.Clamp(position.TotalMilliseconds, 0, int.MaxValue);
         _player.SeekAccurate(milliseconds);
         return Task.CompletedTask;
     }
@@ -139,7 +137,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
 
     private static Config CreateConfig(bool audioEnabled)
     {
-        var config = new Config
+        return new Config
         {
             Player =
             {
@@ -163,8 +161,6 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
                 Enabled = false,
             },
         };
-
-        return config;
     }
 
     private void StopAndClose()
@@ -198,7 +194,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
         if (_player.Status == Status.Ended)
         {
             _isOpen = false;
-            MediaEnded?.Invoke(this, EventArgs.Empty);
+            Ended?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -207,7 +203,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
         if (_isDisposed || !_isOpen || e.PropertyName != nameof(Player.CurTime))
             return;
 
-        PositionChanged?.Invoke(this, new MediaPlayerPositionChangedEventArgs(TimeSpan.FromTicks(_player.CurTime)));
+        PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(TimeSpan.FromTicks(_player.CurTime)));
     }
 
     private void RaiseFailed(string error)
@@ -215,7 +211,7 @@ public sealed class FlyleafMediaPlayerAdapter : IMediaPlayer
         var exception = new InvalidOperationException(string.IsNullOrWhiteSpace(error)
             ? "Flyleaf failed to play the media."
             : error);
-        MediaFailed?.Invoke(this, new MediaPlayerFailedEventArgs(exception));
+        Failed?.Invoke(this, new CameraPlaybackFailedEventArgs(exception));
     }
 
     private void ThrowIfDisposed()

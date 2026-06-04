@@ -4,58 +4,69 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Navigation;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Flyleaf.FFmpeg;
-using FlyleafLib;
-using FlyleafLib.Controls.WPF;
 using Microsoft.Win32;
 using Serilog;
 
 namespace SentryReplay;
 
 /// <summary>
-/// Interaction logic for MainWindow.xaml
-/// A robust video player for Tesla dashcam footage with seamless playback.
+/// Main player screen state and commands.
 /// </summary>
-[INotifyPropertyChanged]
-public partial class MainWindow : Window
+public sealed partial class MainWindowViewModel : ObservableObject
 {
-    private const string GridCameraView = "grid";
-    private const string FrontCameraView = "front";
-    private const string RearCameraView = "rear";
-    private const string LeftCameraView = "left";
-    private const string RightCameraView = "right";
+    public const string GridCameraView = "grid";
+    public const string FrontCameraView = "front";
+    public const string RearCameraView = "rear";
+    public const string LeftCameraView = "left";
+    public const string RightCameraView = "right";
 
-    private readonly List<CamClip> AllClips = [];
-    private readonly UpdateService _updateService = new();
+    private readonly List<CamClip> _allClips = [];
+    private readonly Func<VideoPlayerController> _playerFactory;
+    private readonly FlyleafRuntime _flyleafRuntime;
+    private readonly UpdateService _updateService;
+    private readonly Action<Action> _runOnUiThread;
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
-    private bool _isFlyleafStarted;
-    private bool _isClosing;
 
-    public MainWindow()
+    public MainWindowViewModel(
+        Func<VideoPlayerController> playerFactory,
+        FlyleafRuntime flyleafRuntime = null,
+        UpdateService updateService = null,
+        Action<Action> runOnUiThread = null)
     {
-        InitializeComponent();
-        DataContext = this;
-        UpdateCameraHostLayout();
+        _playerFactory = playerFactory ?? throw new ArgumentNullException(nameof(playerFactory));
+        _flyleafRuntime = flyleafRuntime ?? new FlyleafRuntime();
+        _updateService = updateService ?? new UpdateService();
+        _runOnUiThread = runOnUiThread ?? (action => action());
     }
+
+    public event EventHandler CameraLayoutChanged;
+    public event EventHandler SearchFocusRequested;
 
     public bool ShowMainContent => !ShowAboutPage;
 
     public Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+
     public string FileVersion => FormatVersion(CurrentVersion);
+
     public string RuntimeDescription => $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})";
+
     public string OsDescription => RuntimeInformation.OSDescription;
+
     public string ExecutablePath => Environment.ProcessPath;
+
     public bool HasUpdateBadge => IsUpdateAvailable;
+
     public string LatestVersionText => LatestRelease is null ? "Unknown" : FormatVersion(LatestRelease.Version);
+
     public string LatestReleaseUrl => LatestRelease?.ReleaseUrl ?? UpdateService.ReleasesPageUrl;
+
     public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
+
     public string UpdateStatusTitle => IsUpdateAvailable
         ? "Update available"
         : "You're up to date";
@@ -77,7 +88,7 @@ public partial class MainWindow : Window
         4.0,
     ];
 
-    public IReadOnlyList<CamClip> FilteredClips => AllClips
+    public IReadOnlyList<CamClip> FilteredClips => _allClips
         .Where(c => string.IsNullOrWhiteSpace(FilterText) ||
                     c.Name.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase) ||
                     c.FullPath.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase))
@@ -95,14 +106,7 @@ public partial class MainWindow : Window
         }
     }
 
-    public string DurationText
-    {
-        get
-        {
-            var duration = _playerController?.Duration ?? TimeSpan.Zero;
-            return FormatTimeSpan(duration);
-        }
-    }
+    public string DurationText => FormatTimeSpan(_playerController?.Duration ?? TimeSpan.Zero);
 
     public bool CanSeek => _playerController?.IsMediaOpen == true && !IsLoading && _playerController.Duration > TimeSpan.Zero;
 
@@ -110,13 +114,14 @@ public partial class MainWindow : Window
 
     public bool CanStop => IsPlaying || IsLoading;
 
-    public bool CanGoNext => _playerController?.Playlist.HasNext == true;
+    public bool CanGoNext => _playerController?.CanGoNext == true;
 
-    public bool CanGoPrevious => _playerController?.Playlist.HasPrevious == true;
+    public bool CanGoPrevious => _playerController?.CanGoPrevious == true;
 
     public string PlayPauseIcon => IsPlaying ? "\u23F8" : "\u25B6";
 
     public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay;
+
     public bool ShowVideoHosts => !ShowStatusOverlay;
 
     public bool HasError => ShowErrorOverlay;
@@ -126,10 +131,15 @@ public partial class MainWindow : Window
     public bool IsIndeterminateProgress => IsLoading && !IsRendering;
 
     public bool IsGridViewSelected => SelectedCameraView == GridCameraView;
+
     public bool IsSingleCameraViewSelected => !IsGridViewSelected;
+
     public bool IsFrontViewSelected => SelectedCameraView == FrontCameraView;
+
     public bool IsRearViewSelected => SelectedCameraView == RearCameraView;
+
     public bool IsLeftViewSelected => SelectedCameraView == LeftCameraView;
+
     public bool IsRightViewSelected => SelectedCameraView == RightCameraView;
 
     public string ActiveCameraLabel => SelectedCameraView switch
@@ -235,83 +245,13 @@ public partial class MainWindow : Window
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
     private UpdateRelease _latestRelease;
 
-    private async void Window_ContentRendered(object sender, EventArgs e)
-    {
-        await InitializeAsync();
-    }
-
-    private async void Window_Closing(object sender, CancelEventArgs e)
-    {
-        if (_isClosing)
-        {
-            return;
-        }
-
-        e.Cancel = true;
-        _isClosing = true;
-        IsEnabled = false;
-
-        var controller = _playerController;
-        _playerController = null;
-
-        try
-        {
-            if (controller is not null)
-            {
-                try
-                {
-                    await controller.StopAsync();
-                }
-                finally
-                {
-                    controller.PropertyChanged -= PlayerControllerOnPropertyChanged;
-                    controller.Dispose();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to stop playback while closing");
-        }
-        finally
-        {
-            Close();
-        }
-    }
-
-    private async void Window_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (await HandleKeyDownAsync(e.Key, Keyboard.Modifiers))
-        {
-            e.Handled = true;
-        }
-    }
-
-    private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        BeginSeek();
-    }
-
-    private async void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        await EndSeekAsync();
-    }
-
-    private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_isSeeking)
-        {
-            OnPropertyChanged(nameof(PositionText));
-        }
-    }
-
-    private async Task InitializeAsync()
+    public async Task InitializeAsync()
     {
         if (_isInitialized)
             return;
 
         _isInitialized = true;
-        Log.Debug("Initializing main window");
+        Log.Debug("Initializing main window view model");
 
 #if DEBUG
         Log.Debug("Skipping update check in debug build");
@@ -319,7 +259,7 @@ public partial class MainWindow : Window
         _ = UpdateLatestReleaseAsync();
 #endif
 
-        if (TryStartFlyleaf())
+        if (_flyleafRuntime.TryStart())
         {
             InitializePlayer();
             LoadClips(CamStorage.FindCommonRoots());
@@ -330,41 +270,112 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool TryStartFlyleaf()
+    public async Task ShutdownAsync()
     {
-        if (_isFlyleafStarted)
-        {
-            return true;
-        }
+        var controller = _playerController;
+        _playerController = null;
 
-        var directory = PackageManager.FindFFmpegDirectory();
-        if (directory is null)
-        {
-            Log.Warning("FFmpeg binaries were not found");
-            return false;
-        }
+        if (controller is null)
+            return;
 
         try
         {
-            Engine.Start(new EngineConfig
-            {
-                FFmpegPath = directory,
-                FFmpegLoadProfile = LoadProfile.Main,
-                FFmpegLogLevel = Flyleaf.FFmpeg.LogLevel.Warn,
-                LogLevel = FlyleafLib.LogLevel.Warn,
-                LogOutput = ":debug",
-                UIRefresh = true,
-            });
+            await controller.StopAsync();
+        }
+        finally
+        {
+            controller.PropertyChanged -= PlayerControllerOnPropertyChanged;
+            controller.Dispose();
+        }
+    }
 
-            _isFlyleafStarted = true;
-            Log.Information("Started Flyleaf. FFmpegDirectory={FFmpegDirectory}", directory);
+    public void BeginSeek()
+    {
+        if (CanSeek)
+        {
+            _isSeeking = true;
+        }
+    }
+
+    public async Task EndSeekAsync()
+    {
+        if (_playerController is null || !CanSeek)
+        {
+            _isSeeking = false;
+            return;
+        }
+
+        await SeekToCurrentPositionAsync();
+        _isSeeking = false;
+    }
+
+    public void RefreshSeekTextDuringDrag()
+    {
+        if (_isSeeking)
+        {
+            OnPropertyChanged(nameof(PositionText));
+        }
+    }
+
+    public async Task<bool> HandleKeyDownAsync(Key key, ModifierKeys modifiers)
+    {
+        if ((key == Key.F && modifiers == ModifierKeys.Control) ||
+            (key == Key.F3 && modifiers == ModifierKeys.None))
+        {
+            ShowAboutPage = false;
+            SearchFocusRequested?.Invoke(this, EventArgs.Empty);
             return true;
         }
-        catch (Exception ex)
+
+        if (_playerController is null)
         {
-            Log.Error(ex, "Failed to start Flyleaf. FFmpegDirectory={FFmpegDirectory}", directory);
             return false;
         }
+
+        switch (key)
+        {
+            case Key.Space:
+                await _playerController.TogglePlayPauseAsync();
+                return true;
+
+            case Key.Left:
+                if (modifiers == ModifierKeys.Control && CanGoPrevious)
+                {
+                    await _playerController.PreviousAsync();
+                    SelectedClip = _playerController.CurrentClip;
+                }
+                else if (CanSeek)
+                {
+                    var position = _playerController.Position - TimeSpan.FromSeconds(5);
+                    await _playerController.SeekAsync(position < TimeSpan.Zero ? TimeSpan.Zero : position);
+                }
+
+                return true;
+
+            case Key.Right:
+                if (modifiers == ModifierKeys.Control && CanGoNext)
+                {
+                    await _playerController.NextAsync();
+                    SelectedClip = _playerController.CurrentClip;
+                }
+                else if (CanSeek)
+                {
+                    var duration = _playerController.Duration;
+                    var position = _playerController.Position + TimeSpan.FromSeconds(5);
+                    await _playerController.SeekAsync(position > duration ? duration : position);
+                }
+
+                return true;
+        }
+
+        return false;
+    }
+
+    internal static string FormatTimeSpan(TimeSpan ts)
+    {
+        return ts.TotalHours >= 1
+            ? ts.ToString(@"h\:mm\:ss")
+            : ts.ToString(@"m\:ss");
     }
 
     private void InitializePlayer()
@@ -372,11 +383,7 @@ public partial class MainWindow : Window
         if (_playerController is not null)
             return;
 
-        _playerController = new VideoPlayerController(
-            new FlyleafMediaPlayerAdapter(FrontFlyleafHost, audioEnabled: true),
-            new FlyleafMediaPlayerAdapter(BackFlyleafHost, audioEnabled: false),
-            new FlyleafMediaPlayerAdapter(LeftFlyleafHost, audioEnabled: false),
-            new FlyleafMediaPlayerAdapter(RightFlyleafHost, audioEnabled: false));
+        _playerController = _playerFactory();
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
@@ -384,17 +391,18 @@ public partial class MainWindow : Window
     private void LoadClips(IEnumerable<string> roots)
     {
         ClearError();
-        AllClips.Clear();
+        _allClips.Clear();
+        SelectedClip = null;
 
         var rootList = roots?.Where(root => !string.IsNullOrWhiteSpace(root)).ToList() ?? [];
         if (rootList.Count == 0)
         {
             Log.Information("No dashcam roots found");
-            ShowError("No Dashcam Folders Found",
+            ShowError(
+                "No Dashcam Folders Found",
                 "Click 'Select Folder' to choose a folder containing Tesla dashcam footage (TeslaCam folder).",
                 canDismiss: true);
-            OnPropertyChanged(nameof(FilteredClips));
-            OnPropertyChanged(nameof(HasNoClipSelected));
+            RefreshClipState();
             return;
         }
 
@@ -410,7 +418,7 @@ public partial class MainWindow : Window
             try
             {
                 var storage = CamStorage.Map(root);
-                AllClips.AddRange(storage.Clips);
+                _allClips.AddRange(storage.Clips);
                 Log.Information(
                     "Scanned dashcam root. Root={Root}; ClipCount={ClipCount}; ElapsedMs={ElapsedMs}",
                     root,
@@ -431,18 +439,23 @@ public partial class MainWindow : Window
             }
         }
 
-        _playerController?.LoadClips(AllClips);
-
-        OnPropertyChanged(nameof(FilteredClips));
-        OnPropertyChanged(nameof(HasNoClipSelected));
-        OnPropertyChanged(nameof(CanGoNext));
-        OnPropertyChanged(nameof(CanGoPrevious));
+        _playerController?.LoadClips(_allClips);
+        RefreshClipState();
         Log.Information(
             "Finished loading dashcam clips. ClipCount={ClipCount}; RootCount={RootCount}; FailedRootCount={FailedRootCount}; ElapsedMs={ElapsedMs}",
-            AllClips.Count,
+            _allClips.Count,
             rootList.Count,
             failedRoots,
             totalStopwatch.ElapsedMilliseconds);
+    }
+
+    private void RefreshClipState()
+    {
+        OnPropertyChanged(nameof(FilteredClips));
+        OnPropertyChanged(nameof(HasNoClipSelected));
+        OnPropertyChanged(nameof(CanPlayPause));
+        OnPropertyChanged(nameof(CanGoNext));
+        OnPropertyChanged(nameof(CanGoPrevious));
     }
 
     [RelayCommand]
@@ -479,10 +492,10 @@ public partial class MainWindow : Window
     [RelayCommand]
     private async Task PlayPauseAsync()
     {
-        if (_playerController is null)
-            return;
-
-        await _playerController.TogglePlayPauseAsync();
+        if (_playerController is not null)
+        {
+            await _playerController.TogglePlayPauseAsync();
+        }
     }
 
     [RelayCommand]
@@ -525,7 +538,7 @@ public partial class MainWindow : Window
         {
             Log.Debug("Starting FFmpeg download workflow");
             await PackageManager.DownloadAndExtractFFmpeg();
-            if (TryStartFlyleaf())
+            if (_flyleafRuntime.TryStart())
             {
                 InitializePlayer();
                 LoadClips(CamStorage.FindCommonRoots());
@@ -545,6 +558,31 @@ public partial class MainWindow : Window
         {
             IsLoading = false;
         }
+    }
+
+    [RelayCommand]
+    private void DismissError()
+    {
+        ClearError();
+    }
+
+    [RelayCommand]
+    private void ToggleAbout()
+    {
+        ShowAboutPage = !ShowAboutPage;
+    }
+
+    [RelayCommand]
+    private void SelectCameraView(string cameraView)
+    {
+        SelectedCameraView = cameraView switch
+        {
+            GridCameraView => GridCameraView,
+            RearCameraView => RearCameraView,
+            LeftCameraView => LeftCameraView,
+            RightCameraView => RightCameraView,
+            _ => FrontCameraView,
+        };
     }
 
     private async Task PlaySelectedClipAsync()
@@ -569,86 +607,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<bool> HandleKeyDownAsync(Key key, ModifierKeys modifiers)
-    {
-        if ((key == Key.F && modifiers == ModifierKeys.Control) ||
-            (key == Key.F3 && modifiers == ModifierKeys.None))
-        {
-            FocusSearchBox();
-            return true;
-        }
-
-        if (_playerController is null)
-        {
-            return false;
-        }
-
-        switch (key)
-        {
-            case Key.Space:
-                await _playerController.TogglePlayPauseAsync();
-                return true;
-
-            case Key.Left:
-                if (modifiers == ModifierKeys.Control && CanGoPrevious)
-                {
-                    await _playerController.PreviousAsync();
-                    SelectedClip = _playerController.CurrentClip;
-                }
-                else if (CanSeek)
-                {
-                    var pos = _playerController.Position - TimeSpan.FromSeconds(5);
-                    await _playerController.SeekAsync(pos < TimeSpan.Zero ? TimeSpan.Zero : pos);
-                }
-
-                return true;
-
-            case Key.Right:
-                if (modifiers == ModifierKeys.Control && CanGoNext)
-                {
-                    await _playerController.NextAsync();
-                    SelectedClip = _playerController.CurrentClip;
-                }
-                else if (CanSeek)
-                {
-                    var duration = _playerController.Duration;
-                    var pos = _playerController.Position + TimeSpan.FromSeconds(5);
-                    await _playerController.SeekAsync(pos > duration ? duration : pos);
-                }
-
-                return true;
-        }
-
-        return false;
-    }
-
-    private void FocusSearchBox()
-    {
-        ShowAboutPage = false;
-        SearchBox.Focus();
-        SearchBox.SelectAll();
-    }
-
-    private void BeginSeek()
-    {
-        if (CanSeek)
-        {
-            _isSeeking = true;
-        }
-    }
-
-    private async Task EndSeekAsync()
-    {
-        if (_playerController is null || !CanSeek)
-        {
-            _isSeeking = false;
-            return;
-        }
-
-        await SeekToCurrentPositionAsync();
-        _isSeeking = false;
-    }
-
     private async Task SeekToCurrentPositionAsync()
     {
         if (_playerController is null)
@@ -668,14 +626,9 @@ public partial class MainWindow : Window
             return;
 
         var duration = _playerController.Duration;
-        if (duration.TotalSeconds > 0)
-        {
-            SeekPosition = Math.Clamp(_playerController.Position.TotalSeconds / duration.TotalSeconds, 0, 1);
-        }
-        else
-        {
-            SeekPosition = 0;
-        }
+        SeekPosition = duration.TotalSeconds > 0
+            ? Math.Clamp(_playerController.Position.TotalSeconds / duration.TotalSeconds, 0, 1)
+            : 0;
     }
 
     private void PlayerControllerOnPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -683,13 +636,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(e.PropertyName))
             return;
 
-        if (Dispatcher.CheckAccess())
-        {
-            HandlePlayerControllerPropertyChanged(e.PropertyName);
-            return;
-        }
-
-        Dispatcher.Invoke(() => HandlePlayerControllerPropertyChanged(e.PropertyName));
+        _runOnUiThread(() => HandlePlayerControllerPropertyChanged(e.PropertyName));
     }
 
     private void HandlePlayerControllerPropertyChanged(string propertyName)
@@ -702,24 +649,22 @@ public partial class MainWindow : Window
             case nameof(VideoPlayerController.IsLoading):
                 IsLoading = _playerController.IsLoading;
                 break;
-            case nameof(VideoPlayerController.IsRendering):
-                IsRendering = _playerController.IsRendering;
-                break;
-            case nameof(VideoPlayerController.RenderProgress):
-                RenderProgress = _playerController.RenderProgress;
-                break;
+
             case nameof(VideoPlayerController.IsPlaying):
                 IsPlaying = _playerController.IsPlaying;
                 break;
+
             case nameof(VideoPlayerController.Duration):
                 UpdateSeekPositionFromController();
                 OnPropertyChanged(nameof(DurationText));
                 OnPropertyChanged(nameof(PositionText));
                 OnPropertyChanged(nameof(CanSeek));
                 break;
+
             case nameof(VideoPlayerController.Position):
                 UpdateSeekPositionFromController();
                 break;
+
             case nameof(VideoPlayerController.ErrorMessage):
                 if (_playerController.ErrorMessage is not null)
                 {
@@ -727,24 +672,16 @@ public partial class MainWindow : Window
                 }
 
                 break;
+
             case nameof(VideoPlayerController.CurrentClip):
                 SelectedClip = _playerController.CurrentClip;
-                OnPropertyChanged(nameof(CanGoNext));
-                OnPropertyChanged(nameof(CanGoPrevious));
-                OnPropertyChanged(nameof(CanPlayPause));
-                OnPropertyChanged(nameof(HasNoClipSelected));
+                RefreshClipState();
                 break;
+
             case nameof(VideoPlayerController.IsMediaOpen):
                 OnPropertyChanged(nameof(CanSeek));
                 break;
         }
-    }
-
-    private static string FormatTimeSpan(TimeSpan ts)
-    {
-        return ts.TotalHours >= 1
-            ? ts.ToString(@"h\:mm\:ss")
-            : ts.ToString(@"m\:ss");
     }
 
     private static string FormatVersion(Version version)
@@ -781,133 +718,11 @@ public partial class MainWindow : Window
         ErrorDetails = null;
     }
 
-    [RelayCommand]
-    private void DismissError()
-    {
-        ClearError();
-    }
-
     private void ShowFFmpegMissingError()
     {
         Log.Debug("Showing FFmpeg missing prompt");
         ShowFFmpegDownloadButton = true;
         ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
-    }
-
-    [RelayCommand]
-    private void ToggleAbout()
-    {
-        ShowAboutPage = !ShowAboutPage;
-    }
-
-    [RelayCommand]
-    private void SelectCameraView(string cameraView)
-    {
-        SelectedCameraView = cameraView switch
-        {
-            GridCameraView => GridCameraView,
-            RearCameraView => RearCameraView,
-            LeftCameraView => LeftCameraView,
-            RightCameraView => RightCameraView,
-            _ => FrontCameraView,
-        };
-    }
-
-    private void UpdateCameraHostLayout()
-    {
-        if (PrimaryCameraHostSlot is null)
-            return;
-
-        ClearCameraHostSlots();
-
-        switch (SelectedCameraView)
-        {
-            case GridCameraView:
-                MoveHostToSlot(FrontFlyleafHost, GridFrontHostSlot);
-                MoveHostToSlot(BackFlyleafHost, GridRearHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, GridLeftHostSlot);
-                MoveHostToSlot(RightFlyleafHost, GridRightHostSlot);
-                break;
-
-            case RearCameraView:
-                MoveHostToSlot(BackFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-
-            case LeftCameraView:
-                MoveHostToSlot(LeftFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-
-            case RightCameraView:
-                MoveHostToSlot(RightFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                break;
-
-            default:
-                MoveHostToSlot(FrontFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-        }
-    }
-
-    private void ClearCameraHostSlots()
-    {
-        ContentControl[] slots =
-        [
-            PrimaryCameraHostSlot,
-            GridFrontHostSlot,
-            GridRearHostSlot,
-            GridLeftHostSlot,
-            GridRightHostSlot,
-            FrontTileHostSlot,
-            RearTileHostSlot,
-            LeftTileHostSlot,
-            RightTileHostSlot,
-        ];
-
-        foreach (var slot in slots)
-        {
-            if (slot.Content is FlyleafHost)
-            {
-                slot.Content = null;
-            }
-        }
-    }
-
-    private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
-    {
-        if (ReferenceEquals(slot.Content, host))
-            return;
-
-        RemoveHostFromParent(host);
-        slot.Content = host;
-    }
-
-    private static void RemoveHostFromParent(FlyleafHost host)
-    {
-        switch (host.Parent)
-        {
-            case ContentControl contentControl when ReferenceEquals(contentControl.Content, host):
-                contentControl.Content = null;
-                break;
-
-            case Panel panel:
-                panel.Children.Remove(host);
-                break;
-
-            case Decorator decorator when ReferenceEquals(decorator.Child, host):
-                decorator.Child = null;
-                break;
-        }
     }
 
     private async Task UpdateLatestReleaseAsync()
@@ -951,38 +766,19 @@ public partial class MainWindow : Window
     [RelayCommand(CanExecute = nameof(CanUseClip))]
     private void CopyClipPath(CamClip clip)
     {
-        if (clip is null)
+        if (clip is not null)
         {
-            return;
+            Clipboard.SetText(clip.FullPath);
         }
-
-        Clipboard.SetText(clip.FullPath);
     }
 
     [RelayCommand(CanExecute = nameof(CanUseClip))]
     private void CopyClipName(CamClip clip)
     {
-        if (clip is null)
+        if (clip is not null)
         {
-            return;
+            Clipboard.SetText(clip.Name);
         }
-
-        Clipboard.SetText(clip.Name);
-    }
-
-    private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
-    {
-        if (e.Uri is null)
-        {
-            return;
-        }
-
-        Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri)
-        {
-            UseShellExecute = true,
-        });
-
-        e.Handled = true;
     }
 
     partial void OnSelectedClipChanged(CamClip value)
@@ -1008,6 +804,6 @@ public partial class MainWindow : Window
 
     partial void OnSelectedCameraViewChanged(string value)
     {
-        UpdateCameraHostLayout();
+        CameraLayoutChanged?.Invoke(this, EventArgs.Empty);
     }
 }

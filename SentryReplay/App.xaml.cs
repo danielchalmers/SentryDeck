@@ -1,10 +1,10 @@
-using System.Windows;
+﻿using System.Windows;
 using Serilog;
 
 namespace SentryReplay;
 
 /// <summary>
-/// Interaction logic for App.xaml
+/// Application startup and process-level logging hooks.
 /// </summary>
 public partial class App : Application
 {

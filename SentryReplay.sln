@@ -9,8 +9,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentryReplay.Tests", "Sentr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentryReplay.Data", "SentryReplay.Data\SentryReplay.Data.csproj", "{CC8D9C71-FACD-4F9F-89FD-B67C0C58A144}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentryReplay.Streaming", "SentryReplay.Streaming\SentryReplay.Streaming.csproj", "{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,18 +55,6 @@ Global
 		{CC8D9C71-FACD-4F9F-89FD-B67C0C58A144}.Release|x64.Build.0 = Release|Any CPU
 		{CC8D9C71-FACD-4F9F-89FD-B67C0C58A144}.Release|x86.ActiveCfg = Release|Any CPU
 		{CC8D9C71-FACD-4F9F-89FD-B67C0C58A144}.Release|x86.Build.0 = Release|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Debug|x64.Build.0 = Debug|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Debug|x86.Build.0 = Debug|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Release|x64.ActiveCfg = Release|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Release|x64.Build.0 = Release|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Release|x86.ActiveCfg = Release|Any CPU
-		{9E877838-83BA-48BD-BD86-5A9FF48A3FCC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

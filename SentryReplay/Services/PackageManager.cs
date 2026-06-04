@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -6,6 +6,9 @@ using Serilog;
 
 namespace SentryReplay;
 
+/// <summary>
+/// Locates and installs the FFmpeg binaries required by Flyleaf.
+/// </summary>
 public static class PackageManager
 {
     private const string FFmpegReleaseBranch = "8.1";
@@ -64,6 +67,9 @@ public static class PackageManager
         return extractedFileCount;
     }
 
+    /// <summary>
+    /// Downloads the supported shared FFmpeg build and extracts its bin folder.
+    /// </summary>
     public static async Task DownloadAndExtractFFmpeg()
     {
         var destinationBinPath = Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName);
@@ -113,6 +119,9 @@ public static class PackageManager
         }
     }
 
+    /// <summary>
+    /// Returns the installed FFmpeg bin directory, or null when it is missing.
+    /// </summary>
     public static string FindFFmpegDirectory()
     {
         var binPath = Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName);

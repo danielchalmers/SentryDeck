@@ -6,6 +6,9 @@ using Serilog;
 
 namespace SentryReplay;
 
+/// <summary>
+/// Checks GitHub releases for newer Sentry Replay versions.
+/// </summary>
 public sealed class UpdateService
 {
     public const string ReleasesApiUrl = "https://api.github.com/repos/danielchalmers/SentryReplay/releases";
@@ -23,12 +26,18 @@ public sealed class UpdateService
         _httpClient = httpClient;
     }
 
+    /// <summary>
+    /// Gets the latest release and compares it with the current app version.
+    /// </summary>
     public async Task<UpdateCheckResult> CheckForUpdateAsync(Version currentVersion, CancellationToken cancellationToken = default)
     {
         var latestRelease = await GetLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         return new UpdateCheckResult(currentVersion, latestRelease, IsUpdateAvailable(currentVersion, latestRelease?.Version));
     }
 
+    /// <summary>
+    /// Reads the latest parseable non-draft release from GitHub.
+    /// </summary>
     public async Task<UpdateRelease> GetLatestReleaseAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -56,6 +65,9 @@ public sealed class UpdateService
         }
     }
 
+    /// <summary>
+    /// Returns true when the latest version is newer than the current version.
+    /// </summary>
     public static bool IsUpdateAvailable(Version currentVersion, Version latestVersion)
     {
         if (currentVersion is null || latestVersion is null)
@@ -66,6 +78,9 @@ public sealed class UpdateService
         return latestVersion > currentVersion;
     }
 
+    /// <summary>
+    /// Parses a GitHub releases payload and returns the newest non-draft release.
+    /// </summary>
     public static UpdateRelease GetLatestRelease(string payload)
     {
         var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(payload);
@@ -85,6 +100,9 @@ public sealed class UpdateService
             .FirstOrDefault();
     }
 
+    /// <summary>
+    /// Parses release tags such as v1.2.3.
+    /// </summary>
     public static Version TryParseVersion(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -131,6 +149,12 @@ public sealed class UpdateService
     }
 }
 
+/// <summary>
+/// Release metadata used by the update badge.
+/// </summary>
 public sealed record UpdateRelease(Version Version, string Name, string ReleaseUrl);
 
+/// <summary>
+/// Result of comparing the current app version with the latest release.
+/// </summary>
 public sealed record UpdateCheckResult(Version CurrentVersion, UpdateRelease LatestRelease, bool IsUpdateAvailable);

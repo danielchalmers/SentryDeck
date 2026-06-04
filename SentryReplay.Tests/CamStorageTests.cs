@@ -1,4 +1,4 @@
-namespace SentryReplay.Tests;
+﻿namespace SentryReplay.Tests;
 
 public static class CamStorageTests
 {
@@ -47,16 +47,22 @@ public static class CamStorageTests
     {
         var chunks = CamChunk.Map(path);
 
-        var node = chunks.First;
-        while (node?.Next is not null)
+        for (var i = 1; i < chunks.Count; i++)
         {
-            var currentTimestamp = node.Value.Timestamp;
-            var nextTimestamp = node.Next.Value.Timestamp;
+            var currentTimestamp = chunks[i - 1].Timestamp;
+            var nextTimestamp = chunks[i].Timestamp;
 
             nextTimestamp.ShouldBeGreaterThan(currentTimestamp, "each timestamp should be more recent than the previous one");
-
-            node = node.Next;
         }
+    }
+
+    [Fact]
+    public static void MapRoot_WhenRootIsClipFolder_ReturnsThatClip()
+    {
+        var storage = CamStorage.Map("Mocks/2023-02-23_14-16-15");
+
+        storage.Clips.Count.ShouldBe(1);
+        storage.Clips[0].Chunks.Count.ShouldBe(2);
     }
 
     [Theory]
