@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 /// <summary>
 /// A TeslaCam root and the clips found under it.

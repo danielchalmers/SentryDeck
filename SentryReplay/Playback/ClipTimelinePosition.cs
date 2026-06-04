@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 /// <summary>
 /// A position resolved to a clip chunk and offset.

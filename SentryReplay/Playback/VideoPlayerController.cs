@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FlyleafLib.Controls.WPF;
 using Serilog;

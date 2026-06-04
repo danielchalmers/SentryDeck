@@ -1,4 +1,4 @@
-﻿using Flyleaf.FFmpeg;
+using Flyleaf.FFmpeg;
 using FlyleafLib;
 using Serilog;
 

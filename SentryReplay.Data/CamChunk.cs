@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 /// <summary>
 /// Synchronized camera files recorded at the same timestamp.

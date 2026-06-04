@@ -1,4 +1,4 @@
-﻿namespace SentryReplay;
+namespace SentryReplay;
 
 /// <summary>
 /// Maps clip chunks to one estimated continuous timeline.
