@@ -1,22 +1,58 @@
-using System.IO;
+﻿using System.IO;
 
 namespace SentryReplay.Tests;
 
 public sealed class VideoPlayerControllerTests
 {
     [Fact]
-    public async Task SelectingClip_OpensAndPlaysFrontCamera()
+    public async Task SelectingClip_OpensAndPlaysAllAvailableCameras()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var front = new FakeMediaPlayer();
-        using var controller = CreateController(front);
+        var back = new FakeMediaPlayer();
+        var left = new FakeMediaPlayer();
+        var right = new FakeMediaPlayer();
+        using var controller = CreateController(front, back, left, right);
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilAsync(() =>
+            front.PlayCount > 0 &&
+            back.PlayCount > 0 &&
+            left.PlayCount > 0 &&
+            right.PlayCount > 0);
 
         front.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-front.mp4", StringComparison.OrdinalIgnoreCase));
+        back.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-back.mp4", StringComparison.OrdinalIgnoreCase));
+        left.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-left_repeater.mp4", StringComparison.OrdinalIgnoreCase));
+        right.OpenedSources.ShouldContain(uri => uri.LocalPath.EndsWith("-right_repeater.mp4", StringComparison.OrdinalIgnoreCase));
+        controller.IsPlaying.ShouldBeTrue();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenSecondaryFileMissing_PlaysRemainingCameras()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        File.Delete(clipFiles.GetPath(0, "left_repeater"));
+        var front = new FakeMediaPlayer();
+        var back = new FakeMediaPlayer();
+        var left = new FakeMediaPlayer();
+        var right = new FakeMediaPlayer();
+        using var controller = CreateController(front, back, left, right);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        await WaitUntilAsync(() =>
+            front.PlayCount > 0 &&
+            back.PlayCount > 0 &&
+            right.PlayCount > 0);
+
+        left.OpenedSources.ShouldBeEmpty();
+        left.PlayCount.ShouldBe(0);
+        controller.ErrorMessage.ShouldBeNull();
         controller.IsPlaying.ShouldBeTrue();
         controller.IsMediaOpen.ShouldBeTrue();
     }

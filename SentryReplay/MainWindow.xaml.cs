@@ -4,12 +4,14 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Navigation;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Flyleaf.FFmpeg;
 using FlyleafLib;
+using FlyleafLib.Controls.WPF;
 using Microsoft.Win32;
 using Serilog;
 
@@ -22,17 +24,25 @@ namespace SentryReplay;
 [INotifyPropertyChanged]
 public partial class MainWindow : Window
 {
+    private const string GridCameraView = "grid";
+    private const string FrontCameraView = "front";
+    private const string RearCameraView = "rear";
+    private const string LeftCameraView = "left";
+    private const string RightCameraView = "right";
+
     private readonly List<CamClip> AllClips = [];
     private readonly UpdateService _updateService = new();
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
     private bool _isFlyleafStarted;
+    private bool _isClosing;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = this;
+        UpdateCameraHostLayout();
     }
 
     public bool ShowMainContent => !ShowAboutPage;
@@ -115,6 +125,22 @@ public partial class MainWindow : Window
 
     public bool IsIndeterminateProgress => IsLoading && !IsRendering;
 
+    public bool IsGridViewSelected => SelectedCameraView == GridCameraView;
+    public bool IsSingleCameraViewSelected => !IsGridViewSelected;
+    public bool IsFrontViewSelected => SelectedCameraView == FrontCameraView;
+    public bool IsRearViewSelected => SelectedCameraView == RearCameraView;
+    public bool IsLeftViewSelected => SelectedCameraView == LeftCameraView;
+    public bool IsRightViewSelected => SelectedCameraView == RightCameraView;
+
+    public string ActiveCameraLabel => SelectedCameraView switch
+    {
+        GridCameraView => "Grid",
+        RearCameraView => "Rear",
+        LeftCameraView => "Left",
+        RightCameraView => "Right",
+        _ => "Front",
+    };
+
     public string LoadingStatusText => IsRendering
         ? $"Rendering... {RenderProgressPercent}%"
         : "Loading...";
@@ -188,6 +214,16 @@ public partial class MainWindow : Window
     private double _selectedPlaybackSpeed = 1.0;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGridViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsSingleCameraViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsFrontViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsRearViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsLeftViewSelected))]
+    [NotifyPropertyChangedFor(nameof(IsRightViewSelected))]
+    [NotifyPropertyChangedFor(nameof(ActiveCameraLabel))]
+    private string _selectedCameraView = FrontCameraView;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
@@ -206,14 +242,41 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object sender, CancelEventArgs e)
     {
-        if (_playerController is not null)
+        if (_isClosing)
         {
-            await _playerController.StopAsync();
-            _playerController.PropertyChanged -= PlayerControllerOnPropertyChanged;
-            _playerController.Dispose();
-            _playerController = null;
+            return;
         }
 
+        e.Cancel = true;
+        _isClosing = true;
+        IsEnabled = false;
+
+        var controller = _playerController;
+        _playerController = null;
+
+        try
+        {
+            if (controller is not null)
+            {
+                try
+                {
+                    await controller.StopAsync();
+                }
+                finally
+                {
+                    controller.PropertyChanged -= PlayerControllerOnPropertyChanged;
+                    controller.Dispose();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to stop playback while closing");
+        }
+        finally
+        {
+            Close();
+        }
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
@@ -737,6 +800,116 @@ public partial class MainWindow : Window
         ShowAboutPage = !ShowAboutPage;
     }
 
+    [RelayCommand]
+    private void SelectCameraView(string cameraView)
+    {
+        SelectedCameraView = cameraView switch
+        {
+            GridCameraView => GridCameraView,
+            RearCameraView => RearCameraView,
+            LeftCameraView => LeftCameraView,
+            RightCameraView => RightCameraView,
+            _ => FrontCameraView,
+        };
+    }
+
+    private void UpdateCameraHostLayout()
+    {
+        if (PrimaryCameraHostSlot is null)
+            return;
+
+        ClearCameraHostSlots();
+
+        switch (SelectedCameraView)
+        {
+            case GridCameraView:
+                MoveHostToSlot(FrontFlyleafHost, GridFrontHostSlot);
+                MoveHostToSlot(BackFlyleafHost, GridRearHostSlot);
+                MoveHostToSlot(LeftFlyleafHost, GridLeftHostSlot);
+                MoveHostToSlot(RightFlyleafHost, GridRightHostSlot);
+                break;
+
+            case RearCameraView:
+                MoveHostToSlot(BackFlyleafHost, PrimaryCameraHostSlot);
+                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
+                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
+                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
+                break;
+
+            case LeftCameraView:
+                MoveHostToSlot(LeftFlyleafHost, PrimaryCameraHostSlot);
+                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
+                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
+                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
+                break;
+
+            case RightCameraView:
+                MoveHostToSlot(RightFlyleafHost, PrimaryCameraHostSlot);
+                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
+                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
+                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
+                break;
+
+            default:
+                MoveHostToSlot(FrontFlyleafHost, PrimaryCameraHostSlot);
+                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
+                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
+                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
+                break;
+        }
+    }
+
+    private void ClearCameraHostSlots()
+    {
+        ContentControl[] slots =
+        [
+            PrimaryCameraHostSlot,
+            GridFrontHostSlot,
+            GridRearHostSlot,
+            GridLeftHostSlot,
+            GridRightHostSlot,
+            FrontTileHostSlot,
+            RearTileHostSlot,
+            LeftTileHostSlot,
+            RightTileHostSlot,
+        ];
+
+        foreach (var slot in slots)
+        {
+            if (slot.Content is FlyleafHost)
+            {
+                slot.Content = null;
+            }
+        }
+    }
+
+    private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
+    {
+        if (ReferenceEquals(slot.Content, host))
+            return;
+
+        RemoveHostFromParent(host);
+        slot.Content = host;
+    }
+
+    private static void RemoveHostFromParent(FlyleafHost host)
+    {
+        switch (host.Parent)
+        {
+            case ContentControl contentControl when ReferenceEquals(contentControl.Content, host):
+                contentControl.Content = null;
+                break;
+
+            case Panel panel:
+                panel.Children.Remove(host);
+                break;
+
+            case Decorator decorator when ReferenceEquals(decorator.Child, host):
+                decorator.Child = null;
+                break;
+        }
+    }
+
     private async Task UpdateLatestReleaseAsync()
     {
         var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
@@ -831,5 +1004,10 @@ public partial class MainWindow : Window
             Log.Information("Playback speed changed. Speed={PlaybackSpeed}", value);
             _playerController.PlaybackSpeed = value;
         }
+    }
+
+    partial void OnSelectedCameraViewChanged(string value)
+    {
+        UpdateCameraHostLayout();
     }
 }
