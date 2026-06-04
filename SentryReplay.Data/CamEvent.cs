@@ -4,42 +4,42 @@ using System.Text.Json.Serialization;
 namespace SentryReplay;
 
 /// <summary>
-/// The <c>event.json</c> metadata for a <see cref="CamClip"/>.
+/// Metadata from a TeslaCam <c>event.json</c> file.
 /// </summary>
 public record class CamEvent
 {
     /// <summary>
-    /// The ISO 8601 timestamp indicating when the event occurred.
+    /// Event timestamp.
     /// </summary>
     [JsonPropertyName("timestamp")]
     public DateTime Timestamp { get; init; }
 
     /// <summary>
-    /// The nearest city to the event, as determined by the vehicle's GPS system.
+    /// Nearest city reported by the vehicle.
     /// </summary>
     [JsonPropertyName("city")]
     public string City { get; init; }
 
     /// <summary>
-    /// The estimated latitude of the vehicle when the event occurred.
+    /// Estimated latitude.
     /// </summary>
     [JsonPropertyName("est_lat")]
     public decimal EstLat { get; init; }
 
     /// <summary>
-    /// The estimated longitude of the vehicle when the event occurred.
+    /// Estimated longitude.
     /// </summary>
     [JsonPropertyName("est_lon")]
     public decimal EstLon { get; init; }
 
     /// <summary>
-    /// The reason the event was recorded.
+    /// Recording reason.
     /// </summary>
     [JsonPropertyName("reason")]
     public string Reason { get; init; }
 
     /// <summary>
-    /// Indicates which camera the event is associated with (if applicable).
+    /// Camera id reported by the vehicle.
     /// </summary>
     [JsonPropertyName("camera")]
     public int Camera { get; init; }
@@ -47,8 +47,12 @@ public record class CamEvent
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
     {
         NumberHandling = JsonNumberHandling.AllowReadingFromString,
+        PropertyNameCaseInsensitive = true,
     };
 
+    /// <summary>
+    /// Deserializes event JSON and returns null for malformed payloads.
+    /// </summary>
     public static CamEvent Deserialize(string json)
     {
         try
@@ -61,6 +65,9 @@ public record class CamEvent
         }
     }
 
+    /// <summary>
+    /// Reads and deserializes event metadata when the file exists.
+    /// </summary>
     public static CamEvent FromFile(string path)
     {
         if (!File.Exists(path))

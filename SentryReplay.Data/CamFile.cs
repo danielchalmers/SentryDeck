@@ -4,22 +4,22 @@ using System.Text.RegularExpressions;
 namespace SentryReplay;
 
 /// <summary>
-/// An actual playable dashcam media file from a specified camera angle.
+/// A playable dashcam media file for one camera angle.
 /// </summary>
 public partial record class CamFile
 {
     /// <summary>
-    /// The path to the media file.
+    /// Full path to the media file.
     /// </summary>
     public string FullPath { get; private init; }
 
     /// <summary>
-    /// The timestamp of the media file.
+    /// Timestamp parsed from the TeslaCam file name.
     /// </summary>
     public DateTime Timestamp { get; private init; }
 
     /// <summary>
-    /// The name of the camera that recorded the media file.
+    /// Camera name parsed from the TeslaCam file name.
     /// </summary>
     public string Camera { get; private init; }
 
@@ -31,25 +31,31 @@ public partial record class CamFile
     }
 
     /// <summary>
-    /// Finds all the media files in the directory that match the typical format.
+    /// Finds valid TeslaCam media files in a single directory.
     /// </summary>
     public static IEnumerable<CamFile> FindFiles(string rootDirectory)
     {
-        var files = Directory.EnumerateFiles(rootDirectory, "*", SearchOption.TopDirectoryOnly);
-
-        foreach (var file in files)
-        {
-            var match = FileNameRegex().Match(Path.GetFileName(file));
-            if (match.Success)
-            {
-                var timestamp = DateTime.ParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
-                var camera = match.Groups["camera"].Value;
-                yield return new CamFile(file, timestamp, camera);
-            }
-        }
+        return Directory.EnumerateFiles(rootDirectory, "*.mp4", SearchOption.TopDirectoryOnly)
+            .Select(TryMap)
+            .OfType<CamFile>()
+            .OrderBy(file => file.Timestamp)
+            .ThenBy(file => file.Camera);
     }
 
     public override string ToString() => $"{Camera}";
+
+    private static CamFile TryMap(string path)
+    {
+        var match = FileNameRegex().Match(Path.GetFileName(path));
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var timestamp = DateTime.ParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
+        var camera = match.Groups["camera"].Value;
+        return new CamFile(path, timestamp, camera);
+    }
 
     [GeneratedRegex(@"(?<date>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})-(?<camera>.+)\.mp4")]
     private static partial Regex FileNameRegex();

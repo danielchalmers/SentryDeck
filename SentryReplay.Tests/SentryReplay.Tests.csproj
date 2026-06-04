@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <UseWPF>true</UseWPF>
@@ -13,7 +13,6 @@
     </PackageReference>
 
     <ProjectReference Include="..\SentryReplay.Data\SentryReplay.Data.csproj" />
-    <ProjectReference Include="..\SentryReplay.Streaming\SentryReplay.Streaming.csproj" />
     <ProjectReference Include="..\SentryReplay\SentryReplay.csproj" />
 
     <Using Include="SentryReplay" />

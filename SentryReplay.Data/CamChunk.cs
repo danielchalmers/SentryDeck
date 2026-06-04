@@ -1,12 +1,18 @@
 namespace SentryReplay;
 
 /// <summary>
-/// All the dashcam clips that were recorded at the same time from different angles.
-/// Multiple of these can be grouped into a <see cref="CamClip"/>.
+/// Synchronized camera files recorded at the same timestamp.
 /// </summary>
 public record class CamChunk
 {
+    /// <summary>
+    /// Timestamp shared by the files in this chunk.
+    /// </summary>
     public DateTime Timestamp { get; private init; }
+
+    /// <summary>
+    /// Files keyed by Tesla camera name.
+    /// </summary>
     public IReadOnlyDictionary<string, CamFile> Files { get; private init; }
 
     public CamChunk(DateTime timestamp, IEnumerable<CamFile> files)
@@ -16,24 +22,16 @@ public record class CamChunk
     }
 
     /// <summary>
-    /// Finds all the media files in the directory and group them by timestamp into chunks.
+    /// Groups valid media files by timestamp and keeps chunks with front-camera video.
     /// </summary>
-    public static LinkedList<CamChunk> Map(string directory)
+    public static IReadOnlyList<CamChunk> Map(string directory)
     {
-        var chunks = CamFile.FindFiles(directory)
+        return CamFile.FindFiles(directory)
             .GroupBy(f => f.Timestamp)
-            .Where(g => g.Any(x => x.Camera == "front")) // Must have a front camera clip to be a valid chunk.
+            .Where(g => g.Any(file => file.Camera == CameraNames.Front))
             .OrderBy(g => g.Key)
-            .Select(g => new CamChunk(g.Key, g));
-
-        var linkedList = new LinkedList<CamChunk>();
-
-        foreach (var chunk in chunks)
-        {
-            linkedList.AddLast(chunk);
-        }
-
-        return linkedList;
+            .Select(g => new CamChunk(g.Key, g))
+            .ToList();
     }
 
     public override string ToString() => $"{Timestamp}";

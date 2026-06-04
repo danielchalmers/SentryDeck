@@ -1,263 +1,98 @@
-using System.IO;
-
 namespace SentryReplay.Tests;
 
-/// <summary>
-/// Tests for the ClipPlaylist functionality.
-/// </summary>
-public class ClipPlaylistTests
+public sealed class ClipPlaylistTests
 {
     [Fact]
-    public void SetClips_InitializesPlaylist()
+    public void SetClips_ReplacesListAndClearsSelection()
     {
-        // Arrange
         var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
+        var clips = TestClips.Create(3);
+        playlist.MoveTo(0);
 
-        // Act
         playlist.SetClips(clips);
 
-        // Assert
-        playlist.Clips.Count.ShouldBe(5);
-        playlist.CurrentIndex.ShouldBe(-1); // No clip selected initially
+        playlist.Clips.ShouldBe(clips);
+        playlist.CurrentIndex.ShouldBe(-1);
         playlist.CurrentClip.ShouldBeNull();
-    }
-
-    [Fact]
-    public void MoveTo_SelectsCorrectClip()
-    {
-        // Arrange
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
-        playlist.SetClips(clips);
-
-        // Act
-        playlist.MoveTo(2);
-
-        // Assert
-        playlist.CurrentIndex.ShouldBe(2);
-        playlist.CurrentClip.ShouldBe(clips[2]);
-    }
-
-    [Fact]
-    public void MoveNext_AdvancesToNextClip()
-    {
-        // Arrange
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
-        playlist.SetClips(clips);
-        playlist.MoveTo(0);
-
-        // Act
-        playlist.MoveNext();
-
-        // Assert
-        playlist.CurrentIndex.ShouldBe(1);
-    }
-
-    [Fact]
-    public void MoveNext_AtEnd_StaysAtEnd()
-    {
-        // Arrange
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(3);
-        playlist.SetClips(clips);
-        playlist.MoveTo(2);
-
-        // Act
-        playlist.MoveNext();
-
-        // Assert
-        playlist.CurrentIndex.ShouldBe(2);
-        playlist.HasNext.ShouldBeFalse();
-    }
-
-    [Fact]
-    public void MovePrevious_GoesToPreviousClip()
-    {
-        // Arrange
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
-        playlist.SetClips(clips);
-        playlist.MoveTo(3);
-
-        // Act
-        playlist.MovePrevious();
-
-        // Assert
-        playlist.CurrentIndex.ShouldBe(2);
-    }
-
-    [Fact]
-    public void MovePrevious_AtStart_StaysAtStart()
-    {
-        // Arrange
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(3);
-        playlist.SetClips(clips);
-        playlist.MoveTo(0);
-
-        // Act
-        playlist.MovePrevious();
-
-        // Assert
-        playlist.CurrentIndex.ShouldBe(0);
+        playlist.HasNext.ShouldBeTrue();
         playlist.HasPrevious.ShouldBeFalse();
     }
 
     [Fact]
-    public void HasNext_ReturnsTrueWhenNotAtEnd()
+    public void MoveNext_SelectsFirstClipWhenNothingIsSelected()
     {
-        // Arrange
         var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
+        var clips = TestClips.Create(2);
         playlist.SetClips(clips);
-        playlist.MoveTo(2);
 
-        // Assert
-        playlist.HasNext.ShouldBeTrue();
+        var moved = playlist.MoveNext();
+
+        moved.ShouldBeTrue();
+        playlist.CurrentIndex.ShouldBe(0);
+        playlist.CurrentClip.ShouldBe(clips[0]);
     }
 
     [Fact]
-    public void HasPrevious_ReturnsTrueWhenNotAtStart()
+    public void MoveNextAndPrevious_RespectPlaylistBounds()
     {
-        // Arrange
         var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
+        var clips = TestClips.Create(2);
         playlist.SetClips(clips);
-        playlist.MoveTo(2);
 
-        // Assert
-        playlist.HasPrevious.ShouldBeTrue();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.MoveNext().ShouldBeFalse();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.MovePrevious().ShouldBeFalse();
+        playlist.CurrentClip.ShouldBe(clips[0]);
     }
 
     [Fact]
-    public void CurrentClipChanged_FiresOnMove()
+    public void MoveTo_WithClipReference_SelectsClipAndRaisesEvent()
     {
-        // Arrange
         var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(3);
+        var clips = TestClips.Create(3);
         playlist.SetClips(clips);
-
         CamClip changedClip = null;
-        playlist.CurrentClipChanged += (s, c) => changedClip = c;
+        playlist.CurrentClipChanged += (_, clip) => changedClip = clip;
 
-        // Act
-        playlist.MoveTo(1);
+        var moved = playlist.MoveTo(clips[2]);
 
-        // Assert
-        changedClip.ShouldBe(clips[1]);
+        moved.ShouldBeTrue();
+        playlist.CurrentIndex.ShouldBe(2);
+        playlist.CurrentClip.ShouldBe(clips[2]);
+        changedClip.ShouldBe(clips[2]);
     }
 
     [Fact]
-    public void CurrentIndex_WithInvalidValue_DoesNotChangeOrRaiseEvent()
+    public void MoveTo_WithInvalidIndex_DoesNotChangeSelection()
     {
         var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(3);
+        var clips = TestClips.Create(2);
         playlist.SetClips(clips);
         playlist.MoveTo(1);
-        var changeCount = 0;
-        playlist.CurrentClipChanged += (_, _) => changeCount++;
 
-        playlist.CurrentIndex = -2;
-        playlist.CurrentIndex = 3;
+        playlist.MoveTo(-1).ShouldBeFalse();
+        playlist.MoveTo(2).ShouldBeFalse();
 
         playlist.CurrentIndex.ShouldBe(1);
         playlist.CurrentClip.ShouldBe(clips[1]);
-        changeCount.ShouldBe(0);
     }
 
     [Fact]
-    public void PeekNextAndPeekPrevious_ReturnAdjacentClips()
+    public void SetClips_RaisesPlaylistAndCurrentClipEvents()
     {
         var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(4);
-        playlist.SetClips(clips);
-        playlist.MoveTo(2);
+        var playlistChanged = 0;
+        var currentChanged = 0;
+        playlist.PlaylistChanged += (_, _) => playlistChanged++;
+        playlist.CurrentClipChanged += (_, _) => currentChanged++;
 
-        playlist.PeekPrevious().ShouldBe(clips[1]);
-        playlist.PeekNext().ShouldBe(clips[3]);
-    }
+        playlist.SetClips(TestClips.Create(1));
 
-    [Fact]
-    public void Clear_RemovesClipsAndRaisesPlaylistChanged()
-    {
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(2);
-        playlist.SetClips(clips);
-        var changeCount = 0;
-        playlist.PlaylistChanged += (_, _) => changeCount++;
-
-        playlist.Clear();
-
-        playlist.Clips.ShouldBeEmpty();
-        playlist.CurrentIndex.ShouldBe(-1);
-        playlist.CurrentClip.ShouldBeNull();
-        changeCount.ShouldBe(1);
-    }
-
-    [Fact]
-    public void Dispose_ClearsPlaylistOnce()
-    {
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(2);
-        playlist.SetClips(clips);
-        var changeCount = 0;
-        playlist.PlaylistChanged += (_, _) => changeCount++;
-
-        playlist.Dispose();
-        playlist.Dispose();
-
-        playlist.Clips.ShouldBeEmpty();
-        playlist.CurrentIndex.ShouldBe(-1);
-        changeCount.ShouldBe(1);
-    }
-
-    [Fact]
-    public void MoveTo_WithClipReference_FindsAndSelects()
-    {
-        // Arrange
-        var playlist = new ClipPlaylist();
-        var clips = CreateMockClips(5);
-        playlist.SetClips(clips);
-        var targetClip = clips[3];
-
-        // Act
-        playlist.MoveTo(targetClip);
-
-        // Assert
-        playlist.CurrentIndex.ShouldBe(3);
-        playlist.CurrentClip.ShouldBe(targetClip);
-    }
-
-    private static List<CamClip> CreateMockClips(int count)
-    {
-        var clips = new List<CamClip>();
-        for (var i = 0; i < count; i++)
-        {
-            // Use the real CamClip.Map with mock folders if available
-            // For now, we'll create minimal mock data
-            var mockPath = $"Mocks/2023-02-23_14-16-15"; // Use existing mock
-            if (Directory.Exists(mockPath))
-            {
-                var clip = CamClip.Map(mockPath);
-                if (clip is not null)
-                {
-                    clips.Add(clip);
-                }
-            }
-        }
-
-        // If no real mocks available, return empty list
-        // Tests will need to handle this gracefully
-        return clips.Count > 0 ? clips : CreateEmptyMockClips();
-    }
-
-    private static List<CamClip> CreateEmptyMockClips()
-    {
-        // For unit tests without file system, create minimal mock clips
-        var clips = new List<CamClip>();
-        // Note: In real tests, we'd use actual mock folders
-        return clips;
+        playlistChanged.ShouldBe(1);
+        currentChanged.ShouldBe(1);
     }
 }
