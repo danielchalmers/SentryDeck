@@ -44,7 +44,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     [ObservableProperty]
     private bool _isMediaOpen;
 
-    internal VideoPlayerController(
+    public VideoPlayerController(
         ICameraPlayer frontPlayer,
         ICameraPlayer backPlayer,
         ICameraPlayer leftPlayer,

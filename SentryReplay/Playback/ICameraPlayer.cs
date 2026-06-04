@@ -1,6 +1,6 @@
 ﻿namespace SentryReplay;
 
-internal interface ICameraPlayer : IDisposable
+public interface ICameraPlayer : IDisposable
 {
     event EventHandler Opened;
     event EventHandler Ended;
