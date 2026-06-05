@@ -117,7 +117,7 @@ public partial class MainWindow : Window
 
     public string PlayPauseIcon => IsPlaying ? "\u23F8" : "\u25B6";
 
-    public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay;
+    public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay || HasNoClipSelected;
 
     public bool ShowVideoHosts => !ShowStatusOverlay;
 
@@ -160,6 +160,8 @@ public partial class MainWindow : Window
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
+    [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
+    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     private CamClip _selectedClip;
 
@@ -423,6 +425,8 @@ public partial class MainWindow : Window
     {
         OnPropertyChanged(nameof(FilteredClips));
         OnPropertyChanged(nameof(HasNoClipSelected));
+        OnPropertyChanged(nameof(ShowStatusOverlay));
+        OnPropertyChanged(nameof(ShowVideoHosts));
         OnPropertyChanged(nameof(CanPlayPause));
         OnPropertyChanged(nameof(CanGoNext));
         OnPropertyChanged(nameof(CanGoPrevious));

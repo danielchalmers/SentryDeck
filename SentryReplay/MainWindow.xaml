@@ -709,15 +709,6 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
-
-                    <!--  No Clip Selected  -->
-                    <TextBlock Grid.RowSpan="2"
-                               Text="Select a clip to play"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               FontSize="24"
-                               Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                               Visibility="{Binding HasNoClipSelected, Converter={local:BoolToVisibilityConverter}}" />
                 </Grid>
 
                 <!--  Player Controls  -->
