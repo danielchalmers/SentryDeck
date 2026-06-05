@@ -214,7 +214,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!Playlist.HasNext)
             return;
 
-        await StopAsync();
+        await PrepareForClipChangeAsync();
         Playlist.MoveNext();
     }
 
@@ -223,27 +223,25 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!Playlist.HasPrevious)
             return;
 
-        await StopAsync();
+        await PrepareForClipChangeAsync();
         Playlist.MovePrevious();
     }
 
     public async Task GoToClipAsync(CamClip clip)
     {
-        if (clip is null || clip == Playlist.CurrentClip)
+        if (clip is null || clip == Playlist.CurrentClip || !Playlist.Clips.Contains(clip))
             return;
 
-        BeginNewRequest();
-        await StopAsync();
+        await PrepareForClipChangeAsync();
         Playlist.MoveTo(clip);
     }
 
     public async Task GoToClipAsync(int index)
     {
-        if (index == Playlist.CurrentIndex)
+        if (index == Playlist.CurrentIndex || index < 0 || index >= Playlist.Clips.Count)
             return;
 
-        BeginNewRequest();
-        await StopAsync();
+        await PrepareForClipChangeAsync();
         Playlist.MoveTo(index);
     }
 
@@ -334,6 +332,21 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         cts.Dispose();
     }
 
+    private async Task PrepareForClipChangeAsync()
+    {
+        BeginNewRequest();
+        CancelAndDisposePlaybackCts();
+        ErrorMessage = null;
+        IsLoading = true;
+
+        await Task.Yield();
+
+        await RunSerializedPlaybackOperationAsync(async _ =>
+        {
+            await StopPlaybackInternalAsync(resetTimeline: true, clearLoading: false);
+        });
+    }
+
     private async Task PlayInternalAsync(long requestId, CamClip clip)
     {
         if (clip is null)
@@ -399,7 +412,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
     }
 
-    private async Task StopPlaybackInternalAsync(bool resetTimeline)
+    private async Task StopPlaybackInternalAsync(bool resetTimeline, bool clearLoading = true)
     {
         Volatile.Write(ref _currentMediaRequestId, 0);
         await StopAndClosePlayersAsync();
@@ -410,7 +423,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         if (resetTimeline)
         {
-            IsLoading = false;
+            if (clearLoading)
+            {
+                IsLoading = false;
+            }
+
             IsPlaying = false;
             Position = TimeSpan.Zero;
             Duration = TimeSpan.Zero;

@@ -99,14 +99,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
 
     public Task StopAsync()
     {
-        StopAndClose();
-        return Task.CompletedTask;
+        return Task.Run(StopAndClose);
     }
 
     public Task CloseAsync()
     {
-        StopAndClose();
-        return Task.CompletedTask;
+        return Task.Run(StopAndClose);
     }
 
     public Task SeekAsync(TimeSpan position)
