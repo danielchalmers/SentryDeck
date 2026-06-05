@@ -237,6 +237,31 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task GoToClipAsync_ShowsLoadingWhileCurrentClipStops()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        front.StopGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var changeClipTask = controller.GoToClipAsync(secondClipFiles.Clip);
+
+        await WaitUntilAsync(() => front.StopCount > 0);
+
+        controller.IsLoading.ShouldBeTrue();
+
+        front.StopGate.SetResult(null);
+        await changeClipTask;
+        await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
+    }
+
+    [Fact]
     public async Task LoadClipsAsync_StopsCurrentPlaybackAndResetsSelection()
     {
         using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
@@ -292,6 +317,7 @@ public sealed class VideoPlayerControllerTests
         public List<TimeSpan> SeekPositions { get; } = [];
         public bool OpenResult { get; init; } = true;
         public bool ThrowOnStop { get; init; }
+        public TaskCompletionSource<object> StopGate { get; set; }
         public bool IsOpen { get; private set; }
         public double Speed { get; set; } = 1.0;
         public int PlayCount { get; private set; }
@@ -328,6 +354,11 @@ public sealed class VideoPlayerControllerTests
         public Task StopAsync()
         {
             StopCount++;
+            if (StopGate is not null)
+            {
+                return StopGate.Task;
+            }
+
             return ThrowOnStop
                 ? Task.FromException(new InvalidOperationException("stop failed"))
                 : Task.CompletedTask;

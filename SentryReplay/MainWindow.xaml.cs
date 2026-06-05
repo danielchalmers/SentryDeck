@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Navigation;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FlyleafLib.Controls.WPF;
@@ -535,6 +536,8 @@ public partial class MainWindow : Window
             return;
 
         ClearError();
+        IsLoading = true;
+        await Dispatcher.Yield(DispatcherPriority.Background);
 
         try
         {
@@ -542,6 +545,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            IsLoading = false;
             Log.Error(
                 ex,
                 "Failed to play selected clip. ClipName={ClipName}; ClipPath={ClipPath}",
