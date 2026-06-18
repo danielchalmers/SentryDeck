@@ -31,14 +31,24 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly FlyleafRuntime _flyleafRuntime = new();
     private readonly UpdateService _updateService = new();
     private readonly Func<VideoPlayerController> _playerControllerFactory;
+    private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
+    private readonly Func<Task> _backgroundYield;
     private readonly Dispatcher _dispatcher;
     private VideoPlayerController _playerController;
     private bool _isSeeking;
     private bool _isInitialized;
 
-    public MainWindowViewModel(Func<VideoPlayerController> playerControllerFactory)
+    /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param>
+    /// <param name="clipLoader">Maps a dashcam root to its clips. Defaults to scanning the filesystem; overridable for tests.</param>
+    /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive. Overridable for tests.</param>
+    public MainWindowViewModel(
+        Func<VideoPlayerController> playerControllerFactory,
+        Func<string, IReadOnlyList<CamClip>> clipLoader = null,
+        Func<Task> backgroundYield = null)
     {
         _playerControllerFactory = playerControllerFactory;
+        _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
+        _backgroundYield = backgroundYield ?? (async () => await Dispatcher.Yield(DispatcherPriority.Background));
         _dispatcher = Dispatcher.CurrentDispatcher;
     }
 
@@ -284,7 +294,7 @@ public partial class MainWindowViewModel : ObservableObject
         controller.Dispose();
     }
 
-    private void InitializePlayer()
+    public void InitializePlayer()
     {
         if (_playerController is not null)
             return;
@@ -294,7 +304,7 @@ public partial class MainWindowViewModel : ObservableObject
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
 
-    private void LoadClips(IEnumerable<string> roots)
+    public void LoadClips(IEnumerable<string> roots)
     {
         ClearError();
         _allClips.Clear();
@@ -323,12 +333,12 @@ public partial class MainWindowViewModel : ObservableObject
 
             try
             {
-                var storage = CamStorage.Map(root);
-                _allClips.AddRange(storage.Clips);
+                var clips = _clipLoader(root);
+                _allClips.AddRange(clips);
                 Log.Information(
                     "Scanned dashcam root. Root={Root}; ClipCount={ClipCount}; ElapsedMs={ElapsedMs}",
                     root,
-                    storage.Clips.Count,
+                    clips.Count,
                     rootStopwatch.ElapsedMilliseconds);
             }
             catch (UnauthorizedAccessException ex)
@@ -475,7 +485,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         ClearError();
         IsLoading = true;
-        await Dispatcher.Yield(DispatcherPriority.Background);
+        await _backgroundYield();
 
         try
         {

@@ -275,4 +275,183 @@ public sealed class MainWindowViewModelTests
         vm.ErrorTitle.ShouldBeNull();
         vm.ErrorDetails.ShouldBeNull();
     }
+
+    // --- Clip browsing: the injectable clip loader lets us populate clips without disk I/O ---
+
+    [Fact]
+    public void FilteredClips_OrderNewestFirst()
+    {
+        var clips = TestClips.Create(3); // timestamps increase with index
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+
+        vm.LoadClips(new[] { "root" });
+
+        vm.FilteredClips.Select(c => c.Name).ShouldBe(new[] { "Clip 2", "Clip 1", "Clip 0" });
+    }
+
+    [Fact]
+    public void FilteredClips_FiltersByNameCaseInsensitively()
+    {
+        var clips = TestClips.Create(3);
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        vm.LoadClips(new[] { "root" });
+
+        vm.FilterText = "clip 1";
+
+        vm.FilteredClips.Single().Name.ShouldBe("Clip 1");
+    }
+
+    [Fact]
+    public void FilteredClips_FiltersByPath()
+    {
+        // TestClips share a folder path but have distinct names, so a path-only match keeps them all.
+        var clips = TestClips.Create(2);
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        vm.LoadClips(new[] { "root" });
+
+        vm.FilterText = clips[0].FullPath;
+
+        vm.FilteredClips.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void FilteredClips_NoMatch_IsEmpty()
+    {
+        var clips = TestClips.Create(3);
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        vm.LoadClips(new[] { "root" });
+
+        vm.FilterText = "no-such-clip";
+
+        vm.FilteredClips.ShouldBeEmpty();
+    }
+
+    // --- Playback: drive a real VideoPlayerController through FakeCameraPlayer (no Flyleaf/FFmpeg) ---
+
+    [Fact]
+    public void SeekMath_PositionTextScalesByDuration()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(2);
+
+        vm.SeekPosition = 0.5;
+
+        vm.PositionText.ShouldBe("1:00");
+        vm.DurationText.ShouldBe("2:00");
+    }
+
+    [Fact]
+    public void CanSeek_RequiresOpenMediaDurationAndNotLoading()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        vm.CanSeek.ShouldBeFalse(); // no media open yet
+
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+        vm.CanSeek.ShouldBeTrue();
+
+        vm.IsLoading = true;
+        vm.CanSeek.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ControllerPositionChange_UpdatesSeekPosition()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(2);
+
+        controller.Position = TimeSpan.FromSeconds(30);
+
+        vm.SeekPosition.ShouldBe(0.25, 0.0001);
+    }
+
+    [Fact]
+    public async Task WhileScrubbing_ControllerPositionDoesNotMoveTheSlider()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(2);
+        controller.IsMediaOpen = true;
+
+        vm.BeginSeek();
+        controller.Position = TimeSpan.FromSeconds(60); // user is dragging: ignore controller updates
+        vm.SeekPosition.ShouldBe(0.0);
+
+        await vm.EndSeekAsync();
+        controller.Position = TimeSpan.FromSeconds(30); // updates resume after the drag
+        vm.SeekPosition.ShouldBe(0.25, 0.0001);
+    }
+
+    [Fact]
+    public void ControllerLoadingAndPlaying_MirrorToViewModel()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+
+        controller.IsLoading = true;
+        vm.IsLoading.ShouldBeTrue();
+
+        controller.IsLoading = false;
+        controller.IsPlaying = true;
+        vm.IsPlaying.ShouldBeTrue();
+        vm.PlayPauseIcon.ShouldBe("⏸");
+    }
+
+    [Fact]
+    public void ControllerError_ShowsErrorOverlay()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+
+        controller.ErrorMessage = "decode failed";
+
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.ErrorTitle.ShouldBe("Playback Error");
+        vm.ErrorDetails.ShouldBe("decode failed");
+    }
+
+    [Fact]
+    public void CanGoNextPrevious_ReflectControllerPlaylist()
+    {
+        var vm = CreateViewModelWithController(out _, out _, clipLoader: _ => TestClips.Create(3));
+        vm.LoadClips(new[] { "root" });
+
+        // Playlist loaded, nothing playing yet: can advance, can't go back.
+        vm.CanGoNext.ShouldBeTrue();
+        vm.CanGoPrevious.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SelectingClip_TriggersPlaybackLoading()
+    {
+        var clip = TestClips.Create(1)[0];
+        var vm = CreateViewModelWithController(out _, out _);
+
+        vm.SelectedClip = clip;
+
+        // Selecting a clip runs OnSelectedClipChanged -> PlaySelectedClipAsync, which sets IsLoading=true
+        // (synchronously, before the awaited yield) and calls the controller. The clip is intentionally NOT
+        // in the controller's playlist, so GoToClipAsync is a deterministic no-op; this verifies only that
+        // selection triggers the auto-play loading state. Opening media is VideoPlayerController's own job.
+        vm.IsLoading.ShouldBeTrue();
+        vm.ShowErrorOverlay.ShouldBeFalse();
+    }
+
+    // Controller-backed tests deliberately keep every controller property change on the test thread.
+    // The VM captures Dispatcher.CurrentDispatcher in its constructor and there is no pumped dispatcher
+    // here, so RunOnUiThread stays deadlock-free only while CheckAccess() is true (same thread). Don't add
+    // awaits that suspend onto the thread pool (e.g. driving GoToClipAsync to completion) — they'd hang.
+    private static MainWindowViewModel CreateViewModelWithController(
+        out VideoPlayerController controller,
+        out FakeCameraPlayer front,
+        Func<string, IReadOnlyList<CamClip>> clipLoader = null)
+    {
+        front = new FakeCameraPlayer();
+        var built = new VideoPlayerController(front, new FakeCameraPlayer(), new FakeCameraPlayer(), new FakeCameraPlayer());
+        controller = built;
+
+        var vm = new MainWindowViewModel(
+            () => built,
+            clipLoader: clipLoader,
+            backgroundYield: () => Task.CompletedTask);
+        vm.InitializePlayer();
+        return vm;
+    }
 }
