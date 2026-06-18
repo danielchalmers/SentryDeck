@@ -17,6 +17,7 @@ namespace SentryReplay;
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private readonly HashSet<Window> _clickHookedSurfaces = [];
     private bool _isClosing;
     private bool _isReadyToClose;
 
@@ -30,6 +31,14 @@ public partial class MainWindow : Window
         _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
 
         DataContext = _viewModel;
+
+        // Clicking a player (incl. the mini previews) switches to that camera. Flyleaf renders each camera
+        // into its own native surface, so the click must be caught on the surface, not via a WPF overlay.
+        HookCameraClick(FrontFlyleafHost, MainWindowViewModel.FrontCameraView);
+        HookCameraClick(BackFlyleafHost, MainWindowViewModel.RearCameraView);
+        HookCameraClick(LeftFlyleafHost, MainWindowViewModel.LeftCameraView);
+        HookCameraClick(RightFlyleafHost, MainWindowViewModel.RightCameraView);
+
         UpdateCameraHostLayout();
     }
 
@@ -111,6 +120,27 @@ public partial class MainWindow : Window
     {
         SearchBox.Focus();
         SearchBox.SelectAll();
+    }
+
+    // The FlyleafHost creates its native Surface window when it loads (and reuses it across reparenting),
+    // so subscribe once it exists. handledEventsToo ensures we still see the click if Flyleaf marks it
+    // handled, and the HashSet guards against re-subscribing when Loaded fires again on a reparent.
+    private void HookCameraClick(FlyleafHost host, string cameraView)
+    {
+        host.Loaded += (_, _) =>
+        {
+            if (host.Surface is { } surface && _clickHookedSurfaces.Add(surface))
+            {
+                surface.AddHandler(
+                    MouseLeftButtonDownEvent,
+                    new MouseButtonEventHandler((_, e) =>
+                    {
+                        _viewModel.SelectCameraViewCommand.Execute(cameraView);
+                        e.Handled = true;
+                    }),
+                    handledEventsToo: true);
+            }
+        };
     }
 
     private void UpdateCameraHostLayout()
