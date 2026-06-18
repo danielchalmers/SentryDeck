@@ -387,7 +387,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     _timeline.Count,
                     Duration,
                     requestId);
-                await OpenChunkInternalAsync(clip, chunkIndex: 0, offset: TimeSpan.Zero, playAfterOpen: true, requestId, ct);
+                // Open paused so every camera decodes its first frame before the loading overlay clears;
+                // playback is started below, after the reveal, so the clip flows from a still frame into motion.
+                await OpenChunkInternalAsync(clip, chunkIndex: 0, offset: TimeSpan.Zero, playAfterOpen: false, requestId, ct);
             }, replacePlaybackCts: true);
         }
         catch (OperationCanceledException)
@@ -408,6 +410,26 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             if (IsRequestActive(requestId))
             {
                 IsLoading = false;
+            }
+        }
+
+        // The first frame is decoded and the overlay has cleared; start playback now so the revealed
+        // still frame flows straight into motion instead of visibly loading in after the overlay is gone.
+        if (IsRequestActive(requestId) && IsMediaOpen && _openedClip == clip)
+        {
+            try
+            {
+                await RunSerializedPlaybackOperationAsync(async _ =>
+                {
+                    if (!IsRequestActive(requestId) || _openedClip != clip)
+                        return;
+
+                    await PlayOpenPlayersAsync();
+                    IsPlaying = true;
+                });
+            }
+            catch (OperationCanceledException)
+            {
             }
         }
     }
@@ -541,7 +563,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             }
             else
             {
-                await PauseOpenPlayersAsync();
+                // Freshly opened players are already paused (AutoPlay is off), so just reflect the state.
                 IsPlaying = false;
             }
 
