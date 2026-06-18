@@ -10,9 +10,9 @@ using Serilog;
 namespace SentryReplay;
 
 /// <summary>
-/// Main WPF window. Owns only view concerns: window lifecycle, Flyleaf host layout, the seek
-/// slider input plumbing, and search-box focus. All state, commands, and orchestration live in
-/// <see cref="MainWindowViewModel"/>.
+/// Main WPF window. Owns only view concerns: window lifecycle, the seek-slider input plumbing, and
+/// search-box focus. The camera layout is handled by <see cref="CameraLayoutPanel"/> (no reparenting);
+/// all state, commands, and orchestration live in <see cref="MainWindowViewModel"/>.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -27,10 +27,8 @@ public partial class MainWindow : Window
         _viewModel = new MainWindowViewModel(
             () => VideoPlayerController.Create(FrontFlyleafHost, BackFlyleafHost, LeftFlyleafHost, RightFlyleafHost));
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
-        _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
 
         DataContext = _viewModel;
-        UpdateCameraHostLayout();
     }
 
     private async void Window_ContentRendered(object sender, EventArgs e)
@@ -99,111 +97,10 @@ public partial class MainWindow : Window
         _viewModel.OnSeekSliderValueChanged();
     }
 
-    private void ViewModelOnPropertyChanged(object sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(MainWindowViewModel.SelectedCameraView))
-        {
-            UpdateCameraHostLayout();
-        }
-    }
-
     private void OnSearchBoxFocusRequested(object sender, EventArgs e)
     {
         SearchBox.Focus();
         SearchBox.SelectAll();
-    }
-
-    private void CameraHost_Click(object sender, MouseButtonEventArgs e)
-    {
-        // Clicking a player (including the mini previews) switches to that camera. A transparent overlay
-        // inside the host receives the click that the native video surface would otherwise swallow.
-        if (sender is FrameworkElement { Tag: string cameraView })
-        {
-            _viewModel.SelectCameraViewCommand.Execute(cameraView);
-            e.Handled = true;
-        }
-    }
-
-    private void UpdateCameraHostLayout()
-    {
-        if (PrimaryCameraHostSlot is null)
-            return;
-
-        foreach (var (host, slot) in GetCameraHostLayout(_viewModel.SelectedCameraView))
-        {
-            MoveHostToSlot(host, slot);
-        }
-
-        // Force a synchronous layout pass so each moved host reaches its final bounds promptly. Note: a
-        // brief flash of the reparented Flyleaf surface at its old size is a known limitation here and is
-        // accepted (eliminating it would require not reparenting the hosts at all).
-        UpdateLayout();
-    }
-
-    private IReadOnlyList<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view) => view switch
-    {
-        MainWindowViewModel.GridCameraView =>
-        [
-            (FrontFlyleafHost, GridFrontHostSlot),
-            (BackFlyleafHost, GridRearHostSlot),
-            (LeftFlyleafHost, GridLeftHostSlot),
-            (RightFlyleafHost, GridRightHostSlot),
-        ],
-        MainWindowViewModel.RearCameraView =>
-        [
-            (BackFlyleafHost, PrimaryCameraHostSlot),
-            (FrontFlyleafHost, FrontTileHostSlot),
-            (LeftFlyleafHost, LeftTileHostSlot),
-            (RightFlyleafHost, RightTileHostSlot),
-        ],
-        MainWindowViewModel.LeftCameraView =>
-        [
-            (LeftFlyleafHost, PrimaryCameraHostSlot),
-            (FrontFlyleafHost, FrontTileHostSlot),
-            (BackFlyleafHost, RearTileHostSlot),
-            (RightFlyleafHost, RightTileHostSlot),
-        ],
-        MainWindowViewModel.RightCameraView =>
-        [
-            (RightFlyleafHost, PrimaryCameraHostSlot),
-            (FrontFlyleafHost, FrontTileHostSlot),
-            (BackFlyleafHost, RearTileHostSlot),
-            (LeftFlyleafHost, LeftTileHostSlot),
-        ],
-        _ =>
-        [
-            (FrontFlyleafHost, PrimaryCameraHostSlot),
-            (BackFlyleafHost, RearTileHostSlot),
-            (LeftFlyleafHost, LeftTileHostSlot),
-            (RightFlyleafHost, RightTileHostSlot),
-        ],
-    };
-
-    private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
-    {
-        if (ReferenceEquals(slot.Content, host))
-            return;
-
-        RemoveHostFromParent(host);
-        slot.Content = host;
-    }
-
-    private static void RemoveHostFromParent(FlyleafHost host)
-    {
-        switch (host.Parent)
-        {
-            case ContentControl contentControl when ReferenceEquals(contentControl.Content, host):
-                contentControl.Content = null;
-                break;
-
-            case Panel panel:
-                panel.Children.Remove(host);
-                break;
-
-            case Decorator decorator when ReferenceEquals(decorator.Child, host):
-                decorator.Child = null;
-                break;
-        }
     }
 
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)

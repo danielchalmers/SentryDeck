@@ -417,35 +417,6 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Grid x:Name="FlyleafHostPool"
-                          Visibility="Collapsed">
-                        <!--
-                            A transparent overlay inside each host captures clicks on the video itself
-                            (the native surface otherwise swallows them) and switches to that camera. Tag is
-                            the camera-view key passed to SelectCameraViewCommand. See MainWindow.CameraHost_Click.
-                        -->
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost">
-                            <Border Background="Transparent"
-                                    Tag="front"
-                                    MouseLeftButtonUp="CameraHost_Click" />
-                        </fl:FlyleafHost>
-                        <fl:FlyleafHost x:Name="BackFlyleafHost">
-                            <Border Background="Transparent"
-                                    Tag="rear"
-                                    MouseLeftButtonUp="CameraHost_Click" />
-                        </fl:FlyleafHost>
-                        <fl:FlyleafHost x:Name="LeftFlyleafHost">
-                            <Border Background="Transparent"
-                                    Tag="left"
-                                    MouseLeftButtonUp="CameraHost_Click" />
-                        </fl:FlyleafHost>
-                        <fl:FlyleafHost x:Name="RightFlyleafHost">
-                            <Border Background="Transparent"
-                                    Tag="right"
-                                    MouseLeftButtonUp="CameraHost_Click" />
-                        </fl:FlyleafHost>
-                    </Grid>
-
                     <!--  Video Player  -->
                     <Grid Grid.RowSpan="2"
                           Visibility="{Binding ShowVideoHosts, Converter={local:BoolToVisibilityConverter}}">
@@ -460,113 +431,16 @@
                                 BorderThickness="1"
                                 ClipToBounds="True"
                                 CornerRadius="6">
-                            <Grid>
-                                <Grid Visibility="{Binding IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="*" />
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <Border Grid.Row="0"
-                                            Grid.Column="0"
-                                            Margin="0,0,1,1"
-                                            Background="Black"
-                                            ClipToBounds="True">
-                                        <Grid>
-                                            <ContentControl x:Name="GridFrontHostSlot" />
-                                            <Border Margin="10"
-                                                    Padding="8,3"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    Background="#A0000000"
-                                                    CornerRadius="4">
-                                                <TextBlock Text="Front"
-                                                           FontSize="12"
-                                                           Foreground="White" />
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Grid.Row="0"
-                                            Grid.Column="1"
-                                            Margin="1,0,0,1"
-                                            Background="Black"
-                                            ClipToBounds="True">
-                                        <Grid>
-                                            <ContentControl x:Name="GridRearHostSlot" />
-                                            <Border Margin="10"
-                                                    Padding="8,3"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    Background="#A0000000"
-                                                    CornerRadius="4">
-                                                <TextBlock Text="Rear"
-                                                           FontSize="12"
-                                                           Foreground="White" />
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Grid.Row="1"
-                                            Grid.Column="0"
-                                            Margin="0,1,1,0"
-                                            Background="Black"
-                                            ClipToBounds="True">
-                                        <Grid>
-                                            <ContentControl x:Name="GridLeftHostSlot" />
-                                            <Border Margin="10"
-                                                    Padding="8,3"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    Background="#A0000000"
-                                                    CornerRadius="4">
-                                                <TextBlock Text="Left"
-                                                           FontSize="12"
-                                                           Foreground="White" />
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Grid.Row="1"
-                                            Grid.Column="1"
-                                            Margin="1,1,0,0"
-                                            Background="Black"
-                                            ClipToBounds="True">
-                                        <Grid>
-                                            <ContentControl x:Name="GridRightHostSlot" />
-                                            <Border Margin="10"
-                                                    Padding="8,3"
-                                                    HorizontalAlignment="Left"
-                                                    VerticalAlignment="Top"
-                                                    Background="#A0000000"
-                                                    CornerRadius="4">
-                                                <TextBlock Text="Right"
-                                                           FontSize="12"
-                                                           Foreground="White" />
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-                                </Grid>
-
-                                <Grid Visibility="{Binding IsSingleCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
-                                    <ContentControl x:Name="PrimaryCameraHostSlot" />
-                                    <Border Margin="14"
-                                            Padding="10,4"
-                                            HorizontalAlignment="Left"
-                                            VerticalAlignment="Top"
-                                            Background="#A0000000"
-                                            CornerRadius="4">
-                                        <TextBlock Text="{Binding ActiveCameraLabel}"
-                                                   FontSize="13"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="White" />
-                                    </Border>
-                                </Grid>
-                            </Grid>
+                            <local:CameraLayoutPanel SelectedCameraView="{Binding SelectedCameraView}">
+                                <fl:FlyleafHost x:Name="FrontFlyleafHost"
+                                                local:CameraLayoutPanel.Camera="front" />
+                                <fl:FlyleafHost x:Name="BackFlyleafHost"
+                                                local:CameraLayoutPanel.Camera="rear" />
+                                <fl:FlyleafHost x:Name="LeftFlyleafHost"
+                                                local:CameraLayoutPanel.Camera="left" />
+                                <fl:FlyleafHost x:Name="RightFlyleafHost"
+                                                local:CameraLayoutPanel.Camera="right" />
+                            </local:CameraLayoutPanel>
                         </Border>
 
                         <Border Grid.Row="1"
@@ -629,11 +503,10 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="FrontTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <!--  Single-screen switch-button icon (cf. the 2x2 grid icon)  -->
                                                 <Border Margin="18"
                                                         Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsFrontViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                        CornerRadius="3" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -661,11 +534,10 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="RearTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <!--  Single-screen switch-button icon (cf. the 2x2 grid icon)  -->
                                                 <Border Margin="18"
                                                         Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsRearViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                        CornerRadius="3" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -693,11 +565,10 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="LeftTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <!--  Single-screen switch-button icon (cf. the 2x2 grid icon)  -->
                                                 <Border Margin="18"
                                                         Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsLeftViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                        CornerRadius="3" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -725,11 +596,10 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="RightTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <!--  Single-screen switch-button icon (cf. the 2x2 grid icon)  -->
                                                 <Border Margin="18"
                                                         Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsRightViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                        CornerRadius="3" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
