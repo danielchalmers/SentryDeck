@@ -274,7 +274,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_flyleafRuntime.TryStart())
         {
             InitializePlayer();
-            LoadClips(CamStorage.FindCommonRoots());
+            await LoadClipsAsync(CamStorage.FindCommonRoots());
         }
         else
         {
@@ -304,27 +304,58 @@ public partial class MainWindowViewModel : ObservableObject
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
 
-    public void LoadClips(IEnumerable<string> roots)
+    public async Task LoadClipsAsync(IEnumerable<string> roots)
     {
         ClearError();
         _allClips.Clear();
         SelectedClip = null;
+        IsLoading = true;
+        RefreshClipState();
 
+        try
+        {
+            // Scan the disk off the UI thread; the continuation resumes on it via the WPF
+            // SynchronizationContext, so all view-model state below is mutated on the UI thread.
+            var result = await Task.Run(() => ScanRoots(roots));
+
+            if (!result.HadRoots)
+            {
+                ShowError(
+                    "No Dashcam Folders Found",
+                    "Click 'Select Folder' to choose a folder containing Tesla dashcam footage (TeslaCam folder).",
+                    canDismiss: true);
+            }
+            else
+            {
+                _allClips.AddRange(result.Clips);
+                foreach (var error in result.Errors)
+                {
+                    ShowError(error.Title, error.Details);
+                }
+            }
+
+            _playerController?.LoadClips(_allClips);
+        }
+        finally
+        {
+            IsLoading = false;
+            RefreshClipState();
+        }
+    }
+
+    private ScanResult ScanRoots(IEnumerable<string> roots)
+    {
         var rootList = roots?.Where(root => !string.IsNullOrWhiteSpace(root)).ToList() ?? [];
         if (rootList.Count == 0)
         {
             Log.Information("No dashcam roots found");
-            ShowError(
-                "No Dashcam Folders Found",
-                "Click 'Select Folder' to choose a folder containing Tesla dashcam footage (TeslaCam folder).",
-                canDismiss: true);
-            RefreshClipState();
-            return;
+            return new ScanResult([], [], HadRoots: false);
         }
 
         Log.Information("Loading dashcam clips. RootCount={RootCount}; Roots={Roots}", rootList.Count, rootList);
         var totalStopwatch = Stopwatch.StartNew();
-        var failedRoots = 0;
+        var clips = new List<CamClip>();
+        var errors = new List<ClipLoadError>();
 
         foreach (var root in rootList)
         {
@@ -333,37 +364,38 @@ public partial class MainWindowViewModel : ObservableObject
 
             try
             {
-                var clips = _clipLoader(root);
-                _allClips.AddRange(clips);
+                var rootClips = _clipLoader(root);
+                clips.AddRange(rootClips);
                 Log.Information(
                     "Scanned dashcam root. Root={Root}; ClipCount={ClipCount}; ElapsedMs={ElapsedMs}",
                     root,
-                    clips.Count,
+                    rootClips.Count,
                     rootStopwatch.ElapsedMilliseconds);
             }
             catch (UnauthorizedAccessException ex)
             {
-                failedRoots++;
                 Log.Error(ex, "Access denied while loading dashcam root. Root={Root}", root);
-                ShowError("Access Denied", $"Cannot access folder: {root}\n\nCheck that you have permission to read this location.");
+                errors.Add(new ClipLoadError("Access Denied", $"Cannot access folder: {root}\n\nCheck that you have permission to read this location."));
             }
             catch (Exception ex)
             {
-                failedRoots++;
                 Log.Error(ex, "Failed to load dashcam root. Root={Root}", root);
-                ShowError("Error Loading Clips", $"Failed to load clips from:\n{root}\n\nError: {ex.Message}");
+                errors.Add(new ClipLoadError("Error Loading Clips", $"Failed to load clips from:\n{root}\n\nError: {ex.Message}"));
             }
         }
 
-        _playerController?.LoadClips(_allClips);
-        RefreshClipState();
         Log.Information(
             "Finished loading dashcam clips. ClipCount={ClipCount}; RootCount={RootCount}; FailedRootCount={FailedRootCount}; ElapsedMs={ElapsedMs}",
-            _allClips.Count,
+            clips.Count,
             rootList.Count,
-            failedRoots,
+            errors.Count,
             totalStopwatch.ElapsedMilliseconds);
+        return new ScanResult(clips, errors, HadRoots: true);
     }
+
+    private sealed record ScanResult(IReadOnlyList<CamClip> Clips, IReadOnlyList<ClipLoadError> Errors, bool HadRoots);
+
+    private sealed record ClipLoadError(string Title, string Details);
 
     private void RefreshClipState()
     {
@@ -399,7 +431,7 @@ public partial class MainWindowViewModel : ObservableObject
                 await _playerController.StopAsync();
             }
 
-            LoadClips(dialog.FolderNames);
+            await LoadClipsAsync(dialog.FolderNames);
         }
         else
         {
@@ -459,7 +491,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (_flyleafRuntime.TryStart())
             {
                 InitializePlayer();
-                LoadClips(CamStorage.FindCommonRoots());
+                await LoadClipsAsync(CamStorage.FindCommonRoots());
             }
             else
             {
