@@ -118,49 +118,72 @@ public partial class MainWindow : Window
         if (PrimaryCameraHostSlot is null)
             return;
 
-        switch (_viewModel.SelectedCameraView)
+        var layout = GetCameraHostLayout(_viewModel.SelectedCameraView);
+
+        // Hide every host that's about to move BEFORE reparenting it. A FlyleafHost's native surface is
+        // hidden while the control isn't visible, so this keeps the surface from briefly painting at its
+        // default position (a small player flashing in the top-left) while the new slot is laid out.
+        foreach (var (host, slot) in layout)
         {
-            case MainWindowViewModel.GridCameraView:
-                MoveHostToSlot(FrontFlyleafHost, GridFrontHostSlot);
-                MoveHostToSlot(BackFlyleafHost, GridRearHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, GridLeftHostSlot);
-                MoveHostToSlot(RightFlyleafHost, GridRightHostSlot);
-                break;
-
-            case MainWindowViewModel.RearCameraView:
-                MoveHostToSlot(BackFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-
-            case MainWindowViewModel.LeftCameraView:
-                MoveHostToSlot(LeftFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-
-            case MainWindowViewModel.RightCameraView:
-                MoveHostToSlot(RightFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                break;
-
-            default:
-                MoveHostToSlot(FrontFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
+            if (!ReferenceEquals(slot.Content, host))
+            {
+                host.Visibility = Visibility.Hidden;
+            }
         }
 
-        // Force a synchronous layout pass so each moved host gets its final bounds before the next render
-        // frame. The Flyleaf surface follows the host via its LayoutUpdated event, so without this it would
-        // briefly render at a stale/default rect (a small player flashing in the top-left) before snapping.
+        foreach (var (host, slot) in layout)
+        {
+            MoveHostToSlot(host, slot);
+        }
+
+        // Lay the moved hosts out (which repositions their hidden surfaces) before showing them again,
+        // so each surface only ever appears at its final slot bounds.
         UpdateLayout();
+
+        foreach (var (host, _) in layout)
+        {
+            host.Visibility = Visibility.Visible;
+        }
     }
+
+    private IReadOnlyList<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view) => view switch
+    {
+        MainWindowViewModel.GridCameraView =>
+        [
+            (FrontFlyleafHost, GridFrontHostSlot),
+            (BackFlyleafHost, GridRearHostSlot),
+            (LeftFlyleafHost, GridLeftHostSlot),
+            (RightFlyleafHost, GridRightHostSlot),
+        ],
+        MainWindowViewModel.RearCameraView =>
+        [
+            (BackFlyleafHost, PrimaryCameraHostSlot),
+            (FrontFlyleafHost, FrontTileHostSlot),
+            (LeftFlyleafHost, LeftTileHostSlot),
+            (RightFlyleafHost, RightTileHostSlot),
+        ],
+        MainWindowViewModel.LeftCameraView =>
+        [
+            (LeftFlyleafHost, PrimaryCameraHostSlot),
+            (FrontFlyleafHost, FrontTileHostSlot),
+            (BackFlyleafHost, RearTileHostSlot),
+            (RightFlyleafHost, RightTileHostSlot),
+        ],
+        MainWindowViewModel.RightCameraView =>
+        [
+            (RightFlyleafHost, PrimaryCameraHostSlot),
+            (FrontFlyleafHost, FrontTileHostSlot),
+            (BackFlyleafHost, RearTileHostSlot),
+            (LeftFlyleafHost, LeftTileHostSlot),
+        ],
+        _ =>
+        [
+            (FrontFlyleafHost, PrimaryCameraHostSlot),
+            (BackFlyleafHost, RearTileHostSlot),
+            (LeftFlyleafHost, LeftTileHostSlot),
+            (RightFlyleafHost, RightTileHostSlot),
+        ],
+    };
 
     private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
     {
