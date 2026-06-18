@@ -294,7 +294,7 @@ public partial class MainWindowViewModel : ObservableObject
         controller.Dispose();
     }
 
-    internal void InitializePlayer()
+    public void InitializePlayer()
     {
         if (_playerController is not null)
             return;
@@ -304,7 +304,7 @@ public partial class MainWindowViewModel : ObservableObject
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
 
-    internal void LoadClips(IEnumerable<string> roots)
+    public void LoadClips(IEnumerable<string> roots)
     {
         ClearError();
         _allClips.Clear();
