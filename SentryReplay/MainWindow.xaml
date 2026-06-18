@@ -419,10 +419,31 @@
 
                     <Grid x:Name="FlyleafHostPool"
                           Visibility="Collapsed">
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost" />
-                        <fl:FlyleafHost x:Name="BackFlyleafHost" />
-                        <fl:FlyleafHost x:Name="LeftFlyleafHost" />
-                        <fl:FlyleafHost x:Name="RightFlyleafHost" />
+                        <!--
+                            A transparent overlay inside each host captures clicks on the video itself
+                            (the native surface otherwise swallows them) and switches to that camera. Tag is
+                            the camera-view key passed to SelectCameraViewCommand. See MainWindow.CameraHost_Click.
+                        -->
+                        <fl:FlyleafHost x:Name="FrontFlyleafHost">
+                            <Border Background="Transparent"
+                                    Tag="front"
+                                    MouseLeftButtonUp="CameraHost_Click" />
+                        </fl:FlyleafHost>
+                        <fl:FlyleafHost x:Name="BackFlyleafHost">
+                            <Border Background="Transparent"
+                                    Tag="rear"
+                                    MouseLeftButtonUp="CameraHost_Click" />
+                        </fl:FlyleafHost>
+                        <fl:FlyleafHost x:Name="LeftFlyleafHost">
+                            <Border Background="Transparent"
+                                    Tag="left"
+                                    MouseLeftButtonUp="CameraHost_Click" />
+                        </fl:FlyleafHost>
+                        <fl:FlyleafHost x:Name="RightFlyleafHost">
+                            <Border Background="Transparent"
+                                    Tag="right"
+                                    MouseLeftButtonUp="CameraHost_Click" />
+                        </fl:FlyleafHost>
                     </Grid>
 
                     <!--  Video Player  -->

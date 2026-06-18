@@ -113,6 +113,17 @@ public partial class MainWindow : Window
         SearchBox.SelectAll();
     }
 
+    private void CameraHost_Click(object sender, MouseButtonEventArgs e)
+    {
+        // Clicking a player (including the mini previews) switches to that camera. A transparent overlay
+        // inside the host receives the click that the native video surface would otherwise swallow.
+        if (sender is FrameworkElement { Tag: string cameraView })
+        {
+            _viewModel.SelectCameraViewCommand.Execute(cameraView);
+            e.Handled = true;
+        }
+    }
+
     private void UpdateCameraHostLayout()
     {
         if (PrimaryCameraHostSlot is null)
