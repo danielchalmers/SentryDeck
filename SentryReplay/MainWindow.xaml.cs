@@ -118,70 +118,55 @@ public partial class MainWindow : Window
         if (PrimaryCameraHostSlot is null)
             return;
 
-        ClearCameraHostSlots();
-
-        switch (_viewModel.SelectedCameraView)
+        foreach (var (host, slot) in GetCameraHostLayout(_viewModel.SelectedCameraView))
         {
-            case MainWindowViewModel.GridCameraView:
-                MoveHostToSlot(FrontFlyleafHost, GridFrontHostSlot);
-                MoveHostToSlot(BackFlyleafHost, GridRearHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, GridLeftHostSlot);
-                MoveHostToSlot(RightFlyleafHost, GridRightHostSlot);
-                break;
-
-            case MainWindowViewModel.RearCameraView:
-                MoveHostToSlot(BackFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-
-            case MainWindowViewModel.LeftCameraView:
-                MoveHostToSlot(LeftFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
-
-            case MainWindowViewModel.RightCameraView:
-                MoveHostToSlot(RightFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(FrontFlyleafHost, FrontTileHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                break;
-
-            default:
-                MoveHostToSlot(FrontFlyleafHost, PrimaryCameraHostSlot);
-                MoveHostToSlot(BackFlyleafHost, RearTileHostSlot);
-                MoveHostToSlot(LeftFlyleafHost, LeftTileHostSlot);
-                MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
-                break;
+            MoveHostToSlot(host, slot);
         }
+
+        // Force a synchronous layout pass so each moved host reaches its final bounds promptly. Note: a
+        // brief flash of the reparented Flyleaf surface at its old size is a known limitation here and is
+        // accepted (eliminating it would require not reparenting the hosts at all).
+        UpdateLayout();
     }
 
-    private void ClearCameraHostSlots()
+    private IReadOnlyList<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view) => view switch
     {
-        ContentControl[] slots =
+        MainWindowViewModel.GridCameraView =>
         [
-            PrimaryCameraHostSlot,
-            GridFrontHostSlot,
-            GridRearHostSlot,
-            GridLeftHostSlot,
-            GridRightHostSlot,
-            FrontTileHostSlot,
-            RearTileHostSlot,
-            LeftTileHostSlot,
-            RightTileHostSlot,
-        ];
-
-        foreach (var slot in slots)
-        {
-            if (slot.Content is FlyleafHost)
-            {
-                slot.Content = null;
-            }
-        }
-    }
+            (FrontFlyleafHost, GridFrontHostSlot),
+            (BackFlyleafHost, GridRearHostSlot),
+            (LeftFlyleafHost, GridLeftHostSlot),
+            (RightFlyleafHost, GridRightHostSlot),
+        ],
+        MainWindowViewModel.RearCameraView =>
+        [
+            (BackFlyleafHost, PrimaryCameraHostSlot),
+            (FrontFlyleafHost, FrontTileHostSlot),
+            (LeftFlyleafHost, LeftTileHostSlot),
+            (RightFlyleafHost, RightTileHostSlot),
+        ],
+        MainWindowViewModel.LeftCameraView =>
+        [
+            (LeftFlyleafHost, PrimaryCameraHostSlot),
+            (FrontFlyleafHost, FrontTileHostSlot),
+            (BackFlyleafHost, RearTileHostSlot),
+            (RightFlyleafHost, RightTileHostSlot),
+        ],
+        MainWindowViewModel.RightCameraView =>
+        [
+            (RightFlyleafHost, PrimaryCameraHostSlot),
+            (FrontFlyleafHost, FrontTileHostSlot),
+            (BackFlyleafHost, RearTileHostSlot),
+            (LeftFlyleafHost, LeftTileHostSlot),
+        ],
+        _ =>
+        [
+            (FrontFlyleafHost, PrimaryCameraHostSlot),
+            (BackFlyleafHost, RearTileHostSlot),
+            (LeftFlyleafHost, LeftTileHostSlot),
+            (RightFlyleafHost, RightTileHostSlot),
+        ],
+    };
 
     private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
     {

@@ -279,22 +279,22 @@ public sealed class MainWindowViewModelTests
     // --- Clip browsing: the injectable clip loader lets us populate clips without disk I/O ---
 
     [Fact]
-    public void FilteredClips_OrderNewestFirst()
+    public async Task FilteredClips_OrderNewestFirst()
     {
         var clips = TestClips.Create(3); // timestamps increase with index
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
 
-        vm.LoadClips(new[] { "root" });
+        await vm.LoadClipsAsync(new[] { "root" });
 
         vm.FilteredClips.Select(c => c.Name).ShouldBe(new[] { "Clip 2", "Clip 1", "Clip 0" });
     }
 
     [Fact]
-    public void FilteredClips_FiltersByNameCaseInsensitively()
+    public async Task FilteredClips_FiltersByNameCaseInsensitively()
     {
         var clips = TestClips.Create(3);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        vm.LoadClips(new[] { "root" });
+        await vm.LoadClipsAsync(new[] { "root" });
 
         vm.FilterText = "clip 1";
 
@@ -302,12 +302,12 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void FilteredClips_FiltersByPath()
+    public async Task FilteredClips_FiltersByPath()
     {
         // TestClips share a folder path but have distinct names, so a path-only match keeps them all.
         var clips = TestClips.Create(2);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        vm.LoadClips(new[] { "root" });
+        await vm.LoadClipsAsync(new[] { "root" });
 
         vm.FilterText = clips[0].FullPath;
 
@@ -315,11 +315,11 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void FilteredClips_NoMatch_IsEmpty()
+    public async Task FilteredClips_NoMatch_IsEmpty()
     {
         var clips = TestClips.Create(3);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        vm.LoadClips(new[] { "root" });
+        await vm.LoadClipsAsync(new[] { "root" });
 
         vm.FilterText = "no-such-clip";
 
@@ -410,8 +410,8 @@ public sealed class MainWindowViewModelTests
     [Fact]
     public void CanGoNextPrevious_ReflectControllerPlaylist()
     {
-        var vm = CreateViewModelWithController(out _, out _, clipLoader: _ => TestClips.Create(3));
-        vm.LoadClips(new[] { "root" });
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.LoadClips(TestClips.Create(3)); // set the playlist directly (synchronous, on the test thread)
 
         // Playlist loaded, nothing playing yet: can advance, can't go back.
         vm.CanGoNext.ShouldBeTrue();

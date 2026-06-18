@@ -30,9 +30,14 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Padding="{TemplateBinding Padding}"
+                        <Border x:Name="ButtonBorder"
+                                Padding="{TemplateBinding Padding}"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="4">
+                                CornerRadius="4"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform />
+                            </Border.RenderTransform>
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center" />
                         </Border>
@@ -42,6 +47,34 @@
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
+                                                             Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                                             To="0.96"
+                                                             Duration="0:0:0.08" />
+                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
+                                                             Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                             To="0.96"
+                                                             Duration="0:0:0.08" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
+                                                             Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                                             To="1"
+                                                             Duration="0:0:0.12" />
+                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
+                                                             Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                             To="1"
+                                                             Duration="0:0:0.12" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Background" Value="{DynamicResource ControlFillColorDisabledBrush}" />
@@ -84,6 +117,8 @@
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
+                            <!--  No scale animation here: these tiles host the live mini-camera previews, and the
+                                  Flyleaf surface follows the tile's render transform, so scaling would shift the video.  -->
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="TileBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                             </Trigger>
@@ -146,6 +181,24 @@
             <Setter Property="Opacity" Value="0.65" />
         </Style>
     </Window.Resources>
+
+    <Window.Triggers>
+        <!--  Fade the window in on launch  -->
+        <EventTrigger RoutedEvent="Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                     From="0"
+                                     To="1"
+                                     Duration="0:0:0.25">
+                        <DoubleAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut" />
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
 
     <Grid>
         <Grid Visibility="{Binding ShowMainContent, Converter={local:BoolToVisibilityConverter}}">
@@ -295,13 +348,36 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
+                <!--  Subtle animated loading bar shown while the clip list is (re)scanned  -->
+                <ProgressBar Grid.Row="1"
+                             Height="3"
+                             Margin="4,0"
+                             VerticalAlignment="Top"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             IsIndeterminate="True"
+                             Visibility="{Binding IsLoadingClips, Converter={local:BoolToVisibilityConverter}}" />
+
                 <!--  Folder picker  -->
                 <StackPanel Grid.Row="2"
                             Margin="8">
-                    <Button Content="📁 Select Folder"
-                            Command="{Binding OpenFolderCommand}"
-                            Padding="12"
-                            Style="{StaticResource PlayerButton}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0"
+                                Content="📁 Select Folder"
+                                Command="{Binding OpenFolderCommand}"
+                                Padding="12"
+                                Style="{StaticResource PlayerButton}" />
+                        <Button Grid.Column="1"
+                                Content="🔄"
+                                Command="{Binding RefreshClipsCommand}"
+                                Padding="12"
+                                Style="{StaticResource PlayerButton}"
+                                ToolTip="Rescan the current folder for clips" />
+                    </Grid>
                     <Grid Margin="0,8,0,0">
                         <Button Content="ℹ️ About / Help"
                                 Command="{Binding ToggleAboutCommand}"
@@ -532,12 +608,11 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="FrontTileHostSlot" />
-                                                <TextBlock Text="Main view"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                                           Visibility="{Binding IsFrontViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <Border Margin="18"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                                        CornerRadius="3"
+                                                        Visibility="{Binding IsFrontViewSelected, Converter={local:BoolToVisibilityConverter}}" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -565,12 +640,11 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="RearTileHostSlot" />
-                                                <TextBlock Text="Main view"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                                           Visibility="{Binding IsRearViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <Border Margin="18"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                                        CornerRadius="3"
+                                                        Visibility="{Binding IsRearViewSelected, Converter={local:BoolToVisibilityConverter}}" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -598,12 +672,11 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="LeftTileHostSlot" />
-                                                <TextBlock Text="Main view"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                                           Visibility="{Binding IsLeftViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <Border Margin="18"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                                        CornerRadius="3"
+                                                        Visibility="{Binding IsLeftViewSelected, Converter={local:BoolToVisibilityConverter}}" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -631,12 +704,11 @@
                                                 CornerRadius="4">
                                             <Grid>
                                                 <ContentControl x:Name="RightTileHostSlot" />
-                                                <TextBlock Text="Main view"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                                           Visibility="{Binding IsRightViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                <Border Margin="18"
+                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                                        CornerRadius="3"
+                                                        Visibility="{Binding IsRightViewSelected, Converter={local:BoolToVisibilityConverter}}" />
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="1"
@@ -655,6 +727,29 @@
                     <Border Grid.RowSpan="2"
                             Background="#80000000"
                             Visibility="{Binding ShowStatusOverlay, Converter={local:BoolToVisibilityConverter}}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ShowStatusOverlay}"
+                                                 Value="True">
+                                        <DataTrigger.EnterActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                     From="0"
+                                                                     To="1"
+                                                                     Duration="0:0:0.2">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <CubicEase EasingMode="EaseOut" />
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </DataTrigger.EnterActions>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <StackPanel MaxWidth="500"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
