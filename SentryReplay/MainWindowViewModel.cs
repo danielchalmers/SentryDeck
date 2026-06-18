@@ -339,6 +339,7 @@ public partial class MainWindowViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+            OnPropertyChanged(nameof(FilteredClips));
             RefreshClipState();
         }
     }
@@ -399,7 +400,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshClipState()
     {
-        OnPropertyChanged(nameof(FilteredClips));
+        // FilteredClips is intentionally NOT raised here: this runs on every clip change, and
+        // re-notifying the unchanged list rebuilds the ListBox and retriggers its fade (flicker).
+        // The list is notified explicitly only when it actually changes (load + FilterText).
         OnPropertyChanged(nameof(HasNoClipSelected));
         OnPropertyChanged(nameof(ShowStatusOverlay));
         OnPropertyChanged(nameof(ShowVideoHosts));
