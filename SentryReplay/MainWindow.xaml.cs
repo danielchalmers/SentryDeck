@@ -132,7 +132,7 @@ public partial class MainWindow : Window
             if (host.Surface is { } surface && _clickHookedSurfaces.Add(surface))
             {
                 surface.AddHandler(
-                    MouseLeftButtonDownEvent,
+                    MouseLeftButtonUpEvent,
                     new MouseButtonEventHandler((_, e) =>
                     {
                         _viewModel.SelectCameraViewCommand.Execute(cameraView);
