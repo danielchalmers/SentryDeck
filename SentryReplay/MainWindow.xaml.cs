@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media.Animation;
 using System.Windows.Navigation;
 using FlyleafLib.Controls.WPF;
 using Serilog;
@@ -102,30 +101,9 @@ public partial class MainWindow : Window
 
     private void ViewModelOnPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
-        switch (e.PropertyName)
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedCameraView))
         {
-            case nameof(MainWindowViewModel.SelectedCameraView):
-                UpdateCameraHostLayout();
-                break;
-
-            case nameof(MainWindowViewModel.IsLoading):
-                UpdateVideoCovers(_viewModel.IsLoading);
-                break;
-        }
-    }
-
-    // Fades the per-host covers (FlyleafHost overlay content) so the player's first-frame load-in happens
-    // behind an opaque cover, then reveals the ready frame. Covers snap on quickly and reveal gently.
-    private void UpdateVideoCovers(bool covered)
-    {
-        var animation = new DoubleAnimation(covered ? 1.0 : 0.0, new Duration(TimeSpan.FromMilliseconds(covered ? 60 : 280)))
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-        };
-
-        foreach (var cover in new[] { FrontVideoCover, BackVideoCover, LeftVideoCover, RightVideoCover })
-        {
-            cover.BeginAnimation(OpacityProperty, animation);
+            UpdateCameraHostLayout();
         }
     }
 
