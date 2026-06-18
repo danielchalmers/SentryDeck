@@ -118,32 +118,15 @@ public partial class MainWindow : Window
         if (PrimaryCameraHostSlot is null)
             return;
 
-        var layout = GetCameraHostLayout(_viewModel.SelectedCameraView);
-
-        // Hide every host that's about to move BEFORE reparenting it. A FlyleafHost's native surface is
-        // hidden while the control isn't visible, so this keeps the surface from briefly painting at its
-        // default position (a small player flashing in the top-left) while the new slot is laid out.
-        foreach (var (host, slot) in layout)
-        {
-            if (!ReferenceEquals(slot.Content, host))
-            {
-                host.Visibility = Visibility.Hidden;
-            }
-        }
-
-        foreach (var (host, slot) in layout)
+        foreach (var (host, slot) in GetCameraHostLayout(_viewModel.SelectedCameraView))
         {
             MoveHostToSlot(host, slot);
         }
 
-        // Lay the moved hosts out (which repositions their hidden surfaces) before showing them again,
-        // so each surface only ever appears at its final slot bounds.
+        // Force a synchronous layout pass so each moved host reaches its final bounds promptly. Note: a
+        // brief flash of the reparented Flyleaf surface at its old size is a known limitation here and is
+        // accepted (eliminating it would require not reparenting the hosts at all).
         UpdateLayout();
-
-        foreach (var (host, _) in layout)
-        {
-            host.Visibility = Visibility.Visible;
-        }
     }
 
     private IReadOnlyList<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view) => view switch
