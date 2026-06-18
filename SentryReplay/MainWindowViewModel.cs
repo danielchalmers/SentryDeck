@@ -316,14 +316,19 @@ public partial class MainWindowViewModel : ObservableObject
         _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
     }
 
-    public async Task LoadClipsAsync(IEnumerable<string> roots)
+    public async Task LoadClipsAsync(IEnumerable<string> roots, TimeSpan minimumLoadingDuration = default)
     {
         ClearError();
         _allClips.Clear();
         SelectedClip = null;
         IsLoading = true;
         IsLoadingClips = true;
+
+        // Clear the list right away so a (re)scan visibly empties it and shows the loading bar before refilling.
+        OnPropertyChanged(nameof(FilteredClips));
         RefreshClipState();
+
+        var stopwatch = Stopwatch.StartNew();
 
         try
         {
@@ -348,6 +353,14 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             _playerController?.LoadClips(_allClips);
+
+            // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh
+            // (clear -> loading -> refill) instead of an imperceptible flicker.
+            var remaining = minimumLoadingDuration - stopwatch.Elapsed;
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining);
+            }
         }
         finally
         {
@@ -468,7 +481,7 @@ public partial class MainWindowViewModel : ObservableObject
             await _playerController.StopAsync();
         }
 
-        await LoadClipsAsync(_rootSource());
+        await LoadClipsAsync(_rootSource(), TimeSpan.FromMilliseconds(400));
     }
 
     private bool CanRefreshClips => !IsLoadingClips;
