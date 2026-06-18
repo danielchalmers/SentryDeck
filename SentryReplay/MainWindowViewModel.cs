@@ -130,9 +130,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     public string PlayPauseIcon => IsPlaying ? "⏸" : "▶";
 
-    public bool ShowStatusOverlay => IsLoading || ShowErrorOverlay || HasNoClipSelected;
+    // The full-screen WPF overlay only covers the no-video states (scanning with no clip, error, empty),
+    // because as a WPF sibling it can't draw over the Flyleaf surface anyway. A selected clip's own load is
+    // hidden by the per-host covers (FlyleafHost overlay content) instead, so the hosts stay visible.
+    public bool ShowStatusOverlay => (IsLoading && SelectedClip is null) || ShowErrorOverlay || HasNoClipSelected;
 
-    public bool ShowVideoHosts => !ShowStatusOverlay;
+    public bool ShowVideoHosts => SelectedClip is not null && !ShowErrorOverlay;
 
     public bool HasError => ShowErrorOverlay;
 

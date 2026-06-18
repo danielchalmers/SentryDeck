@@ -443,10 +443,35 @@
 
                     <Grid x:Name="FlyleafHostPool"
                           Visibility="Collapsed">
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost" />
-                        <fl:FlyleafHost x:Name="BackFlyleafHost" />
-                        <fl:FlyleafHost x:Name="LeftFlyleafHost" />
-                        <fl:FlyleafHost x:Name="RightFlyleafHost" />
+                        <!--
+                            Each host carries an opaque cover as FlyleafHost overlay content (rendered above the
+                            video surface, beating WPF airspace). It hides the player's first-frame load-in and is
+                            faded out from code-behind once the clip is ready. See MainWindow.UpdateVideoCovers.
+                        -->
+                        <fl:FlyleafHost x:Name="FrontFlyleafHost">
+                            <Border x:Name="FrontVideoCover"
+                                    Background="Black"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                        </fl:FlyleafHost>
+                        <fl:FlyleafHost x:Name="BackFlyleafHost">
+                            <Border x:Name="BackVideoCover"
+                                    Background="Black"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                        </fl:FlyleafHost>
+                        <fl:FlyleafHost x:Name="LeftFlyleafHost">
+                            <Border x:Name="LeftVideoCover"
+                                    Background="Black"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                        </fl:FlyleafHost>
+                        <fl:FlyleafHost x:Name="RightFlyleafHost">
+                            <Border x:Name="RightVideoCover"
+                                    Background="Black"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                        </fl:FlyleafHost>
                     </Grid>
 
                     <!--  Video Player  -->
