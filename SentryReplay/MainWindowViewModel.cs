@@ -220,6 +220,10 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsIndeterminateProgress))]
     private bool _isRendering;
 
+    // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
+    [ObservableProperty]
+    private bool _isLoadingClips;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RenderProgressPercent))]
     [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
@@ -313,6 +317,7 @@ public partial class MainWindowViewModel : ObservableObject
         _allClips.Clear();
         SelectedClip = null;
         IsLoading = true;
+        IsLoadingClips = true;
         RefreshClipState();
 
         try
@@ -342,6 +347,7 @@ public partial class MainWindowViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+            IsLoadingClips = false;
             OnPropertyChanged(nameof(FilteredClips));
             RefreshClipState();
         }
