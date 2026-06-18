@@ -38,6 +38,10 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isSeeking;
     private bool _isInitialized;
 
+    // The source of dashcam roots: auto-discovery by default, or the user's last picked folders. Refresh
+    // re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
+    private Func<IEnumerable<string>> _rootSource = CamStorage.FindCommonRoots;
+
     /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param>
     /// <param name="clipLoader">Maps a dashcam root to its clips. Defaults to scanning the filesystem; overridable for tests.</param>
     /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive. Overridable for tests.</param>
@@ -222,6 +226,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RefreshClipsCommand))]
     private bool _isLoadingClips;
 
     [ObservableProperty]
@@ -281,7 +286,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_flyleafRuntime.TryStart())
         {
             InitializePlayer();
-            await LoadClipsAsync(CamStorage.FindCommonRoots());
+            await LoadClipsAsync(_rootSource());
         }
         else
         {
@@ -433,23 +438,40 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (dialog.ShowDialog() == true)
         {
+            var folders = dialog.FolderNames;
             Log.Information(
                 "User selected dashcam folders. FolderCount={FolderCount}; Folders={Folders}",
-                dialog.FolderNames.Length,
-                dialog.FolderNames);
+                folders.Length,
+                folders);
 
             if (_playerController is not null)
             {
                 await _playerController.StopAsync();
             }
 
-            await LoadClipsAsync(dialog.FolderNames);
+            _rootSource = () => folders;
+            await LoadClipsAsync(folders);
         }
         else
         {
             Log.Debug("Folder picker canceled");
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanRefreshClips))]
+    private async Task RefreshClipsAsync()
+    {
+        Log.Debug("Refreshing clips");
+
+        if (_playerController is not null)
+        {
+            await _playerController.StopAsync();
+        }
+
+        await LoadClipsAsync(_rootSource());
+    }
+
+    private bool CanRefreshClips => !IsLoadingClips;
 
     [RelayCommand]
     private async Task PlayPauseAsync()
@@ -503,7 +525,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (_flyleafRuntime.TryStart())
             {
                 InitializePlayer();
-                await LoadClipsAsync(CamStorage.FindCommonRoots());
+                await LoadClipsAsync(_rootSource());
             }
             else
             {
