@@ -118,8 +118,6 @@ public partial class MainWindow : Window
         if (PrimaryCameraHostSlot is null)
             return;
 
-        ClearCameraHostSlots();
-
         switch (_viewModel.SelectedCameraView)
         {
             case MainWindowViewModel.GridCameraView:
@@ -157,30 +155,11 @@ public partial class MainWindow : Window
                 MoveHostToSlot(RightFlyleafHost, RightTileHostSlot);
                 break;
         }
-    }
 
-    private void ClearCameraHostSlots()
-    {
-        ContentControl[] slots =
-        [
-            PrimaryCameraHostSlot,
-            GridFrontHostSlot,
-            GridRearHostSlot,
-            GridLeftHostSlot,
-            GridRightHostSlot,
-            FrontTileHostSlot,
-            RearTileHostSlot,
-            LeftTileHostSlot,
-            RightTileHostSlot,
-        ];
-
-        foreach (var slot in slots)
-        {
-            if (slot.Content is FlyleafHost)
-            {
-                slot.Content = null;
-            }
-        }
+        // Force a synchronous layout pass so each moved host gets its final bounds before the next render
+        // frame. The Flyleaf surface follows the host via its LayoutUpdated event, so without this it would
+        // briefly render at a stale/default rect (a small player flashing in the top-left) before snapping.
+        UpdateLayout();
     }
 
     private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
