@@ -16,6 +16,26 @@ public sealed class MainWindowViewModelTests
             [],
             new CamEvent { Reason = reason, City = city, EstLat = lat, EstLon = lon });
 
+    // A clip of one-minute chunks with an event at the given offset from the first chunk.
+    private static CamClip ClipWithChunksAndEvent(int chunkCount, TimeSpan eventOffset, string reason = "user_interaction_honk")
+    {
+        var start = new DateTime(2025, 1, 1, 12, 0, 0);
+        var chunks = Enumerable.Range(0, chunkCount)
+            .Select(i => new CamChunk(start.AddMinutes(i), []))
+            .ToList();
+        var camEvent = new CamEvent { Reason = reason, Timestamp = start + eventOffset };
+        return new CamClip(System.IO.Path.GetTempPath(), "Event Clip", start, chunks, camEvent);
+    }
+
+    private static CamClip ClipWithChunks(int chunkCount)
+    {
+        var start = new DateTime(2025, 1, 1, 12, 0, 0);
+        var chunks = Enumerable.Range(0, chunkCount)
+            .Select(i => new CamChunk(start.AddMinutes(i), []))
+            .ToList();
+        return new CamClip(System.IO.Path.GetTempPath(), "Chunked Clip", start, chunks, camEvent: null);
+    }
+
     [Fact]
     public void NewViewModel_DefaultsToFrontCamera_AndEmptyOverlay()
     {
@@ -402,6 +422,175 @@ public sealed class MainWindowViewModelTests
         vm.FilterText = "no-such-clip";
 
         vm.FilteredClips.ShouldBeEmpty();
+    }
+
+    // --- Event marker: the moment the incident happened, mapped onto the 0..1 seek axis ---
+
+    [Fact]
+    public void EventMarker_NearClipEnd_MapsToHighFraction()
+    {
+        var vm = CreateViewModel();
+
+        // 10 one-minute chunks (600s modeled); event at 9m30s in -> 0.95.
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+
+        vm.HasEventMarker.ShouldBeTrue();
+        vm.EventMarkerPosition.ShouldBe(0.95, 0.0001);
+        vm.EventMarkerTooltip.ShouldStartWith("Honk · ");
+    }
+
+    [Fact]
+    public void EventMarker_AbsentWithoutEvent()
+    {
+        var vm = CreateViewModel();
+
+        vm.SelectedClip = ClipWithChunks(3);
+
+        vm.HasEventMarker.ShouldBeFalse();
+        vm.EventMarkerPosition.ShouldBe(0);
+        vm.EventMarkerTooltip.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void EventMarker_AbsentWhenEventTimestampIsDefault()
+    {
+        var vm = CreateViewModel();
+        var chunks = ClipWithChunks(3).Chunks;
+        var camEvent = new CamEvent { Reason = "user_interaction_honk" }; // Timestamp == default
+
+        vm.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "Default TS", new DateTime(2025, 1, 1, 12, 0, 0), chunks, camEvent);
+
+        vm.HasEventMarker.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void EventMarker_AbsentWhenEventBeforeClipStart()
+    {
+        var vm = CreateViewModel();
+
+        // Clock skew: event five minutes before the first chunk -> fraction <= 0, no marker.
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromMinutes(-5));
+
+        vm.HasEventMarker.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void EventMarker_AbsentWhenEventBeyondModeledDuration()
+    {
+        var vm = CreateViewModel();
+
+        // 3 chunks = 180s modeled; an event at 200s is past the estimated end (fraction > 1).
+        vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(200));
+
+        vm.HasEventMarker.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void EventMarker_AbsentWhenNoChunks_NoDivideByZero()
+    {
+        var vm = CreateViewModel();
+        var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = new DateTime(2025, 1, 1, 12, 5, 0) };
+
+        vm.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "No Chunks", new DateTime(2025, 1, 1, 12, 0, 0), [], camEvent);
+
+        vm.HasEventMarker.ShouldBeFalse();
+        vm.EventMarkerPosition.ShouldBe(0);
+        vm.ChunkBoundaries.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ChunkBoundaries_AreInteriorFractions()
+    {
+        var vm = CreateViewModel();
+
+        vm.SelectedClip = ClipWithChunks(3);
+
+        vm.ChunkBoundaries.Count.ShouldBe(2);
+        vm.ChunkBoundaries[0].ShouldBe(1.0 / 3, 0.0001);
+        vm.ChunkBoundaries[1].ShouldBe(2.0 / 3, 0.0001);
+    }
+
+    [Fact]
+    public void ChunkBoundaries_EmptyForSingleChunk()
+    {
+        var vm = CreateViewModel();
+
+        vm.SelectedClip = ClipWithChunks(1);
+
+        vm.ChunkBoundaries.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ClearingSelection_ResetsEventMarkerAndChunks()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+        vm.HasEventMarker.ShouldBeTrue();
+
+        vm.SelectedClip = null;
+
+        vm.HasEventMarker.ShouldBeFalse();
+        vm.EventMarkerPosition.ShouldBe(0);
+        vm.ChunkBoundaries.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void JumpToEvent_CanExecute_FollowsHasEventMarker()
+    {
+        var vm = CreateViewModel();
+        vm.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
+
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+
+        vm.JumpToEventCommand.CanExecute(null).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task JumpToEvent_MovesSeekPositionToMarker()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+
+        await vm.JumpToEventCommand.ExecuteAsync(null);
+
+        vm.SeekPosition.ShouldBe(vm.EventMarkerPosition, 0.0001);
+    }
+
+    [Fact]
+    public async Task EventShortcut_JumpsToEvent_WhenMarkerPresent()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+
+        var handled = await vm.HandleKeyDownAsync(Key.E, ModifierKeys.None);
+
+        handled.ShouldBeTrue();
+        vm.SeekPosition.ShouldBe(vm.EventMarkerPosition, 0.0001);
+    }
+
+    [Fact]
+    public async Task EventShortcut_Ignored_WhenNoMarker()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithChunks(3); // no event
+
+        var handled = await vm.HandleKeyDownAsync(Key.E, ModifierKeys.None);
+
+        handled.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SelectingClip_RaisesEventMarkerNotifications()
+    {
+        var vm = CreateViewModel();
+        var changed = new List<string>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        vm.SelectedClip = ClipWithChunksAndEvent(5, TimeSpan.FromSeconds(250));
+
+        changed.ShouldContain(nameof(MainWindowViewModel.EventMarkerPosition));
+        changed.ShouldContain(nameof(MainWindowViewModel.HasEventMarker));
+        changed.ShouldContain(nameof(MainWindowViewModel.ChunkBoundaries));
     }
 
     // --- Playback: drive a real VideoPlayerController through FakeCameraPlayer (no Flyleaf/FFmpeg) ---

@@ -17,7 +17,15 @@
         mc:Ignorable="d">
 
     <Window.Resources>
-        <!--  Seek bar: accent played-track, growing thumb, keyboard focus ring  -->
+        <!--
+            Carries the window DataContext into resource-scoped bindings (the grouped clip view)
+            and into the re-templated seek bar's overlays, which otherwise can't reach the
+            view-model. Defined first so the StaticResource references below resolve.
+        -->
+        <local:BindingProxy x:Key="VmProxy"
+                            Data="{Binding}" />
+
+        <!--  Seek bar: accent played-track, growing thumb, keyboard focus ring, event marker + chunk seams  -->
         <Style x:Key="SeekSlider"
                TargetType="Slider">
             <Setter Property="Minimum" Value="0" />
@@ -47,6 +55,60 @@
                                     </MultiBinding>
                                 </Border.Width>
                             </Border>
+
+                            <!--
+                                Chunk seams: faint ~60s boundary ticks. Each tick offsets by
+                                fraction × rail width; the ItemsControl matches the rail's width,
+                                so ticks stay aligned on resize. Empty list draws nothing.
+                            -->
+                            <ItemsControl Focusable="False"
+                                          IsHitTestVisible="False"
+                                          ItemsSource="{Binding Data.ChunkBoundaries, Source={StaticResource VmProxy}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Grid />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Rectangle Width="1"
+                                                   Height="8"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center"
+                                                   Fill="{DynamicResource ControlStrongFillColorDefaultBrush}"
+                                                   Opacity="0.35">
+                                            <Rectangle.Margin>
+                                                <MultiBinding Converter="{local:SeekOffsetConverter}">
+                                                    <Binding />
+                                                    <Binding Path="ActualWidth"
+                                                             RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                </MultiBinding>
+                                            </Rectangle.Margin>
+                                        </Rectangle>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!--  Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).  -->
+                            <Border Width="3"
+                                    Height="16"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding Data.SelectedClip.Event, Converter={local:ReasonBrushConverter}, Source={StaticResource VmProxy}}"
+                                    CornerRadius="1.5"
+                                    IsHitTestVisible="False"
+                                    ToolTip="{Binding Data.EventMarkerTooltip, Source={StaticResource VmProxy}}"
+                                    Visibility="{Binding Data.HasEventMarker, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                <Border.Margin>
+                                    <MultiBinding Converter="{local:SeekOffsetConverter}">
+                                        <Binding Path="Data.EventMarkerPosition"
+                                                 Source="{StaticResource VmProxy}" />
+                                        <Binding ElementName="SeekRail"
+                                                 Path="ActualWidth" />
+                                    </MultiBinding>
+                                </Border.Margin>
+                            </Border>
+
                             <Track x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="Slider.DecreaseLarge"
@@ -142,7 +204,7 @@
 
         <Style x:Key="CameraViewTileButton"
                TargetType="RadioButton">
-            <Setter Property="MinHeight" Value="112" />
+            <Setter Property="MinHeight" Value="92" />
             <Setter Property="MinWidth" Value="96" />
             <Setter Property="Margin" Value="4" />
             <Setter Property="Padding" Value="6" />
@@ -238,12 +300,7 @@
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
         </Style>
 
-        <!--
-            Day-grouped clip view. The proxy carries the DataContext into this
-            resource-scoped CollectionViewSource so grouping can live in XAML.
-        -->
-        <local:BindingProxy x:Key="VmProxy"
-                            Data="{Binding}" />
+        <!--  Day-grouped clip view; grouping lives in XAML via the shared VmProxy above.  -->
         <CollectionViewSource x:Key="GroupedClips"
                               Source="{Binding Data.FilteredClips, Source={StaticResource VmProxy}}">
             <CollectionViewSource.GroupDescriptions>
@@ -805,8 +862,8 @@
                         </Border>
 
                         <Border Grid.Row="1"
-                                Margin="0,12,0,0"
-                                Padding="6"
+                                Margin="0,10,0,0"
+                                Padding="5"
                                 Background="{DynamicResource LayerFillColorDefaultBrush}"
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
@@ -822,7 +879,7 @@
                                              ToolTip="Grid view (1)">
                                     <Grid>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="64" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0"
@@ -853,7 +910,7 @@
                                              ToolTip="Front camera (2)">
                                     <Grid>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="64" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0"
@@ -887,7 +944,7 @@
                                              ToolTip="Rear camera (3)">
                                     <Grid>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="64" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0"
@@ -921,7 +978,7 @@
                                              ToolTip="Left camera (4)">
                                     <Grid>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="64" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0"
@@ -955,7 +1012,7 @@
                                              ToolTip="Right camera (5)">
                                     <Grid>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition Height="82" />
+                                            <RowDefinition Height="64" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0"
@@ -1013,6 +1070,24 @@
                         <StackPanel MaxWidth="500"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
+                            <!--  Idle: clips are loaded but none is picked yet  -->
+                            <StackPanel Visibility="{Binding HasNoClipSelected, Converter={local:BoolToVisibilityConverter}}">
+                                <TextBlock Text="&#xE714;"
+                                           FontSize="40"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                           Style="{StaticResource AppGlyph}" />
+                                <TextBlock Text="Select a clip to begin"
+                                           Margin="0,12,0,0"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Style="{StaticResource AppSubtitle}" />
+                                <TextBlock Text="Your dashcam timeline is on the left."
+                                           Margin="0,4,0,0"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                           Style="{StaticResource AppBody}" />
+                            </StackPanel>
+
                             <!--  Loading / rendering status  -->
                             <StackPanel Visibility="{Binding IsLoading, Converter={local:BoolToVisibilityConverter}}">
                                 <TextBlock Text="{Binding LoadingStatusText}"
@@ -1112,125 +1187,135 @@
                     </Border>
                 </Grid>
 
-                <!--  Player Controls  -->
+                <!--  Player Controls: transport · jump-to-event · scrubber · time · speed, one row  -->
                 <Border Grid.Row="1"
-                        Padding="16"
+                        Padding="16,10"
                         Background="{DynamicResource LayerFillColorDefaultBrush}">
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-                        <!--  Scrubber  -->
-                        <Grid Grid.Row="0"
-                              Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                        <!--  Transport cluster  -->
+                        <StackPanel Grid.Column="0"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal">
+                            <Button Command="{Binding PreviousCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Previous clip"
+                                    IsEnabled="{Binding CanGoPrevious}"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Previous clip (Ctrl+Left)">
+                                <TextBlock Text="&#xE892;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
 
-                            <Slider x:Name="SeekSlider"
-                                    Grid.Column="0"
-                                    Margin="0,0,12,0"
-                                    AutomationProperties.Name="Seek"
-                                    IsEnabled="{Binding CanSeek}"
-                                    Maximum="1"
-                                    Minimum="0"
-                                    PreviewMouseDown="SeekSlider_PreviewMouseDown"
-                                    PreviewMouseUp="SeekSlider_PreviewMouseUp"
-                                    Style="{StaticResource SeekSlider}"
-                                    ValueChanged="SeekSlider_ValueChanged"
-                                    Value="{Binding SeekPosition, Mode=TwoWay}" />
+                            <Button x:Name="PlayPauseButton"
+                                    Content="{Binding PlayPauseIcon}"
+                                    Command="{Binding PlayPauseCommand}"
+                                    Width="56"
+                                    Height="40"
+                                    Margin="10,0"
+                                    VerticalAlignment="Center"
+                                    FontFamily="{DynamicResource SymbolThemeFontFamily}"
+                                    FontSize="20"
+                                    AutomationProperties.Name="Play or pause"
+                                    IsEnabled="{Binding CanPlayPause}"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    ToolTip="Play/Pause (Space)" />
 
-                            <TextBlock Grid.Column="1"
+                            <Button Command="{Binding NextCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Next clip"
+                                    IsEnabled="{Binding CanGoNext}"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Next clip (Ctrl+Right)">
+                                <TextBlock Text="&#xE893;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+
+                            <Button Command="{Binding StopCommand}"
+                                    Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Stop"
+                                    IsEnabled="{Binding CanStop}"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Stop">
+                                <TextBlock Text="&#xE71A;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+                        </StackPanel>
+
+                        <!--  Jump straight to the moment the incident happened  -->
+                        <Button Grid.Column="1"
+                                Command="{Binding JumpToEventCommand}"
+                                Margin="14,0,0,0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Jump to event"
+                                IsEnabled="{Binding HasEventMarker}"
+                                Style="{StaticResource SubtleIconButton}"
+                                ToolTip="Jump to event (E)">
+                            <TextBlock Text="&#xE7C1;"
+                                       Style="{StaticResource AppGlyph}" />
+                        </Button>
+
+                        <!--  Scrubber (carries the event marker + chunk seams)  -->
+                        <Slider x:Name="SeekSlider"
+                                Grid.Column="2"
+                                Margin="16,0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Seek"
+                                IsEnabled="{Binding CanSeek}"
+                                Maximum="1"
+                                Minimum="0"
+                                PreviewMouseDown="SeekSlider_PreviewMouseDown"
+                                PreviewMouseUp="SeekSlider_PreviewMouseUp"
+                                Style="{StaticResource SeekSlider}"
+                                ValueChanged="SeekSlider_ValueChanged"
+                                Value="{Binding SeekPosition, Mode=TwoWay}" />
+
+                        <!--  Time readout  -->
+                        <TextBlock Grid.Column="3"
+                                   VerticalAlignment="Center"
+                                   FontFamily="Consolas"
+                                   FontSize="13">
+                            <Run Text="{Binding PositionText, Mode=OneWay}"
+                                 Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <Run Text=" / "
+                                 Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                            <Run Text="{Binding DurationText, Mode=OneWay}"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </TextBlock>
+
+                        <!--  Playback speed  -->
+                        <StackPanel Grid.Column="4"
+                                    Margin="16,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal">
+                            <TextBlock Text="&#xEC57;"
+                                       Margin="0,0,8,0"
                                        VerticalAlignment="Center"
-                                       FontFamily="Consolas"
-                                       FontSize="13">
-                                <Run Text="{Binding PositionText, Mode=OneWay}"
-                                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                                <Run Text=" / "
-                                     Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                <Run Text="{Binding DurationText, Mode=OneWay}"
-                                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            </TextBlock>
-                        </Grid>
-
-                        <!--  Control buttons: transport centered, speed to the right  -->
-                        <Grid Grid.Row="1">
-                            <StackPanel HorizontalAlignment="Center"
-                                        Orientation="Horizontal">
-                                <Button Command="{Binding PreviousCommand}"
-                                        Margin="0,0,10,0"
-                                        VerticalAlignment="Center"
-                                        AutomationProperties.Name="Previous clip"
-                                        IsEnabled="{Binding CanGoPrevious}"
-                                        Style="{StaticResource SubtleIconButton}"
-                                        ToolTip="Previous clip (Ctrl+Left)">
-                                    <TextBlock Text="&#xE892;"
-                                               Style="{StaticResource AppGlyph}" />
-                                </Button>
-
-                                <Button x:Name="PlayPauseButton"
-                                        Content="{Binding PlayPauseIcon}"
-                                        Command="{Binding PlayPauseCommand}"
-                                        Width="56"
-                                        Height="40"
-                                        VerticalAlignment="Center"
-                                        FontFamily="{DynamicResource SymbolThemeFontFamily}"
-                                        FontSize="20"
-                                        AutomationProperties.Name="Play or pause"
-                                        IsEnabled="{Binding CanPlayPause}"
-                                        Style="{StaticResource AccentButtonStyle}"
-                                        ToolTip="Play/Pause (Space)" />
-
-                                <Button Command="{Binding NextCommand}"
-                                        Margin="10,0,0,0"
-                                        VerticalAlignment="Center"
-                                        AutomationProperties.Name="Next clip"
-                                        IsEnabled="{Binding CanGoNext}"
-                                        Style="{StaticResource SubtleIconButton}"
-                                        ToolTip="Next clip (Ctrl+Right)">
-                                    <TextBlock Text="&#xE893;"
-                                               Style="{StaticResource AppGlyph}" />
-                                </Button>
-
-                                <Button Command="{Binding StopCommand}"
-                                        Margin="28,0,0,0"
-                                        VerticalAlignment="Center"
-                                        AutomationProperties.Name="Stop"
-                                        IsEnabled="{Binding CanStop}"
-                                        Style="{StaticResource SubtleIconButton}"
-                                        ToolTip="Stop">
-                                    <TextBlock Text="&#xE71A;"
-                                               Style="{StaticResource AppGlyph}" />
-                                </Button>
-                            </StackPanel>
-
-                            <StackPanel HorizontalAlignment="Right"
-                                        VerticalAlignment="Center"
-                                        Orientation="Horizontal">
-                                <TextBlock Text="&#xEC57;"
-                                           Margin="0,0,8,0"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Style="{StaticResource AppGlyph}"
-                                           ToolTip="Playback speed" />
-                                <ComboBox Width="88"
-                                          Height="32"
-                                          VerticalAlignment="Center"
-                                          VerticalContentAlignment="Center"
-                                          AutomationProperties.Name="Playback speed"
-                                          ItemsSource="{Binding PlaybackSpeedOptions}"
-                                          SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding StringFormat={}{0:0.##}x}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                            </StackPanel>
-                        </Grid>
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Style="{StaticResource AppGlyph}"
+                                       ToolTip="Playback speed" />
+                            <ComboBox Width="88"
+                                      Height="32"
+                                      VerticalAlignment="Center"
+                                      VerticalContentAlignment="Center"
+                                      AutomationProperties.Name="Playback speed"
+                                      ItemsSource="{Binding PlaybackSpeedOptions}"
+                                      SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat={}{0:0.##}x}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>

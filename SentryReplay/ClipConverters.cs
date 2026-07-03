@@ -211,6 +211,29 @@ public sealed class SeekFillWidthConverter : MarkupExtension, IMultiValueConvert
 }
 
 /// <summary>
+/// Left offset for a seek-bar overlay (event marker or chunk tick): a left <see cref="Thickness"/>
+/// of position × rail width. [0] fraction (0..1), [1] rail ActualWidth. Mirrors
+/// <see cref="SeekFillWidthConverter"/> so overlays track the played fill and reflow on resize.
+/// </summary>
+public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
+{
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (values.Length == 2 && values[0] is double fraction && values[1] is double width && width > 0)
+        {
+            return new Thickness(Math.Clamp(fraction, 0, 1) * width, 0, 0, 0);
+        }
+
+        return new Thickness(0);
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Visibility.Visible when the bound clip is the one currently playing.
 /// Multi-binding: [0] the clip, [1] the view-model's NowPlayingClip.
 /// </summary>

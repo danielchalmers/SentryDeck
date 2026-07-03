@@ -195,6 +195,26 @@ public partial class MainWindowViewModel : ObservableObject
 
     public int RenderProgressPercent => (int)(RenderProgress * 100);
 
+    // --- Seek-bar overlays for the selected clip (event moment + chunk seams) ---
+    // Recomputed from the clip's chunks + event.json whenever the selection changes; plain
+    // fields (not ObservableProperty) because they're derived, not independently settable.
+    private double? _eventPosition;
+    private IReadOnlyList<double> _chunkBoundaries = [];
+
+    /// <summary>The event moment as a 0..1 fraction of the clip timeline (0 when none — pair with <see cref="HasEventMarker"/>).</summary>
+    public double EventMarkerPosition => _eventPosition ?? 0d;
+
+    /// <summary>True when the selected clip has a locatable event moment to mark on the seek bar and jump to.</summary>
+    public bool HasEventMarker => _eventPosition.HasValue;
+
+    /// <summary>Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".</summary>
+    public string EventMarkerTooltip => SelectedClip?.Event is { } camEvent && HasEventMarker
+        ? $"{ClipDisplay.ReasonLabel(camEvent)} · {camEvent.Timestamp:t}"
+        : string.Empty;
+
+    /// <summary>Interior chunk-boundary fractions (i/Count for i in 1..Count-1); empty for fewer than two chunks.</summary>
+    public IReadOnlyList<double> ChunkBoundaries => _chunkBoundaries;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FilteredClips))]
     [NotifyPropertyChangedFor(nameof(ClipCount))]
@@ -541,6 +561,17 @@ public partial class MainWindowViewModel : ObservableObject
         NowPlayingClip = null;
     }
 
+    [RelayCommand(CanExecute = nameof(HasEventMarker))]
+    private async Task JumpToEventAsync()
+    {
+        if (!HasEventMarker)
+            return;
+
+        Log.Debug("Jumping to event moment. Position={EventMarkerPosition}", EventMarkerPosition);
+        SeekPosition = EventMarkerPosition;
+        await SeekToCurrentPositionAsync();
+    }
+
     [RelayCommand]
     private async Task PreviousAsync()
     {
@@ -652,6 +683,12 @@ public partial class MainWindowViewModel : ObservableObject
                 SelectCameraView(numberedView);
                 return true;
             }
+
+            if (key == Key.E && HasEventMarker)
+            {
+                await JumpToEventAsync();
+                return true;
+            }
         }
 
         if (_playerController is null)
@@ -737,6 +774,37 @@ public partial class MainWindowViewModel : ObservableObject
             var targetPosition = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
             await _playerController.SeekAsync(targetPosition);
         }
+    }
+
+    // Derives the seek-bar overlays from the selected clip: the event moment (mapped onto the
+    // 0..1 seek axis) and the interior chunk-boundary fractions. Nulls out cleanly when the
+    // selection is cleared or the clip has no usable event metadata.
+    private void RecomputeSelectedClipTimeline()
+    {
+        var clip = SelectedClip;
+        if (clip is null)
+        {
+            _eventPosition = null;
+            _chunkBoundaries = [];
+            return;
+        }
+
+        var timeline = new ClipTimeline(clip.Chunks);
+        _chunkBoundaries = timeline.Count < 2
+            ? []
+            : Enumerable.Range(1, timeline.Count - 1).Select(i => (double)i / timeline.Count).ToList();
+
+        var camEvent = clip.Event;
+        if (camEvent is null || camEvent.Timestamp == default || clip.Chunks.Count == 0 || timeline.Duration <= TimeSpan.Zero)
+        {
+            _eventPosition = null;
+            return;
+        }
+
+        // The event landing strictly after the start and no later than the modeled end is markable;
+        // clock skew (fraction <= 0) or an event past the estimate (> 1) yields no marker.
+        var fraction = (camEvent.Timestamp - clip.Chunks[0].Timestamp).TotalSeconds / timeline.Duration.TotalSeconds;
+        _eventPosition = fraction is > 0 and <= 1 ? fraction : null;
     }
 
     private void UpdateSeekPositionFromController()
@@ -1004,6 +1072,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedClipChanged(CamClip value)
     {
+        RecomputeSelectedClipTimeline();
+        OnPropertyChanged(nameof(EventMarkerPosition));
+        OnPropertyChanged(nameof(HasEventMarker));
+        OnPropertyChanged(nameof(EventMarkerTooltip));
+        OnPropertyChanged(nameof(ChunkBoundaries));
+        JumpToEventCommand.NotifyCanExecuteChanged();
+
         if (value is not null)
         {
             Log.Debug(
