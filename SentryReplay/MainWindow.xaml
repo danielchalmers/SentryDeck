@@ -460,7 +460,7 @@
                         <Grid Grid.Column="1">
                             <TextBox x:Name="SearchBox"
                                      Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
-                                     Padding="0,8,6,8"
+                                     Padding="10,8,8,8"
                                      VerticalContentAlignment="Center"
                                      FontSize="14"
                                      AutomationProperties.Name="Search clips"
@@ -468,7 +468,7 @@
                                      BorderThickness="0"
                                      Foreground="{DynamicResource TextControlForeground}" />
                             <TextBlock Text="Search clips, places, events…"
-                                       Padding="0,8,6,8"
+                                       Padding="10,8,8,8"
                                        VerticalAlignment="Center"
                                        FontSize="14"
                                        Foreground="{DynamicResource TextControlPlaceholderForeground}"
@@ -656,20 +656,28 @@
                                                    Style="{StaticResource ClipListTertiaryTextBlock}" />
                                     </Grid>
 
-                                    <!--  Location: pin + city in one TextBlock so the pin sits on the text's line (BaselineAlignment) instead of drifting off-center.  -->
-                                    <TextBlock Grid.Row="2"
-                                               Margin="0,3,0,0"
-                                               Style="{StaticResource ClipListSecondaryTextBlock}"
-                                               TextTrimming="CharacterEllipsis"
-                                               Visibility="{Binding Event, Converter={local:MapAvailabilityConverter}}">
-                                        <Run Text="&#xECAF;"
-                                             BaselineAlignment="Center"
-                                             FontFamily="{DynamicResource SymbolThemeFontFamily}"
-                                             FontSize="12"
-                                             Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                        <Run Text=" " />
-                                        <Run Text="{Binding Event.City}" />
-                                    </TextBlock>
+                                    <!--  Location: fixed-width pin column (clips the glyph's wide advance) + city with a small controlled gap.  -->
+                                    <Grid Grid.Row="2"
+                                          Margin="0,3,0,0"
+                                          Visibility="{Binding Event, Converter={local:MapAvailabilityConverter}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="&#xECAF;"
+                                                   Width="13"
+                                                   VerticalAlignment="Center"
+                                                   FontFamily="{DynamicResource SymbolThemeFontFamily}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Event.City}"
+                                                   Margin="5,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource ClipListSecondaryTextBlock}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
                                 </Grid>
                             </Grid>
                         </DataTemplate>
