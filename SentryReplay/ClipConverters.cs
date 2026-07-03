@@ -48,7 +48,9 @@ public sealed class ReasonBrushConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// A friendly, culture-aware clip date/time, e.g. "Mon, Dec 16 · 3:53 PM".
+/// A friendly, culture-aware clip date/time. ConverterParameter selects the part: "date" →
+/// "Mon, Dec 16", "time" → "3:53 PM". The clip card lays those on opposite ends of the row, so
+/// no middot separator is needed.
 /// </summary>
 public sealed class FriendlyDateConverter : MarkupExtension, IValueConverter
 {
@@ -60,7 +62,12 @@ public sealed class FriendlyDateConverter : MarkupExtension, IValueConverter
             return string.Empty;
 
         var c = CultureInfo.CurrentCulture;
-        return $"{dt.ToString("ddd, MMM d", c)} · {dt.ToString("t", c)}";
+        return (parameter as string)?.ToLowerInvariant() switch
+        {
+            "date" => dt.ToString("ddd, MMM d", c),
+            "time" => dt.ToString("t", c),
+            _ => $"{dt.ToString("ddd, MMM d", c)} {dt.ToString("t", c)}",
+        };
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

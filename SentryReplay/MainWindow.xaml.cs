@@ -85,6 +85,51 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // F1 opens the About / Help page (the conventional Help shortcut).
+        if (e.Key == Key.F1)
+        {
+            _viewModel.ShowAboutPage = true;
+            e.Handled = true;
+            return;
+        }
+
+        // Escape returns from the About / Help page.
+        if (e.Key == Key.Escape && _viewModel.ShowAboutPage)
+        {
+            _viewModel.ShowAboutPage = false;
+            e.Handled = true;
+            return;
+        }
+
+        // Tunnels from the window down, so the search shortcut fires no matter which control holds focus
+        // (seek slider, a camera tile, the speed combo, …) — not only when the sidebar list is focused.
+        if (MainWindowViewModel.IsSearchFocusShortcut(e.Key, Keyboard.Modifiers))
+        {
+            _viewModel.RequestSearchFocus();
+            e.Handled = true;
+        }
+    }
+
+    private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // The mouse "back" button (XButton1) returns from the About / Help page.
+        if (e.ChangedButton == MouseButton.XButton1 && _viewModel.ShowAboutPage)
+        {
+            _viewModel.ShowAboutPage = false;
+            e.Handled = true;
+        }
+    }
+
+    private void ClipListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Right-click should open the context menu without switching to (and playing) the clip. Marking
+        // the button-down handled suppresses the ListBox's right-click selection; the context menu still
+        // opens on button-up and targets the right-clicked item via its PlacementTarget.
+        e.Handled = true;
+    }
+
     private async void Window_KeyDown(object sender, KeyEventArgs e)
     {
         // While typing in the search box, keys are text (space, digits, arrows) — don't

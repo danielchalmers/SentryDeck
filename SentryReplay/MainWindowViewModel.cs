@@ -35,7 +35,9 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
     private readonly Func<Task> _backgroundYield;
     private readonly Dispatcher _dispatcher;
+    private readonly DispatcherTimer _filterDebounceTimer;
     private VideoPlayerController _playerController;
+    private CancellationTokenSource _selectionCts;
     private bool _isSeeking;
     private bool _isInitialized;
 
@@ -55,6 +57,14 @@ public partial class MainWindowViewModel : ObservableObject
         _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
         _backgroundYield = backgroundYield ?? (async () => await Dispatcher.Yield(DispatcherPriority.Background));
         _dispatcher = Dispatcher.CurrentDispatcher;
+
+        // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth;
+        // the getters stay live, so only the (debounced) change notification is deferred.
+        _filterDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(150),
+        };
+        _filterDebounceTimer.Tick += OnFilterDebounceTick;
     }
 
     /// <summary>
@@ -128,6 +138,20 @@ public partial class MainWindowViewModel : ObservableObject
             || clip.FullPath.Contains(term, StringComparison.CurrentCultureIgnoreCase)
             || (clip.Event?.City?.Contains(term, StringComparison.CurrentCultureIgnoreCase) ?? false)
             || ClipDisplay.ReasonLabel(clip.Event).Contains(term, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    // Restart the debounce on each keystroke; the list is rebound once typing settles.
+    partial void OnFilterTextChanged(string value)
+    {
+        _filterDebounceTimer.Stop();
+        _filterDebounceTimer.Start();
+    }
+
+    private void OnFilterDebounceTick(object sender, EventArgs e)
+    {
+        _filterDebounceTimer.Stop();
+        OnPropertyChanged(nameof(FilteredClips));
+        OnPropertyChanged(nameof(ClipCount));
     }
 
     public string PositionText
@@ -215,9 +239,9 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Interior chunk-boundary fractions (i/Count for i in 1..Count-1); empty for fewer than two chunks.</summary>
     public IReadOnlyList<double> ChunkBoundaries => _chunkBoundaries;
 
+    // FilteredClips/ClipCount are refreshed on a short debounce (see OnFilterTextChanged) rather than
+    // per keystroke; HasFilterText stays immediate so the search box's clear affordance is responsive.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(FilteredClips))]
-    [NotifyPropertyChangedFor(nameof(ClipCount))]
     [NotifyPropertyChangedFor(nameof(HasFilterText))]
     private string _filterText = string.Empty;
 
@@ -348,6 +372,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void Shutdown()
     {
+        _filterDebounceTimer.Stop();
+        _selectionCts?.Cancel();
+        _selectionCts?.Dispose();
+        _selectionCts = null;
+
         var controller = _playerController;
         _playerController = null;
 
@@ -624,44 +653,68 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private async Task PlaySelectedClipAsync()
+    private async Task PlaySelectedClipAsync(CamClip clip, CancellationToken cancellationToken)
     {
-        if (SelectedClip is null || _playerController is null)
+        if (clip is null || _playerController is null)
             return;
 
         ClearError();
         IsLoading = true;
         await _backgroundYield();
 
+        // A newer selection superseded this one while we yielded — drop it so the latest wins and the
+        // selection doesn't rubber-band backwards as earlier, slower loads complete.
+        if (cancellationToken.IsCancellationRequested || !ReferenceEquals(clip, SelectedClip))
+            return;
+
         try
         {
-            await _playerController.GoToClipAsync(SelectedClip);
+            await _playerController.GoToClipAsync(clip);
+
+            if (cancellationToken.IsCancellationRequested)
+                return;
 
             // Auto-focus the camera that triggered the event (Full metadata mode).
-            if (SelectedClip.Event is not null)
+            if (clip.Event is not null)
             {
-                SelectedCameraView = CameraIdToView(SelectedClip.Event.Camera);
+                SelectedCameraView = CameraIdToView(clip.Event.Camera);
             }
         }
         catch (Exception ex)
         {
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
             IsLoading = false;
             Log.Error(
                 ex,
                 "Failed to play selected clip. ClipName={ClipName}; ClipPath={ClipPath}",
-                SelectedClip.Name,
-                SelectedClip.FullPath);
-            ShowError("Playback Failed", $"Could not play clip: {SelectedClip.Name}\n\nError: {ex.Message}");
+                clip.Name,
+                clip.FullPath);
+            ShowError("Playback Failed", $"Could not play clip: {clip.Name}\n\nError: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// True for the shortcuts that focus the clip search box (Ctrl+F, F3, or F6). Shared with the
+    /// view's tunneling PreviewKeyDown so it works regardless of which control currently has focus.
+    /// </summary>
+    public static bool IsSearchFocusShortcut(Key key, ModifierKeys modifiers) =>
+        (key == Key.F && modifiers == ModifierKeys.Control) ||
+        ((key == Key.F3 || key == Key.F6) && modifiers == ModifierKeys.None);
+
+    /// <summary>Leaves the About page if shown and asks the view to focus the search box.</summary>
+    public void RequestSearchFocus()
+    {
+        ShowAboutPage = false;
+        SearchBoxFocusRequested?.Invoke(this, EventArgs.Empty);
     }
 
     public async Task<bool> HandleKeyDownAsync(Key key, ModifierKeys modifiers)
     {
-        if ((key == Key.F && modifiers == ModifierKeys.Control) ||
-            (key == Key.F3 && modifiers == ModifierKeys.None))
+        if (IsSearchFocusShortcut(key, modifiers))
         {
-            ShowAboutPage = false;
-            SearchBoxFocusRequested?.Invoke(this, EventArgs.Empty);
+            RequestSearchFocus();
             return true;
         }
 
@@ -1021,26 +1074,9 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (clip is not null)
         {
-            Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.CurrentCulture));
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUseClip))]
-    private void RevealEventJson(CamClip clip)
-    {
-        if (clip is null)
-        {
-            return;
-        }
-
-        var eventPath = Path.Combine(clip.FullPath, "event.json");
-        if (File.Exists(eventPath))
-        {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{eventPath}\"") { UseShellExecute = true });
-        }
-        else if (Directory.Exists(clip.FullPath))
-        {
-            Process.Start(new ProcessStartInfo(clip.FullPath) { UseShellExecute = true });
+            // Invariant (24-hour, culture-stable) so the copied value matches the clip name and is
+            // paste-searchable, unlike the ambiguous AM/PM current-culture rendering.
+            Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.InvariantCulture));
         }
     }
 
@@ -1079,13 +1115,25 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ChunkBoundaries));
         JumpToEventCommand.NotifyCanExecuteChanged();
 
+        // Cancel any in-flight selection load so quickly arrowing through the list doesn't open every
+        // clip in turn (which would also drag the selection backwards until the queue drained).
+        _selectionCts?.Cancel();
+        _selectionCts?.Dispose();
+        _selectionCts = null;
+
         if (value is not null)
         {
+            _selectionCts = new CancellationTokenSource();
+
+            // Show the now-playing badge on the newly clicked clip right away, instead of only once its
+            // media finishes opening.
+            NowPlayingClip = value;
+
             Log.Debug(
                 "Selected clip changed. ClipName={ClipName}; ClipPath={ClipPath}",
                 value.Name,
                 value.FullPath);
-            _ = PlaySelectedClipAsync();
+            _ = PlaySelectedClipAsync(value, _selectionCts.Token);
         }
     }
 

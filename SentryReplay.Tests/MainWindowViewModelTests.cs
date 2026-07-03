@@ -258,6 +258,7 @@ public sealed class MainWindowViewModelTests
     [Theory]
     [InlineData(Key.F, ModifierKeys.Control)]
     [InlineData(Key.F3, ModifierKeys.None)]
+    [InlineData(Key.F6, ModifierKeys.None)]
     public async Task SearchShortcut_RequestsFocus_ClosesAbout_AndIsHandled(Key key, ModifierKeys modifiers)
     {
         var vm = CreateViewModel();
