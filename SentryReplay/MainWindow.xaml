@@ -440,7 +440,7 @@
                 -->
                 <Border Grid.Row="0"
                         Margin="12,12,12,8"
-                        Padding="8,0"
+                        Padding="8,0,2,0"
                         Background="{DynamicResource TextControlBackground}"
                         BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                         BorderThickness="1"
@@ -493,6 +493,7 @@
                 <ListBox x:Name="ClipListBox"
                          Grid.Row="1"
                          Margin="4,0"
+                         Padding="0,0,6,0"
                          Background="Transparent"
                          BorderThickness="0"
                          IsSynchronizedWithCurrentItem="False"
