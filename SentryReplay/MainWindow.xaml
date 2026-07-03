@@ -133,16 +133,22 @@
                                     </RepeatButton>
                                 </Track.IncreaseRepeatButton>
                                 <Track.Thumb>
-                                    <Thumb x:Name="Thumb">
+                                    <!--
+                                        The scale transform lives on the Thumb (not the inner Grid) so
+                                        it sits in the Slider template's name scope — the hover storyboard
+                                        below targets ThumbScale by name, which fails across the nested
+                                        Thumb-template scope.
+                                    -->
+                                    <Thumb x:Name="Thumb"
+                                           RenderTransformOrigin="0.5,0.5">
+                                        <Thumb.RenderTransform>
+                                            <ScaleTransform x:Name="ThumbScale" />
+                                        </Thumb.RenderTransform>
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
                                                 <Grid Width="20"
                                                       Height="20"
-                                                      Background="Transparent"
-                                                      RenderTransformOrigin="0.5,0.5">
-                                                    <Grid.RenderTransform>
-                                                        <ScaleTransform x:Name="ThumbScale" />
-                                                    </Grid.RenderTransform>
+                                                      Background="Transparent">
                                                     <Ellipse x:Name="FocusRing"
                                                              Width="20"
                                                              Height="20"
