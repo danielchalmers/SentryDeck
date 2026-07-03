@@ -8,6 +8,14 @@ public sealed class MainWindowViewModelTests
     // require FFmpeg/Flyleaf and are covered separately via VideoPlayerController.
     private static MainWindowViewModel CreateViewModel() => new(() => null!);
 
+    private static CamClip ClipWithEvent(string name, string reason, string city, decimal lat = 0, decimal lon = 0)
+        => new(
+            System.IO.Path.GetTempPath(),
+            name,
+            new DateTime(2025, 1, 1),
+            [],
+            new CamEvent { Reason = reason, City = city, EstLat = lat, EstLon = lon });
+
     [Fact]
     public void NewViewModel_DefaultsToFrontCamera_AndEmptyOverlay()
     {
@@ -24,7 +32,7 @@ public sealed class MainWindowViewModelTests
         vm.HasNoClipSelected.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ShowVideoHosts.ShouldBeFalse();
-        vm.PlayPauseIcon.ShouldBe("▶");
+        vm.PlayPauseIcon.ShouldBe(""); // Segoe Fluent Icons PlaySolid
     }
 
     [Theory]
@@ -170,8 +178,8 @@ public sealed class MainWindowViewModelTests
     }
 
     [Theory]
-    [InlineData(false, "▶")]
-    [InlineData(true, "⏸")]
+    [InlineData(false, "")] // PlaySolid
+    [InlineData(true, "")]  // Pause
     public void PlayPauseIcon_ReflectsPlaybackState(bool isPlaying, string expectedIcon)
     {
         var vm = CreateViewModel();
@@ -315,6 +323,76 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task FilteredClips_FiltersByCity()
+    {
+        var clips = new List<CamClip>
+        {
+            ClipWithEvent("A", "user_interaction_honk", "Hutto"),
+            ClipWithEvent("B", "user_interaction_honk", "San Antonio"),
+        };
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        await vm.LoadClipsAsync(new[] { "root" });
+
+        vm.FilterText = "hutto";
+
+        vm.FilteredClips.Single().Name.ShouldBe("A");
+    }
+
+    [Fact]
+    public async Task FilteredClips_FiltersByFriendlyReason()
+    {
+        var clips = new List<CamClip>
+        {
+            ClipWithEvent("Honker", "user_interaction_honk", "X"),
+            ClipWithEvent("Saver", "user_interaction_dashcam_launcher_action_tapped", "X"),
+        };
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        await vm.LoadClipsAsync(new[] { "root" });
+
+        vm.FilterText = "saved";
+
+        vm.FilteredClips.Single().Name.ShouldBe("Saver");
+    }
+
+    [Fact]
+    public async Task ClipCount_ReflectsFilteredCount()
+    {
+        var clips = TestClips.Create(3);
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        await vm.LoadClipsAsync(new[] { "root" });
+
+        vm.ClipCount.ShouldBe(3);
+
+        vm.FilterText = "Clip 1";
+
+        vm.ClipCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void ClearFilter_ResetsFilterTextAndFlag()
+    {
+        var vm = CreateViewModel();
+        vm.FilterText = "abc";
+        vm.HasFilterText.ShouldBeTrue();
+
+        vm.ClearFilterCommand.Execute(null);
+
+        vm.FilterText.ShouldBe(string.Empty);
+        vm.HasFilterText.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ShowOnMap_DisabledWithoutCoordinates()
+    {
+        var vm = CreateViewModel();
+        var noLocation = ClipWithEvent("A", "user_interaction_honk", "Hutto");
+        var withLocation = ClipWithEvent("B", "user_interaction_honk", "Hutto", 30.5m, -97.5m);
+
+        vm.ShowOnMapCommand.CanExecute(noLocation).ShouldBeFalse();
+        vm.ShowOnMapCommand.CanExecute(withLocation).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task FilteredClips_NoMatch_IsEmpty()
     {
         var clips = TestClips.Create(3);
@@ -392,7 +470,7 @@ public sealed class MainWindowViewModelTests
         controller.IsLoading = false;
         controller.IsPlaying = true;
         vm.IsPlaying.ShouldBeTrue();
-        vm.PlayPauseIcon.ShouldBe("⏸");
+        vm.PlayPauseIcon.ShouldBe(""); // Pause
     }
 
     [Fact]

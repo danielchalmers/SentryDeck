@@ -1,4 +1,4 @@
-<Window x:Class="SentryReplay.MainWindow"
+﻿<Window x:Class="SentryReplay.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -8,8 +8,8 @@
         Title="Sentry Replay"
         MinWidth="1200"
         MinHeight="700"
-        d:DataContext="{d:DesignInstance Type=local:MainWindowViewModel, IsDesignTimeCreatable=False}"
-        Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}"
+        d:DataContext="{d:DesignInstance Type=local:MainWindowViewModel,
+                                         IsDesignTimeCreatable=False}"
         Closing="Window_Closing"
         ContentRendered="Window_ContentRendered"
         Foreground="{DynamicResource TextControlForeground}"
@@ -17,68 +17,122 @@
         mc:Ignorable="d">
 
     <Window.Resources>
-        <!--  Button Style  -->
-        <Style x:Key="PlayerButton"
-               TargetType="Button">
-            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="12,8" />
-            <Setter Property="Margin" Value="2" />
-            <Setter Property="FontSize" Value="14" />
-            <Setter Property="Cursor" Value="Hand" />
+        <!--  Seek bar: accent played-track, growing thumb, keyboard focus ring  -->
+        <Style x:Key="SeekSlider"
+               TargetType="Slider">
+            <Setter Property="Minimum" Value="0" />
+            <Setter Property="Maximum" Value="1" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="ButtonBorder"
-                                Padding="{TemplateBinding Padding}"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="4"
-                                RenderTransformOrigin="0.5,0.5">
-                            <Border.RenderTransform>
-                                <ScaleTransform />
-                            </Border.RenderTransform>
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center" />
-                        </Border>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <Border x:Name="SeekRail"
+                                    Height="4"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource ControlStrongFillColorDefaultBrush}"
+                                    CornerRadius="2" />
+                            <Border Height="4"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                    CornerRadius="2">
+                                <Border.Width>
+                                    <MultiBinding Converter="{local:SeekFillWidthConverter}">
+                                        <Binding Path="Value"
+                                                 RelativeSource="{RelativeSource TemplatedParent}" />
+                                        <Binding ElementName="SeekRail"
+                                                 Path="ActualWidth" />
+                                    </MultiBinding>
+                                </Border.Width>
+                            </Border>
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge"
+                                                  Background="Transparent"
+                                                  Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge"
+                                                  Background="Transparent"
+                                                  Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="Thumb">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid Width="20"
+                                                      Height="20"
+                                                      Background="Transparent"
+                                                      RenderTransformOrigin="0.5,0.5">
+                                                    <Grid.RenderTransform>
+                                                        <ScaleTransform x:Name="ThumbScale" />
+                                                    </Grid.RenderTransform>
+                                                    <Ellipse x:Name="FocusRing"
+                                                             Width="20"
+                                                             Height="20"
+                                                             Fill="Transparent"
+                                                             Stroke="{DynamicResource AccentFillColorDefaultBrush}"
+                                                             StrokeThickness="2"
+                                                             Visibility="{Binding IsKeyboardFocused, RelativeSource={RelativeSource AncestorType=Slider}, Converter={local:BoolToVisibilityConverter}}" />
+                                                    <Ellipse Width="14"
+                                                             Height="14"
+                                                             Fill="{DynamicResource AccentFillColorDefaultBrush}"
+                                                             Stroke="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                                                             StrokeThickness="2" />
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
-                                                             Storyboard.TargetProperty="RenderTransform.ScaleX"
-                                                             To="0.96"
-                                                             Duration="0:0:0.08" />
-                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
-                                                             Storyboard.TargetProperty="RenderTransform.ScaleY"
-                                                             To="0.96"
-                                                             Duration="0:0:0.08" />
+                                            <DoubleAnimation Storyboard.TargetName="ThumbScale"
+                                                             Storyboard.TargetProperty="ScaleX"
+                                                             To="1.25"
+                                                             Duration="{StaticResource MotionFaster}" />
+                                            <DoubleAnimation Storyboard.TargetName="ThumbScale"
+                                                             Storyboard.TargetProperty="ScaleY"
+                                                             To="1.25"
+                                                             Duration="{StaticResource MotionFaster}" />
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
                                 <Trigger.ExitActions>
                                     <BeginStoryboard>
                                         <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
-                                                             Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                            <DoubleAnimation Storyboard.TargetName="ThumbScale"
+                                                             Storyboard.TargetProperty="ScaleX"
                                                              To="1"
-                                                             Duration="0:0:0.12" />
-                                            <DoubleAnimation Storyboard.TargetName="ButtonBorder"
-                                                             Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                             Duration="{StaticResource MotionFast}" />
+                                            <DoubleAnimation Storyboard.TargetName="ThumbScale"
+                                                             Storyboard.TargetProperty="ScaleY"
                                                              To="1"
-                                                             Duration="0:0:0.12" />
+                                                             Duration="{StaticResource MotionFast}" />
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="{DynamicResource ControlFillColorDisabledBrush}" />
-                                <Setter Property="Foreground" Value="{DynamicResource TextControlForegroundDisabled}" />
+                                <Setter Property="Opacity" Value="0.5" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -86,25 +140,17 @@
             </Setter>
         </Style>
 
-        <!--  Slider Style for Seek Bar  -->
-        <Style x:Key="SeekSlider"
-               TargetType="Slider">
-            <Setter Property="Minimum" Value="0" />
-            <Setter Property="Maximum" Value="1" />
-            <Setter Property="Height" Value="20" />
-            <Setter Property="Margin" Value="8,0" />
-        </Style>
-
         <Style x:Key="CameraViewTileButton"
                TargetType="RadioButton">
-            <Setter Property="MinHeight" Value="116" />
+            <Setter Property="MinHeight" Value="112" />
+            <Setter Property="MinWidth" Value="96" />
             <Setter Property="Margin" Value="4" />
             <Setter Property="Padding" Value="6" />
-            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
@@ -113,17 +159,19 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6">
+                                CornerRadius="{DynamicResource ControlCornerRadius}">
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!--  No scale animation here: these tiles host the live mini-camera previews, and the
-                                  Flyleaf surface follows the tile's render transform, so scaling would shift the video.  -->
+                            <!--
+                                No scale animation here: these tiles host the live mini-camera previews, and the
+                                Flyleaf surface follows the tile's render transform, so scaling would shift the video.
+                            -->
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="TileBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                             </Trigger>
+                            <!--  A single selected signal: the 2px accent border.  -->
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="TileBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                                 <Setter TargetName="TileBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                 <Setter TargetName="TileBorder" Property="BorderThickness" Value="2" />
                             </Trigger>
@@ -141,13 +189,21 @@
                BasedOn="{StaticResource {x:Type Hyperlink}}">
             <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
             <Setter Property="TextDecorations" Value="None" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <!--  Underline on hover so clickability isn't conveyed by color alone.  -->
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="TextDecorations" Value="Underline" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
+        <!--  Promo titles sit BELOW the section headers in the hierarchy (BodyStrong, not larger).  -->
         <Style x:Key="ProjectTitleTextBlock"
                TargetType="TextBlock"
                BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontSize" Value="14" />
         </Style>
 
         <Style x:Key="ProjectDescriptionTextBlock"
@@ -160,7 +216,7 @@
         <Style x:Key="ClipListTextBlock"
                TargetType="TextBlock"
                BasedOn="{StaticResource {x:Type TextBlock}}">
-            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}"
                              Value="True">
@@ -169,17 +225,55 @@
             </Style.Triggers>
         </Style>
 
+        <!--  Metadata is demoted with contrast (semantic brushes), not opacity.  -->
         <Style x:Key="ClipListSecondaryTextBlock"
                TargetType="TextBlock"
                BasedOn="{StaticResource ClipListTextBlock}">
-            <Setter Property="Opacity" Value="0.8" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
         </Style>
 
         <Style x:Key="ClipListTertiaryTextBlock"
                TargetType="TextBlock"
                BasedOn="{StaticResource ClipListTextBlock}">
-            <Setter Property="Opacity" Value="0.65" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
         </Style>
+
+        <!--
+            Day-grouped clip view. The proxy carries the DataContext into this
+            resource-scoped CollectionViewSource so grouping can live in XAML.
+        -->
+        <local:BindingProxy x:Key="VmProxy"
+                            Data="{Binding}" />
+        <CollectionViewSource x:Key="GroupedClips"
+                              Source="{Binding Data.FilteredClips, Source={StaticResource VmProxy}}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription Converter="{local:DateOnlyConverter}"
+                                          PropertyName="Timestamp" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+
+        <!--  Shared clip context menu (Tag on the item = the view-model).  -->
+        <ContextMenu x:Key="ClipContextMenu">
+            <MenuItem Header="Open clip folder"
+                      Command="{Binding PlacementTarget.Tag.OpenClipFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="Show on map"
+                      Command="{Binding PlacementTarget.Tag.ShowOnMapCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="Reveal event.json"
+                      Command="{Binding PlacementTarget.Tag.RevealEventJsonCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <Separator />
+            <MenuItem Header="Copy timestamp"
+                      Command="{Binding PlacementTarget.Tag.CopyTimestampCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="Copy folder path"
+                      Command="{Binding PlacementTarget.Tag.CopyClipPathCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="Copy clip name"
+                      Command="{Binding PlacementTarget.Tag.CopyClipNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+        </ContextMenu>
     </Window.Resources>
 
     <Window.Triggers>
@@ -203,14 +297,16 @@
     <Grid>
         <Grid Visibility="{Binding ShowMainContent, Converter={local:BoolToVisibilityConverter}}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="320" />
+                <ColumnDefinition Width="320"
+                                  MinWidth="260"
+                                  MaxWidth="440" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!--  Sidebar  -->
+            <!--  Sidebar (semi-transparent Layer so Mica shows through)  -->
             <Grid Grid.Column="0"
-                  Background="{DynamicResource ControlAltFillColorSecondaryBrush}">
+                  Background="{DynamicResource LayerFillColorDefaultBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -219,85 +315,124 @@
 
                 <!--  Search box  -->
                 <Border Grid.Row="0"
-                        Margin="8,8,8,4"
-                        Background="{DynamicResource TextControlBackground}">
+                        Margin="12,12,12,8"
+                        Background="{DynamicResource TextControlBackground}"
+                        BorderThickness="1"
+                        CornerRadius="{DynamicResource ControlCornerRadius}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                            <Style.Triggers>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <Grid>
-                        <TextBox x:Name="SearchBox"
-                                 Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
-                                 Padding="12,10"
-                                 VerticalContentAlignment="Center"
-                                 FontSize="14"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 Foreground="{DynamicResource TextControlForeground}" />
-                        <TextBlock Text="Search clips..."
-                                   Padding="12,10"
-                                   VerticalAlignment="Center"
-                                   FontSize="14"
-                                   Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                   IsHitTestVisible="False">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Hidden" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding FilterText}"
-                                                     Value="">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="&#xE721;"
+                                   Margin="10,0,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Style="{StaticResource AppGlyph}" />
+
+                        <Grid Grid.Column="1">
+                            <TextBox x:Name="SearchBox"
+                                     Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="8"
+                                     VerticalContentAlignment="Center"
+                                     FontSize="14"
+                                     AutomationProperties.Name="Search clips"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="{DynamicResource TextControlForeground}" />
+                            <TextBlock Text="Search clips, places, events…"
+                                       Padding="8"
+                                       VerticalAlignment="Center"
+                                       FontSize="14"
+                                       Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                       IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Hidden" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FilterText}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+
+                        <Button Grid.Column="2"
+                                Command="{Binding ClearFilterCommand}"
+                                Margin="0,0,4,0"
+                                AutomationProperties.Name="Clear search"
+                                Style="{StaticResource SubtleIconButton}"
+                                ToolTip="Clear search"
+                                Visibility="{Binding HasFilterText, Converter={local:BoolToVisibilityConverter}}">
+                            <TextBlock Text="&#xE894;"
+                                       FontSize="12"
+                                       Style="{StaticResource AppGlyph}" />
+                        </Button>
                     </Grid>
                 </Border>
 
-                <!--  Clip list  -->
+                <!--  Clip list (day-grouped incident log)  -->
                 <ListBox x:Name="ClipListBox"
                          Grid.Row="1"
                          Margin="4,0"
                          Background="Transparent"
                          BorderThickness="0"
-                         ItemsSource="{Binding FilteredClips}"
+                         IsSynchronizedWithCurrentItem="False"
+                         ItemsSource="{Binding Source={StaticResource GroupedClips}}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         SelectedItem="{Binding SelectedClip, Mode=TwoWay}">
+                         SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
+                         VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name, Converter={local:DayGroupHeaderConverter}}"
+                                               Margin="12,12,8,4"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               Style="{StaticResource AppCaption}" />
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListBox.GroupStyle>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <Setter Property="Padding" Value="8" />
-                            <Setter Property="Margin" Value="4" />
-                            <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
-                            <Setter Property="Foreground" Value="{DynamicResource TextControlForeground}" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="4,2" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="ContextMenu" Value="{StaticResource ClipContextMenu}" />
                             <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
-                            <Setter Property="ContextMenu">
-                                <Setter.Value>
-                                    <ContextMenu>
-                                        <MenuItem Header="Open Clip Folder"
-                                                  Command="{Binding PlacementTarget.Tag.OpenClipFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                        <Separator />
-                                        <MenuItem Header="Copy Folder Path"
-                                                  Command="{Binding PlacementTarget.Tag.CopyClipPathCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                        <MenuItem Header="Copy Clip Name"
-                                                  Command="{Binding PlacementTarget.Tag.CopyClipNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                    </ContextMenu>
-                                </Setter.Value>
-                            </Setter>
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
-                                        <Border Padding="{TemplateBinding Padding}"
+                                        <Border x:Name="ItemBorder"
+                                                Padding="{TemplateBinding Padding}"
                                                 Background="{TemplateBinding Background}"
-                                                CornerRadius="6">
+                                                CornerRadius="8">
                                             <ContentPresenter />
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -307,46 +442,144 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Height="72">
+                            <Grid Height="88">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
-                                <!--  Thumbnail  -->
-                                <Border Grid.Column="0"
-                                        Background="{DynamicResource ControlFillColorDisabledBrush}"
+                                <!--  Reason stripe (hidden when the row is accent-selected)  -->
+                                <Rectangle Grid.Column="0"
+                                           Width="3"
+                                           Margin="0,10"
+                                           HorizontalAlignment="Left"
+                                           Fill="{Binding Event, Converter={local:ReasonBrushConverter}}"
+                                           RadiusX="1.5"
+                                           RadiusY="1.5">
+                                    <Rectangle.Style>
+                                        <Style TargetType="Rectangle">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}"
+                                                             Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Rectangle.Style>
+                                </Rectangle>
+
+                                <!--  Thumbnail (with glyph fallback + now-playing marker)  -->
+                                <Border Grid.Column="1"
+                                        Width="96"
+                                        Height="72"
+                                        Margin="8,0,0,0"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                        ClipToBounds="True"
                                         CornerRadius="4">
-                                    <Image HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           Source="{Binding ThumbnailPath}"
-                                           Stretch="UniformToFill" />
+                                    <Grid>
+                                        <TextBlock Text="&#xE714;"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="22"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                   Style="{StaticResource AppGlyph}"
+                                                   Visibility="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}, ConverterParameter=fallback}" />
+                                        <Image Source="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}}"
+                                               Stretch="UniformToFill" />
+                                        <Border Margin="0,0,4,4"
+                                                Padding="4,1"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Bottom"
+                                                Background="#C0000000"
+                                                CornerRadius="3">
+                                            <Border.Visibility>
+                                                <MultiBinding Converter="{local:NowPlayingConverter}">
+                                                    <Binding />
+                                                    <Binding Path="Data.NowPlayingClip"
+                                                             Source="{StaticResource VmProxy}" />
+                                                </MultiBinding>
+                                            </Border.Visibility>
+                                            <TextBlock Text="&#xE768;"
+                                                       FontSize="10"
+                                                       Foreground="White"
+                                                       Style="{StaticResource AppGlyph}" />
+                                        </Border>
+                                    </Grid>
                                 </Border>
 
                                 <!--  Info  -->
-                                <StackPanel Grid.Column="1"
-                                            Margin="12,0,0,0"
+                                <StackPanel Grid.Column="2"
+                                            Margin="12,0,8,0"
                                             VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}"
-                                               FontSize="14"
+                                    <TextBlock Text="{Binding Timestamp, Converter={local:FriendlyDateConverter}}"
                                                FontWeight="SemiBold"
                                                Style="{StaticResource ClipListTextBlock}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}"
-                                               Margin="0,4,0,0"
-                                               FontSize="12"
-                                               Style="{StaticResource ClipListSecondaryTextBlock}" />
-                                    <TextBlock Margin="0,2,0,0"
-                                               FontSize="11"
-                                               Style="{StaticResource ClipListTertiaryTextBlock}">
-                                        <Run Text="{Binding Chunks.Count, Mode=OneWay}" />
-                                        <Run Text="chunks" />
-                                    </TextBlock>
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Name}" />
+                                    <StackPanel Margin="0,4,0,0"
+                                                Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Event, Converter={local:ReasonLabelConverter}}"
+                                                   Style="{StaticResource ClipListSecondaryTextBlock}" />
+                                        <TextBlock Text="·"
+                                                   Margin="6,0"
+                                                   Style="{StaticResource ClipListTertiaryTextBlock}" />
+                                        <TextBlock Text="{Binding Converter={local:ClipDurationConverter}}"
+                                                   Style="{StaticResource ClipListTertiaryTextBlock}" />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,3,0,0"
+                                                Orientation="Horizontal"
+                                                Visibility="{Binding Event, Converter={local:MapAvailabilityConverter}}">
+                                        <TextBlock Text="&#xE81D;"
+                                                   Margin="0,0,4,0"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                   Style="{StaticResource AppGlyph}" />
+                                        <TextBlock Text="{Binding Event.City}"
+                                                   VerticalAlignment="Center"
+                                                   Style="{StaticResource ClipListSecondaryTextBlock}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <!--  Filtered-empty state (only while a search yields nothing)  -->
+                <StackPanel Grid.Row="1"
+                            Margin="24"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding ClipCount}" Value="0" />
+                                        <Condition Binding="{Binding IsLoadingClips}" Value="False" />
+                                        <Condition Binding="{Binding HasFilterText}" Value="True" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="&#xE721;"
+                               HorizontalAlignment="Center"
+                               FontSize="28"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                               Style="{StaticResource AppGlyph}" />
+                    <TextBlock Text="No clips match your search."
+                               Margin="0,8,0,0"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Style="{StaticResource AppBody}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
 
                 <!--  Subtle animated loading bar shown while the clip list is (re)scanned  -->
                 <ProgressBar Grid.Row="1"
@@ -358,52 +591,75 @@
                              IsIndeterminate="True"
                              Visibility="{Binding IsLoadingClips, Converter={local:BoolToVisibilityConverter}}" />
 
-                <!--  Folder picker  -->
-                <StackPanel Grid.Row="2"
-                            Margin="8">
+                <!--  Utility action bar (single row, divided from the list)  -->
+                <Border Grid.Row="2"
+                        Padding="12,10"
+                        BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                        BorderThickness="0,1,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="4" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+
                         <Button Grid.Column="0"
-                                Content="📁 Select Folder"
                                 Command="{Binding OpenFolderCommand}"
-                                Padding="12"
-                                Style="{StaticResource PlayerButton}" />
-                        <Button Grid.Column="1"
-                                Content="🔄"
+                                HorizontalContentAlignment="Left"
+                                AutomationProperties.Name="Select folder"
+                                Style="{StaticResource PressScaleButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8B7;"
+                                           Style="{StaticResource AppGlyphInButton}" />
+                                <TextBlock Text="Select folder"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource AppBodyStrong}" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button Grid.Column="2"
                                 Command="{Binding RefreshClipsCommand}"
-                                Padding="12"
-                                Style="{StaticResource PlayerButton}"
-                                ToolTip="Rescan the current folder for clips" />
+                                AutomationProperties.Name="Rescan folder"
+                                Style="{StaticResource SubtleIconButton}"
+                                ToolTip="Rescan the current folder for clips">
+                            <TextBlock Text="&#xE72C;"
+                                       Style="{StaticResource AppGlyph}" />
+                        </Button>
+
+                        <Grid Grid.Column="4">
+                            <Button Command="{Binding ToggleAboutCommand}"
+                                    AutomationProperties.Name="About and help"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="About / Help">
+                                <TextBlock Text="&#xE946;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+                            <Border Width="8"
+                                    Height="8"
+                                    Margin="0,4,4,0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Top"
+                                    Background="{DynamicResource SystemFillColorAttentionBrush}"
+                                    CornerRadius="4"
+                                    IsHitTestVisible="False"
+                                    ToolTip="Update available"
+                                    Visibility="{Binding HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
+                        </Grid>
                     </Grid>
-                    <Grid Margin="0,8,0,0">
-                        <Button Content="ℹ️ About / Help"
-                                Command="{Binding ToggleAboutCommand}"
-                                Padding="12"
-                                Style="{StaticResource PlayerButton}" />
-                        <Border Width="9"
-                                Height="9"
-                                Margin="0,8,8,0"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Top"
-                                Background="{DynamicResource AccentFillColorDefaultBrush}"
-                                CornerRadius="4.5"
-                                Visibility="{Binding HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
-                    </Grid>
-                </StackPanel>
+                </Border>
             </Grid>
 
             <!--  Splitter  -->
             <GridSplitter Grid.Column="1"
                           Width="8"
                           HorizontalAlignment="Stretch"
-                          Background="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                          Background="Transparent" />
 
-            <!--  Video Player Area  -->
+            <!--  Video Player Area (opaque: frames the native video surface)  -->
             <Grid Grid.Column="2"
-                  Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}">
+                  Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
@@ -549,39 +805,35 @@
                         </Border>
 
                         <Border Grid.Row="1"
-                                Margin="0,10,0,0"
+                                Margin="0,12,0,0"
                                 Padding="6"
-                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
-                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
-                                CornerRadius="6">
+                                CornerRadius="8">
                             <UniformGrid Columns="5"
                                          Rows="1">
                                 <RadioButton Command="{Binding SelectCameraViewCommand}"
                                              CommandParameter="grid"
+                                             AutomationProperties.Name="Grid view"
                                              GroupName="CameraViewMode"
                                              IsChecked="{Binding IsGridViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}">
+                                             Style="{StaticResource CameraViewTileButton}"
+                                             ToolTip="Grid view (1)">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="82" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0"
-                                                Background="Black"
+                                                Background="{DynamicResource SubtleFillColorSecondaryBrush}"
                                                 CornerRadius="4">
-                                            <UniformGrid Margin="18"
-                                                         Columns="2"
-                                                         Rows="2">
-                                                <Border Margin="2"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
-                                                <Border Margin="2"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
-                                                <Border Margin="2"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
-                                                <Border Margin="2"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}" />
-                                            </UniformGrid>
+                                            <TextBlock Text="&#xE80A;"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="34"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                       Style="{StaticResource AppGlyph}" />
                                         </Border>
                                         <TextBlock Grid.Row="1"
                                                    Text="Grid"
@@ -594,9 +846,11 @@
 
                                 <RadioButton Command="{Binding SelectCameraViewCommand}"
                                              CommandParameter="front"
+                                             AutomationProperties.Name="Front camera"
                                              GroupName="CameraViewMode"
                                              IsChecked="{Binding IsFrontViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}">
+                                             Style="{StaticResource CameraViewTileButton}"
+                                             ToolTip="Front camera (2)">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="82" />
@@ -626,9 +880,11 @@
 
                                 <RadioButton Command="{Binding SelectCameraViewCommand}"
                                              CommandParameter="rear"
+                                             AutomationProperties.Name="Rear camera"
                                              GroupName="CameraViewMode"
                                              IsChecked="{Binding IsRearViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}">
+                                             Style="{StaticResource CameraViewTileButton}"
+                                             ToolTip="Rear camera (3)">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="82" />
@@ -658,9 +914,11 @@
 
                                 <RadioButton Command="{Binding SelectCameraViewCommand}"
                                              CommandParameter="left"
+                                             AutomationProperties.Name="Left camera"
                                              GroupName="CameraViewMode"
                                              IsChecked="{Binding IsLeftViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}">
+                                             Style="{StaticResource CameraViewTileButton}"
+                                             ToolTip="Left camera (4)">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="82" />
@@ -690,9 +948,11 @@
 
                                 <RadioButton Command="{Binding SelectCameraViewCommand}"
                                              CommandParameter="right"
+                                             AutomationProperties.Name="Right camera"
                                              GroupName="CameraViewMode"
                                              IsChecked="{Binding IsRightViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}">
+                                             Style="{StaticResource CameraViewTileButton}"
+                                             ToolTip="Right camera (5)">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="82" />
@@ -753,53 +1013,99 @@
                         <StackPanel MaxWidth="500"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
-                            <!--  Loading/Rendering status  -->
+                            <!--  Loading / rendering status  -->
                             <StackPanel Visibility="{Binding IsLoading, Converter={local:BoolToVisibilityConverter}}">
                                 <TextBlock Text="{Binding LoadingStatusText}"
                                            Margin="0,0,0,16"
                                            HorizontalAlignment="Center"
-                                           FontSize="18"
-                                           Foreground="{DynamicResource TextControlForeground}" />
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                           Style="{StaticResource AppSubtitle}" />
                                 <ProgressBar Width="300"
-                                             Height="8"
+                                             Height="6"
                                              IsIndeterminate="{Binding IsIndeterminateProgress}"
                                              Maximum="100"
                                              Value="{Binding RenderProgressPercent, Mode=OneWay}" />
                             </StackPanel>
 
-                            <!--  Error display  -->
+                            <!--  Error / first-run empty state  -->
                             <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={local:BoolToVisibilityConverter}}">
-                                <TextBlock Text="!"
-                                           Margin="0,0,0,16"
-                                           HorizontalAlignment="Center"
-                                           FontSize="48"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                <Border Width="64"
+                                        Height="64"
+                                        Margin="0,0,0,16"
+                                        HorizontalAlignment="Center"
+                                        CornerRadius="32">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsEmptyState}"
+                                                             Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock FontSize="26">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock"
+                                                   BasedOn="{StaticResource AppGlyph}">
+                                                <Setter Property="Text" Value="&#xE783;" />
+                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsEmptyState}"
+                                                                 Value="True">
+                                                        <Setter Property="Text" Value="&#xE8B7;" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
                                 <TextBlock Text="{Binding ErrorTitle}"
                                            Margin="0,0,0,8"
                                            HorizontalAlignment="Center"
-                                           FontSize="20"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                           TextAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock"
+                                               BasedOn="{StaticResource AppSubtitle}">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsEmptyState}"
+                                                             Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <TextBlock Text="{Binding ErrorDetails}"
+                                           MaxWidth="380"
                                            HorizontalAlignment="Center"
-                                           FontSize="14"
-                                           Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Style="{StaticResource AppBody}"
                                            TextAlignment="Center"
                                            TextWrapping="Wrap" />
+                                <Button Content="Select folder"
+                                        Command="{Binding OpenFolderCommand}"
+                                        Margin="0,20,0,0"
+                                        Padding="24,8"
+                                        HorizontalAlignment="Center"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Visibility="{Binding IsEmptyState, Converter={local:BoolToVisibilityConverter}}" />
                                 <Button Content="Download FFmpeg"
                                         Command="{Binding DownloadFFmpegCommand}"
                                         Margin="0,20,0,0"
-                                        Padding="24,10"
+                                        Padding="24,8"
                                         HorizontalAlignment="Center"
-                                        Style="{StaticResource PlayerButton}"
+                                        Style="{StaticResource AccentButtonStyle}"
                                         Visibility="{Binding ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}" />
                                 <Button Content="Dismiss"
                                         Command="{Binding DismissErrorCommand}"
-                                        Margin="0,20,0,0"
-                                        Padding="24,10"
+                                        Margin="0,12,0,0"
+                                        Padding="24,8"
                                         HorizontalAlignment="Center"
-                                        Style="{StaticResource PlayerButton}"
+                                        Style="{StaticResource DefaultButtonStyle}"
                                         Visibility="{Binding CanDismissError, Converter={local:BoolToVisibilityConverter}}" />
                             </StackPanel>
                         </StackPanel>
@@ -809,31 +1115,25 @@
                 <!--  Player Controls  -->
                 <Border Grid.Row="1"
                         Padding="16"
-                        Background="{DynamicResource ControlAltFillColorSecondaryBrush}">
+                        Background="{DynamicResource LayerFillColorDefaultBrush}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <!--  Progress Bar  -->
+                        <!--  Scrubber  -->
                         <Grid Grid.Row="0"
                               Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Column="0"
-                                       Text="{Binding PositionText}"
-                                       MinWidth="50"
-                                       VerticalAlignment="Center"
-                                       FontSize="13"
-                                       Foreground="{DynamicResource TextControlPlaceholderForeground}" />
-
                             <Slider x:Name="SeekSlider"
-                                    Grid.Column="1"
+                                    Grid.Column="0"
+                                    Margin="0,0,12,0"
+                                    AutomationProperties.Name="Seek"
                                     IsEnabled="{Binding CanSeek}"
                                     Maximum="1"
                                     Minimum="0"
@@ -843,79 +1143,100 @@
                                     ValueChanged="SeekSlider_ValueChanged"
                                     Value="{Binding SeekPosition, Mode=TwoWay}" />
 
-                            <TextBlock Grid.Column="2"
-                                       Text="{Binding DurationText}"
-                                       MinWidth="50"
+                            <TextBlock Grid.Column="1"
                                        VerticalAlignment="Center"
-                                       FontSize="13"
-                                       Foreground="{DynamicResource TextControlPlaceholderForeground}"
-                                       TextAlignment="Right" />
+                                       FontFamily="Consolas"
+                                       FontSize="13">
+                                <Run Text="{Binding PositionText, Mode=OneWay}"
+                                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <Run Text=" / "
+                                     Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <Run Text="{Binding DurationText, Mode=OneWay}"
+                                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </TextBlock>
                         </Grid>
 
-                        <!--  Control Buttons  -->
-                        <StackPanel Grid.Row="1"
-                                    HorizontalAlignment="Center"
-                                    Orientation="Horizontal">
-                            <Button Content="⏮"
-                                    Command="{Binding PreviousCommand}"
-                                    FontSize="18"
-                                    IsEnabled="{Binding CanGoPrevious}"
-                                    Style="{StaticResource PlayerButton}"
-                                    ToolTip="Previous Clip" />
+                        <!--  Control buttons: transport centered, speed to the right  -->
+                        <Grid Grid.Row="1">
+                            <StackPanel HorizontalAlignment="Center"
+                                        Orientation="Horizontal">
+                                <Button Command="{Binding PreviousCommand}"
+                                        Margin="0,0,10,0"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="Previous clip"
+                                        IsEnabled="{Binding CanGoPrevious}"
+                                        Style="{StaticResource SubtleIconButton}"
+                                        ToolTip="Previous clip (Ctrl+Left)">
+                                    <TextBlock Text="&#xE892;"
+                                               Style="{StaticResource AppGlyph}" />
+                                </Button>
 
-                            <Button x:Name="PlayPauseButton"
-                                    Content="{Binding PlayPauseIcon}"
-                                    Command="{Binding PlayPauseCommand}"
-                                    Padding="20,8"
-                                    FontSize="20"
-                                    IsEnabled="{Binding CanPlayPause}"
-                                    Style="{StaticResource PlayerButton}"
-                                    ToolTip="Play/Pause (Space)" />
+                                <Button x:Name="PlayPauseButton"
+                                        Content="{Binding PlayPauseIcon}"
+                                        Command="{Binding PlayPauseCommand}"
+                                        Width="56"
+                                        Height="40"
+                                        VerticalAlignment="Center"
+                                        FontFamily="{DynamicResource SymbolThemeFontFamily}"
+                                        FontSize="20"
+                                        AutomationProperties.Name="Play or pause"
+                                        IsEnabled="{Binding CanPlayPause}"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        ToolTip="Play/Pause (Space)" />
 
-                            <Button Content="⏭"
-                                    Command="{Binding NextCommand}"
-                                    FontSize="18"
-                                    IsEnabled="{Binding CanGoNext}"
-                                    Style="{StaticResource PlayerButton}"
-                                    ToolTip="Next Clip" />
+                                <Button Command="{Binding NextCommand}"
+                                        Margin="10,0,0,0"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="Next clip"
+                                        IsEnabled="{Binding CanGoNext}"
+                                        Style="{StaticResource SubtleIconButton}"
+                                        ToolTip="Next clip (Ctrl+Right)">
+                                    <TextBlock Text="&#xE893;"
+                                               Style="{StaticResource AppGlyph}" />
+                                </Button>
 
-                            <Rectangle Width="20" />
+                                <Button Command="{Binding StopCommand}"
+                                        Margin="28,0,0,0"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="Stop"
+                                        IsEnabled="{Binding CanStop}"
+                                        Style="{StaticResource SubtleIconButton}"
+                                        ToolTip="Stop">
+                                    <TextBlock Text="&#xE71A;"
+                                               Style="{StaticResource AppGlyph}" />
+                                </Button>
+                            </StackPanel>
 
-                            <Button Content="⏹"
-                                    Command="{Binding StopCommand}"
-                                    FontSize="18"
-                                    IsEnabled="{Binding CanStop}"
-                                    Style="{StaticResource PlayerButton}"
-                                    ToolTip="Stop" />
-
-                            <Rectangle Width="20" />
-
-                            <TextBlock Text="Speed"
-                                       Margin="0,0,8,0"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextControlPlaceholderForeground}" />
-
-                            <ComboBox Width="90"
-                                      Height="34"
-                                      VerticalContentAlignment="Center"
-                                      Background="{DynamicResource TextControlBackground}"
-                                      BorderThickness="0"
-                                      Foreground="{DynamicResource TextControlForeground}"
-                                      ItemsSource="{Binding PlaybackSpeedOptions}"
-                                      SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding StringFormat={}{0:0.##}x}" />
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                        </StackPanel>
+                            <StackPanel HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal">
+                                <TextBlock Text="&#xEC57;"
+                                           Margin="0,0,8,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Style="{StaticResource AppGlyph}"
+                                           ToolTip="Playback speed" />
+                                <ComboBox Width="88"
+                                          Height="32"
+                                          VerticalAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          AutomationProperties.Name="Playback speed"
+                                          ItemsSource="{Binding PlaybackSpeedOptions}"
+                                          SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding StringFormat={}{0:0.##}x}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
                     </Grid>
                 </Border>
             </Grid>
         </Grid>
 
-        <Grid Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}"
+        <Grid Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
               Visibility="{Binding ShowAboutPage, Converter={local:BoolToVisibilityConverter}}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -923,19 +1244,23 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0"
-                    Padding="8">
+                    Padding="16,12"
+                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                    BorderThickness="0,0,0,1">
                 <StackPanel VerticalAlignment="Center"
                             Orientation="Horizontal">
-                    <Button Content="←"
-                            Command="{Binding ToggleAboutCommand}"
-                            Padding="10,6"
-                            Style="{StaticResource PlayerButton}"
-                            ToolTip="Back to Player" />
+                    <Button Command="{Binding ToggleAboutCommand}"
+                            AutomationProperties.Name="Back to player"
+                            Style="{StaticResource SubtleIconButton}"
+                            ToolTip="Back to player">
+                        <TextBlock Text="&#xE72B;"
+                                   Style="{StaticResource AppGlyph}" />
+                    </Button>
                     <TextBlock Text="About / Help"
                                Margin="12,0,0,0"
                                VerticalAlignment="Center"
-                               FontSize="20"
-                               FontWeight="SemiBold" />
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                               Style="{StaticResource AppTitle}" />
                 </StackPanel>
             </Border>
 
@@ -949,7 +1274,7 @@
 
                     <Border Grid.Column="0"
                             Padding="20"
-                            Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                             CornerRadius="8">
                         <StackPanel>
                             <TextBlock Text="Sentry Replay"
@@ -1016,7 +1341,7 @@
                     <StackPanel Grid.Column="1"
                                 Margin="12,0,0,0">
                         <Border Padding="20"
-                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                                 CornerRadius="8">
                             <StackPanel>
                                 <TextBlock Text="App Info"
@@ -1113,7 +1438,7 @@
 
                         <Border Margin="0,12,0,0"
                                 Padding="20"
-                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                                 CornerRadius="8">
                             <StackPanel>
                                 <TextBlock Text="Support"
@@ -1124,13 +1449,17 @@
                                     <TextBlock Margin="0,0,0,8">
                                         <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay"
                                                    RequestNavigate="Hyperlink_RequestNavigate">
-                                            📦 View Sentry Replay on GitHub
+                                            <Run Text="&#xE8A7;"
+                                                 FontFamily="{DynamicResource SymbolThemeFontFamily}" />
+                                            <Run Text="  View Sentry Replay on GitHub" />
                                         </Hyperlink>
                                     </TextBlock>
                                     <TextBlock Margin="0,0,0,8">
                                         <Hyperlink NavigateUri="https://github.com/danielchalmers/SentryReplay/issues"
                                                    RequestNavigate="Hyperlink_RequestNavigate">
-                                            🐛 Report a Bug / Request a Feature
+                                            <Run Text="&#xEBE8;"
+                                                 FontFamily="{DynamicResource SymbolThemeFontFamily}" />
+                                            <Run Text="  Report a bug / request a feature" />
                                         </Hyperlink>
                                     </TextBlock>
                                 </StackPanel>
@@ -1139,7 +1468,7 @@
 
                         <Border Margin="0,12,0,0"
                                 Padding="20"
-                                Background="{DynamicResource ControlAltFillColorSecondaryBrush}"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                                 CornerRadius="8">
                             <StackPanel>
                                 <TextBlock Text="More from the author"
