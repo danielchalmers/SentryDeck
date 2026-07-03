@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -103,12 +104,31 @@ public partial class MainWindowViewModel : ObservableObject
     ];
 
     public IReadOnlyList<CamClip> FilteredClips => _allClips
-        .Where(c => string.IsNullOrWhiteSpace(FilterText) ||
-                    c.Name.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase) ||
-                    c.FullPath.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase))
+        .Where(MatchesFilter)
         .OrderByDescending(c => c.Timestamp)
         .ThenBy(c => c.Name)
         .ToList();
+
+    /// <summary>Number of clips currently shown (drives the sidebar count).</summary>
+    public int ClipCount => FilteredClips.Count;
+
+    /// <summary>True when the search box has text (drives the clear button).</summary>
+    public bool HasFilterText => !string.IsNullOrEmpty(FilterText);
+
+    // Matches the clip name, path, event city, and friendly event reason (e.g. "sentry", "honk", "saved").
+    private bool MatchesFilter(CamClip clip)
+    {
+        if (string.IsNullOrWhiteSpace(FilterText))
+        {
+            return true;
+        }
+
+        var term = FilterText;
+        return clip.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
+            || clip.FullPath.Contains(term, StringComparison.CurrentCultureIgnoreCase)
+            || (clip.Event?.City?.Contains(term, StringComparison.CurrentCultureIgnoreCase) ?? false)
+            || ClipDisplay.ReasonLabel(clip.Event).Contains(term, StringComparison.CurrentCultureIgnoreCase);
+    }
 
     public string PositionText
     {
@@ -132,7 +152,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool CanGoPrevious => _playerController?.CanGoPrevious == true;
 
-    public string PlayPauseIcon => IsPlaying ? "⏸" : "▶";
+    // Segoe Fluent Icons: Pause (E769) / PlaySolid (F5B0). Rendered with SymbolThemeFontFamily.
+    public string PlayPauseIcon => IsPlaying ? "" : "";
 
     // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF
     // sibling it can't draw over the Flyleaf video surface anyway. While a selected clip loads, the hosts stay
@@ -176,6 +197,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FilteredClips))]
+    [NotifyPropertyChangedFor(nameof(ClipCount))]
+    [NotifyPropertyChangedFor(nameof(HasFilterText))]
     private string _filterText = string.Empty;
 
     [ObservableProperty]
@@ -184,6 +207,11 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     private CamClip _selectedClip;
+
+    // The clip actually loaded in the player (drives the now-playing marker in the list).
+    // Distinct from SelectedClip so a marker can persist even when selection is elsewhere.
+    [ObservableProperty]
+    private CamClip _nowPlayingClip;
 
     [ObservableProperty]
     private string _errorTitle;
@@ -200,6 +228,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _canDismissError = true;
+
+    // True when the overlay is a friendly first-run/empty prompt rather than a genuine error.
+    [ObservableProperty]
+    private bool _isEmptyState;
 
     [ObservableProperty]
     private bool _showFFmpegDownloadButton;
@@ -326,6 +358,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         // Clear the list right away so a (re)scan visibly empties it and shows the loading bar before refilling.
         OnPropertyChanged(nameof(FilteredClips));
+        OnPropertyChanged(nameof(ClipCount));
         RefreshClipState();
 
         var stopwatch = Stopwatch.StartNew();
@@ -339,9 +372,10 @@ public partial class MainWindowViewModel : ObservableObject
             if (!result.HadRoots)
             {
                 ShowError(
-                    "No Dashcam Folders Found",
-                    "Click 'Select Folder' to choose a folder containing Tesla dashcam footage (TeslaCam folder).",
-                    canDismiss: true);
+                    "No dashcam footage yet",
+                    "Point Sentry Replay at your TeslaCam folder to get started. Recorded USB drives are found automatically.",
+                    canDismiss: true,
+                    isEmptyState: true);
             }
             else
             {
@@ -367,6 +401,7 @@ public partial class MainWindowViewModel : ObservableObject
             IsLoading = false;
             IsLoadingClips = false;
             OnPropertyChanged(nameof(FilteredClips));
+            OnPropertyChanged(nameof(ClipCount));
             RefreshClipState();
         }
     }
@@ -503,6 +538,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         await _playerController.StopAsync();
         SeekPosition = 0;
+        NowPlayingClip = null;
     }
 
     [RelayCommand]
@@ -569,6 +605,12 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             await _playerController.GoToClipAsync(SelectedClip);
+
+            // Auto-focus the camera that triggered the event (Full metadata mode).
+            if (SelectedClip.Event is not null)
+            {
+                SelectedCameraView = CameraIdToView(SelectedClip.Event.Camera);
+            }
         }
         catch (Exception ex)
         {
@@ -590,6 +632,26 @@ public partial class MainWindowViewModel : ObservableObject
             ShowAboutPage = false;
             SearchBoxFocusRequested?.Invoke(this, EventArgs.Empty);
             return true;
+        }
+
+        // Number keys 1-5 switch camera views (Grid / Front / Rear / Left / Right).
+        if (modifiers == ModifierKeys.None)
+        {
+            var numberedView = key switch
+            {
+                Key.D1 or Key.NumPad1 => GridCameraView,
+                Key.D2 or Key.NumPad2 => FrontCameraView,
+                Key.D3 or Key.NumPad3 => RearCameraView,
+                Key.D4 or Key.NumPad4 => LeftCameraView,
+                Key.D5 or Key.NumPad5 => RightCameraView,
+                _ => null,
+            };
+
+            if (numberedView is not null)
+            {
+                SelectCameraView(numberedView);
+                return true;
+            }
         }
 
         if (_playerController is null)
@@ -732,6 +794,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             case nameof(VideoPlayerController.CurrentClip):
                 SelectedClip = _playerController.CurrentClip;
+                NowPlayingClip = _playerController.CurrentClip;
                 RefreshClipState();
                 break;
 
@@ -765,11 +828,12 @@ public partial class MainWindowViewModel : ObservableObject
             : version.ToString(2);
     }
 
-    private void ShowError(string title, string details, bool canDismiss = true)
+    private void ShowError(string title, string details, bool canDismiss = true, bool isEmptyState = false)
     {
         ErrorTitle = title;
         ErrorDetails = details;
         CanDismissError = canDismiss;
+        IsEmptyState = isEmptyState;
         ShowErrorOverlay = true;
     }
 
@@ -778,6 +842,7 @@ public partial class MainWindowViewModel : ObservableObject
         ShowErrorOverlay = false;
         ShowFFmpegDownloadButton = false;
         CanDismissError = true;
+        IsEmptyState = false;
         ErrorTitle = null;
         ErrorDetails = null;
     }
@@ -802,6 +867,12 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ClearFilter()
+    {
+        FilterText = string.Empty;
+    }
+
+    [RelayCommand]
     private void SelectCameraView(string cameraView)
     {
         SelectedCameraView = cameraView switch
@@ -813,6 +884,13 @@ public partial class MainWindowViewModel : ObservableObject
             _ => FrontCameraView,
         };
     }
+
+    // Maps a Tesla event.json camera id to a view. Real footage only reliably uses 0 = front;
+    // other ids are undocumented, so they fall back to the front (primary) angle.
+    private static string CameraIdToView(int cameraId) => cameraId switch
+    {
+        _ => FrontCameraView,
+    };
 
     private async Task UpdateLatestReleaseAsync()
     {
@@ -869,6 +947,49 @@ public partial class MainWindowViewModel : ObservableObject
             Clipboard.SetText(clip.Name);
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanUseClip))]
+    private void CopyTimestamp(CamClip clip)
+    {
+        if (clip is not null)
+        {
+            Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.CurrentCulture));
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanUseClip))]
+    private void RevealEventJson(CamClip clip)
+    {
+        if (clip is null)
+        {
+            return;
+        }
+
+        var eventPath = Path.Combine(clip.FullPath, "event.json");
+        if (File.Exists(eventPath))
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{eventPath}\"") { UseShellExecute = true });
+        }
+        else if (Directory.Exists(clip.FullPath))
+        {
+            Process.Start(new ProcessStartInfo(clip.FullPath) { UseShellExecute = true });
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanShowOnMap))]
+    private void ShowOnMap(CamClip clip)
+    {
+        if (clip?.Event is null || !ClipDisplay.HasLocation(clip.Event))
+        {
+            return;
+        }
+
+        var lat = clip.Event.EstLat.ToString(CultureInfo.InvariantCulture);
+        var lon = clip.Event.EstLon.ToString(CultureInfo.InvariantCulture);
+        Process.Start(new ProcessStartInfo($"https://www.google.com/maps?q={lat},{lon}") { UseShellExecute = true });
+    }
+
+    private static bool CanShowOnMap(CamClip clip) => clip?.Event is not null && ClipDisplay.HasLocation(clip.Event);
 
     private void RunOnUiThread(Action action)
     {

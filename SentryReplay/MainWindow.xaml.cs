@@ -87,6 +87,13 @@ public partial class MainWindow : Window
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        // While typing in the search box, keys are text (space, digits, arrows) — don't
+        // hijack them for playback/camera shortcuts.
+        if (SearchBox.IsKeyboardFocused)
+        {
+            return;
+        }
+
         if (await _viewModel.HandleKeyDownAsync(e.Key, Keyboard.Modifiers))
         {
             e.Handled = true;
