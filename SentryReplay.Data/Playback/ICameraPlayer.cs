@@ -9,6 +9,7 @@ public interface ICameraPlayer : IDisposable
 
     bool IsOpen { get; }
     double Speed { get; set; }
+    TimeSpan Position { get; }
 
     Task<bool> OpenAsync(string path);
     Task PlayAsync();

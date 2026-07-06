@@ -24,15 +24,36 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     public TaskCompletionSource<object> StopGate { get; set; }
     public bool IsOpen { get; private set; }
     public double Speed { get; set; } = 1.0;
+
+    /// <summary>
+    /// Test-controlled position, used by the controller to read a camera's "live" position (e.g.
+    /// the front player's current time when joining a secondary camera mid-playback). Defaults to
+    /// zero and is kept in sync by <see cref="SeekAsync"/> so tests behave sensibly without
+    /// having to poke it manually after every seek.
+    /// </summary>
+    public TimeSpan Position { get; set; }
+
+    /// <summary>
+    /// Optional gate that, when set, makes <see cref="OpenAsync"/> await it before completing --
+    /// lets tests hold a camera's open in progress to assert on ordering/timing.
+    /// </summary>
+    public TaskCompletionSource<object> OpenGate { get; set; }
+
     public int PlayCount { get; private set; }
     public int PauseCount { get; private set; }
     public int StopCount { get; private set; }
     public int CloseCount { get; private set; }
     public int DisposeCount { get; private set; }
 
-    public Task<bool> OpenAsync(string path)
+    public async Task<bool> OpenAsync(string path)
     {
         OpenedPaths.Add(path);
+
+        if (OpenGate is not null)
+        {
+            await OpenGate.Task;
+        }
+
         IsOpen = OpenResult;
 
         if (OpenResult)
@@ -40,7 +61,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
             Opened?.Invoke(this, EventArgs.Empty);
         }
 
-        return Task.FromResult(OpenResult);
+        return OpenResult;
     }
 
     public Task PlayAsync()
@@ -81,6 +102,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     {
         SeekPositions.Add(position);
         CallLog.Add($"seek:{position.TotalSeconds}");
+        Position = position;
         PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
         return Task.CompletedTask;
     }
@@ -97,6 +119,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
 
     public void RaisePositionChanged(TimeSpan position)
     {
+        Position = position;
         PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
     }
 

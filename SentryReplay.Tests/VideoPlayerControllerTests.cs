@@ -557,6 +557,98 @@ public sealed class VideoPlayerControllerTests
         controller.IsMediaOpen.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task SelectingClip_FrontPlaysBeforeSlowestSideCameraFinishesOpening()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        var left = new FakeCameraPlayer();
+        var right = new FakeCameraPlayer { OpenGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously) };
+        using var controller = CreateController(front, back, left, right);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        // Front should start playing immediately, without waiting for the slowest side camera
+        // (right, held open via OpenGate) to finish opening.
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        front.PlayCount.ShouldBe(1);
+        right.PlayCount.ShouldBe(0);
+        right.SeekPositions.ShouldBeEmpty();
+        controller.IsPlaying.ShouldBeTrue();
+
+        // Release the gate; the side camera should now join in (seek + play).
+        right.OpenGate.SetResult(null);
+
+        await WaitUntilAsync(() => right.PlayCount > 0);
+
+        right.SeekPositions.ShouldNotBeEmpty();
+        right.PlayCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SelectingClip_SideCameraJoinsAtFrontsCurrentPosition()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer { OpenGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously) };
+        var left = new FakeCameraPlayer();
+        var right = new FakeCameraPlayer();
+        using var controller = CreateController(front, back, left, right);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        // Advance the front's live position while back is still opening.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(42));
+
+        back.OpenGate.SetResult(null);
+
+        await WaitUntilAsync(() => back.PlayCount > 0);
+
+        back.SeekPositions.ShouldContain(TimeSpan.FromSeconds(42));
+    }
+
+    [Fact]
+    public async Task RecoverFromPrematureEnd_OpenDoesNotPlayOrSeekBeforeCallerPositions()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, back, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        back.CallLog.Clear();
+        front.CallLog.Clear();
+
+        // Probe-clean premature end -> recovery reopens with playAfterOpen: false. The reopen
+        // itself (OpenClipInternalAsync) must only pause -- no join seek/play, unlike the
+        // playAfterOpen: true path -- leaving the recovery code to position/play afterward exactly
+        // once each.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+
+        // Exactly one play and one seek reach back (from the recovery code's own resume
+        // sequence), not a join seek/play from inside the reopen itself.
+        back.CallLog.Count(call => call == "play").ShouldBe(1);
+        back.CallLog.Count(call => call.StartsWith("seek:")).ShouldBe(1);
+        back.CallLog.ShouldContain("seek:60");
+        back.CallLog.IndexOf("pause").ShouldBeLessThan(back.CallLog.IndexOf("play"));
+
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
     private static VideoPlayerController CreateController(
         FakeCameraPlayer front = null,
         FakeCameraPlayer back = null,
