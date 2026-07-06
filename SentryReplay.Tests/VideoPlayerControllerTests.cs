@@ -129,7 +129,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // A failure within the premature-end tolerance of Duration is not a corrupt-chunk
         // candidate, so it must surface as a plain playback error.
@@ -170,7 +170,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         var openCountBeforeEnded = front.OpenedPaths.Count;
         var duration = controller.Duration;
@@ -199,7 +199,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // A genuine end-of-clip: position reaches (within tolerance of) Duration before Ended fires.
         front.RaisePositionChanged(controller.Duration);
@@ -347,7 +347,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // Duration is 3 * 60s = 180s. Ending partway through chunk 1 (at 90s, far short of 180s)
         // means chunk 1 is where playback died. All files still probe as healthy (probe-clean
@@ -387,7 +387,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         var duration = controller.Duration;
 
@@ -412,7 +412,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // Trigger 3 successful recoveries (chunks 0, 1, 2 excluded one at a time), each ending
         // partway through the earliest remaining chunk so the "bad chunk" is always chunk 0 of
@@ -453,7 +453,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // Trigger one (probe-clean, two-build) recovery on the first clip so it has a non-empty
         // exclusion set.
@@ -464,7 +464,7 @@ public sealed class VideoPlayerControllerTests
 
         await controller.GoToClipAsync(secondClipFiles.Clip);
         await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
-        await WaitUntilAsync(() => front.OpenedPaths.Count > 0 && controller.IsMediaOpen);
+        await WaitUntilAsync(() => front.OpenedPaths.Count > 0 && controller.IsMediaOpen && !controller.IsLoading);
 
         var buildCountAfterSelectingSecondClip = mediaSourceBuilder.BuildCount;
         var lastExclusions = mediaSourceBuilder.ExclusionsPerBuild[^1];
@@ -491,7 +491,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // Chunk 2's file becomes unreadable AFTER the clip opened (e.g. removed/truncated
         // mid-playback); the fake's probe will auto-exclude it on the next rebuild.
@@ -533,7 +533,7 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         // The builder dropped chunk 1 on its own, so the opened timeline is [chunk0, chunk2]
         // and Duration is 120s.
@@ -572,9 +572,20 @@ public sealed class VideoPlayerControllerTests
             mediaSourceBuilder ?? new FakeClipMediaSourceBuilder());
     }
 
+    /// <summary>
+    /// Waits until a clip is fully opened: playback has started AND the open operation has
+    /// completed (IsLoading cleared). Events raised between Play and the end of the open
+    /// operation are dropped by the controller's stale-event guards, so tests that raise
+    /// front-player events must wait for this state, not just PlayCount.
+    /// </summary>
+    private static Task WaitUntilClipOpenedAsync(VideoPlayerController controller, FakeCameraPlayer front)
+    {
+        return WaitUntilAsync(() => front.PlayCount > 0 && controller.IsMediaOpen && !controller.IsLoading);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         while (!condition())
         {
