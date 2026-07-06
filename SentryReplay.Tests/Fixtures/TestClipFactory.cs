@@ -22,7 +22,7 @@ internal sealed class TestClipFiles : IDisposable
         return Path.Combine(RootPath, $"{timestamp:yyyy-MM-dd_HH-mm-ss}-{camera}.mp4");
     }
 
-    public static TestClipFiles Create(int chunkCount)
+    public static TestClipFiles Create(int chunkCount, IReadOnlySet<string> omitCamerasFromChunkZero = null)
     {
         var root = Path.Combine(Path.GetTempPath(), $"SentryReplayTests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
@@ -32,7 +32,10 @@ internal sealed class TestClipFiles : IDisposable
         for (var i = 0; i < chunkCount; i++)
         {
             var chunkTimestamp = FirstTimestamp.AddMinutes(i);
-            var files = CameraNames.All.Select(camera =>
+            var cameras = i == 0 && omitCamerasFromChunkZero is not null
+                ? CameraNames.All.Where(camera => !omitCamerasFromChunkZero.Contains(camera))
+                : CameraNames.All;
+            var files = cameras.Select(camera =>
             {
                 var path = Path.Combine(root, $"{chunkTimestamp:yyyy-MM-dd_HH-mm-ss}-{camera}.mp4");
                 File.WriteAllBytes(path, []);

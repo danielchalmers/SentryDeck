@@ -135,7 +135,7 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
 
     private static Config CreateConfig(bool audioEnabled)
     {
-        return new Config
+        var config = new Config
         {
             Player =
             {
@@ -159,6 +159,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
                 Enabled = false,
             },
         };
+
+        // Clip playlists are ffconcat files with absolute paths; "safe=0" tells FFmpeg's
+        // concat demuxer to allow them (it refuses absolute/outside-directory paths by default).
+        config.Demuxer.FormatOpt["safe"] = "0";
+
+        return config;
     }
 
     private void StopAndClose()
