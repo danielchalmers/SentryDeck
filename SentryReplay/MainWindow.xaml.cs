@@ -193,6 +193,14 @@ public partial class MainWindow : Window
                     new MouseButtonEventHandler((_, e) =>
                     {
                         _viewModel.SelectCameraViewCommand.Execute(cameraView);
+
+                        // The click moved Win32 focus to the native Flyleaf surface, which would
+                        // swallow every keyboard shortcut (they're handled in Window_KeyDown).
+                        // Pull it back onto the video container — a neutral focusable element
+                        // that consumes no shortcut keys (see its remarks in the XAML).
+                        Activate();
+                        Keyboard.Focus(VideoContainer);
+
                         e.Handled = true;
                     }),
                     handledEventsToo: true);

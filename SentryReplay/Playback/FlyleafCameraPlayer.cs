@@ -21,6 +21,15 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _player = new Player(CreateConfig(audioEnabled));
+
+        // All shortcuts are app-wide and act on every camera at once; Flyleaf's default
+        // bindings (space, arrows, …) would pause/seek only the player whose surface has
+        // focus. Must run AFTER the Player ctor: KeysConfig.SetPlayer force-loads the
+        // defaults into any empty binding list, so clearing the config up front is undone
+        // (and RemoveAll on a fresh config NREs — Keys is null until SetPlayer runs).
+        // Belt-and-braces with FlyleafHost.KeyBindings=None on the hosts.
+        _player.Config.Player.KeyBindings.RemoveAll();
+
         _host.Player = _player;
 
         _player.PlaybackStopped += OnPlaybackStopped;
