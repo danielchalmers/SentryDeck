@@ -10,9 +10,8 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 {
     public static readonly TimeSpan ChunkDuration = TimeSpan.FromSeconds(60);
 
-    // The next-clip prewarm feature makes Build() calls genuinely concurrent with the test's own
-    // (main-thread) recovery/foreground Build() calls, so the bookkeeping below needs its own lock
-    // rather than relying on tests driving everything from a single thread.
+    // Build() runs on Task.Run threads while tests poll the bookkeeping below from the test
+    // thread, so it needs its own lock rather than relying on single-threaded access.
     private readonly Lock _recordingLock = new();
 
     public int BuildCount { get; private set; }
@@ -25,9 +24,9 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 
     /// <summary>
     /// Every clip passed to <see cref="Build"/>, in call order (parallel to
-    /// <see cref="ExclusionsPerBuild"/>), so tests can assert how many times a specific clip (e.g.
-    /// a prewarmed next clip) was built without caring about the total build count across other
-    /// clips, and can look up that clip's most recent exclusion set.
+    /// <see cref="ExclusionsPerBuild"/>), so tests can assert how many times a specific clip was
+    /// built without caring about the total build count across other clips, and can look up that
+    /// clip's most recent exclusion set.
     /// </summary>
     public List<CamClip> ClipsPerBuild { get; } = [];
 
@@ -41,8 +40,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 
     /// <summary>
     /// The exclusion set from the most recent <see cref="Build"/> call for the given clip, or
-    /// null if it was never built. Safe to call even while a background prewarm build might be
-    /// racing against a foreground build for a different clip.
+    /// null if it was never built.
     /// </summary>
     public IReadOnlySet<int> LastExclusionsFor(CamClip clip)
     {
