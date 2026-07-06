@@ -155,6 +155,11 @@ public partial class MainWindow : Window
         await _viewModel.EndSeekAsync();
     }
 
+    // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation,
+    // whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for
+    // the one-off value jump a plain click makes. The view-model only acts on it (live scrub seeks)
+    // while BeginSeek has set its dragging flag; a plain click-without-drag just refreshes the time
+    // readout here and performs its single accurate seek on mouse-up as before.
     private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         _viewModel.OnSeekSliderValueChanged();

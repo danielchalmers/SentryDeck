@@ -38,6 +38,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly DispatcherTimer _filterDebounceTimer;
     private VideoPlayerController _playerController;
     private CancellationTokenSource _selectionCts;
+    private readonly SeekScrubCoalescer _scrubCoalescer;
     private bool _isSeeking;
     private bool _isInitialized;
 
@@ -57,6 +58,7 @@ public partial class MainWindowViewModel : ObservableObject
         _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
         _backgroundYield = backgroundYield ?? (async () => await Dispatcher.Yield(DispatcherPriority.Background));
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _scrubCoalescer = new SeekScrubCoalescer(ScrubToAsync);
 
         // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth;
         // the getters stay live, so only the (debounced) change notification is deferred.
@@ -793,6 +795,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (CanSeek)
         {
             _isSeeking = true;
+            _scrubCoalescer.Reset();
         }
     }
 
@@ -804,15 +807,31 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        // _isSeeking stays true until after the accurate seek below completes, so a scrub seek
+        // still winding down from the drag doesn't race it: SeekToCurrentPositionAsync's SeekAsync
+        // shares the controller's serialized-operation lock with ScrubSeekAsync, so it naturally
+        // waits behind (and thus supersedes the effect of) any in-flight scrub seek issued by the
+        // coalescer rather than racing it.
         await SeekToCurrentPositionAsync();
         _isSeeking = false;
     }
 
+    /// <summary>
+    /// Called on every seek-bar value change. While actively dragging (<see cref="_isSeeking"/>),
+    /// each value feeds the scrub coalescer so the video follows the thumb in near-real-time; a
+    /// plain click-without-drag never sets <see cref="_isSeeking"/> (see <see cref="BeginSeek"/> /
+    /// <see cref="EndSeekAsync"/>), so it falls through to just refreshing the time readout.
+    /// </summary>
     public void OnSeekSliderValueChanged()
     {
-        if (_isSeeking)
+        if (!_isSeeking)
+            return;
+
+        OnPropertyChanged(nameof(PositionText));
+
+        if (CanSeek)
         {
-            OnPropertyChanged(nameof(PositionText));
+            _scrubCoalescer.OnDragValueChanged(CurrentSeekTargetPosition());
         }
     }
 
@@ -824,9 +843,17 @@ public partial class MainWindowViewModel : ObservableObject
         var duration = _playerController.Duration;
         if (duration.TotalSeconds > 0)
         {
-            var targetPosition = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
-            await _playerController.SeekAsync(targetPosition);
+            await _playerController.SeekAsync(CurrentSeekTargetPosition());
         }
+    }
+
+    private Task ScrubToAsync(TimeSpan position) =>
+        _playerController?.ScrubSeekAsync(position) ?? Task.CompletedTask;
+
+    private TimeSpan CurrentSeekTargetPosition()
+    {
+        var duration = _playerController?.Duration ?? TimeSpan.Zero;
+        return TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
     }
 
     // Derives the seek-bar overlays from the selected clip: the event moment (mapped onto the

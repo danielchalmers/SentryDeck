@@ -100,6 +100,43 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task ScrubSeekAsync_IssuesFastSeeksToOpenPlayers()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        using var controller = CreateController(front, back);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
+
+        await controller.ScrubSeekAsync(TimeSpan.FromSeconds(12));
+
+        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
+        back.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
+        front.SeekAccurateFlags[^1].ShouldBeFalse();
+        back.SeekAccurateFlags[^1].ShouldBeFalse();
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(12));
+    }
+
+    [Fact]
+    public async Task SeekAsync_IssuesAccurateSeeksToOpenPlayers()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        await controller.SeekAsync(TimeSpan.FromSeconds(12));
+
+        front.SeekAccurateFlags[^1].ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task StopAsync_ClosesPlayersEvenWhenStopFails()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
