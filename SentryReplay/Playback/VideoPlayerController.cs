@@ -11,16 +11,30 @@ namespace SentryReplay;
 /// </summary>
 public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
+    /// <summary>
+    /// How far short of <see cref="Duration"/> the front player's position can be when it ends
+    /// before we treat that as a premature stop (a corrupt/truncated chunk) rather than a normal
+    /// clip completion. Probed chunk durations are exact, so a genuine end lands within about a
+    /// frame of Duration; the imprecise case is a fallback-estimated (unprobeable) chunk, and
+    /// files we can't probe are exactly the files likely to be corrupt.
+    /// </summary>
+    private static readonly TimeSpan PrematureEndTolerance = TimeSpan.FromSeconds(3);
+
+    private const int MaxRecoveryAttemptsPerClip = 3;
+
     private readonly ICameraPlayer _frontPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
     private readonly IClipMediaSourceBuilder _mediaSourceBuilder;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
+    private readonly HashSet<int> _excludedChunkIndices = [];
     private CancellationTokenSource _playbackCts;
     private bool _isDisposed;
     private bool _isOpeningMedia;
     private long _activeRequestId;
     private long _currentMediaRequestId;
     private CamClip _openedClip;
+    private ClipMediaSource _openedMediaSource;
+    private int _recoveryAttempts;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
@@ -359,6 +373,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
                 await StopPlaybackInternalAsync(resetPlaybackState: false);
 
+                // A freshly selected clip starts with no known-bad chunks and a clean recovery budget,
+                // regardless of what happened on the previously playing clip.
+                _excludedChunkIndices.Clear();
+                _recoveryAttempts = 0;
+
                 if (clip.Chunks.Count == 0)
                 {
                     Log.Warning(
@@ -413,6 +432,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         IsMediaOpen = false;
         _openedClip = null;
+        _openedMediaSource = null;
 
         if (resetPlaybackState)
         {
@@ -513,6 +533,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             cancellationToken.ThrowIfCancellationRequested();
 
             _openedClip = clip;
+            _openedMediaSource = mediaSource;
             IsMediaOpen = _frontPlayer.IsOpen;
 
             ApplyPlaybackSpeed();
@@ -703,11 +724,18 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!ReferenceEquals(sender, _frontPlayer) || _isOpeningMedia)
             return;
 
+        var wasPlaying = IsPlaying;
         IsPlaying = false;
 
         var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
         if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId) || IsLoading)
         {
+            return;
+        }
+
+        if (_openedMediaSource is not null && Duration - Position > PrematureEndTolerance)
+        {
+            await RecoverFromPrematureEndAsync(wasPlaying);
             return;
         }
 
@@ -719,6 +747,144 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         Position = Duration;
         IsMediaOpen = false;
+    }
+
+    /// <summary>
+    /// Handles the front player ending well short of <see cref="Duration"/>, which means the
+    /// concat demuxer hit a corrupt/truncated chunk and stopped early rather than reaching the
+    /// real end of the clip. Identifies the bad chunk, excludes it, and rebuilds/reopens the clip
+    /// so playback can continue past it. Gives up after <see cref="MaxRecoveryAttemptsPerClip"/>
+    /// attempts on the same clip.
+    /// </summary>
+    private async Task RecoverFromPrematureEndAsync(bool wasPlaying)
+    {
+        var clip = _openedClip;
+        var mediaSource = _openedMediaSource;
+
+        if (clip is null || mediaSource is null)
+        {
+            return;
+        }
+
+        var failurePosition = Clamp(Position, TimeSpan.Zero, Duration);
+
+        // Find the last chunk boundary at or before the failure position; that's the chunk that
+        // stopped feeding data. Map it from the (possibly already-shrunk) opened timeline back to
+        // the original clip's chunk index by walking chunks in original order, skipping ones
+        // already excluded, and counting off entries against ChunkStarts.
+        var badChunkTimelineIndex = 0;
+        for (var i = 0; i < mediaSource.ChunkStarts.Count; i++)
+        {
+            if (mediaSource.ChunkStarts[i] <= failurePosition)
+            {
+                badChunkTimelineIndex = i;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        var resumePosition = mediaSource.ChunkStarts.Count > badChunkTimelineIndex
+            ? mediaSource.ChunkStarts[badChunkTimelineIndex]
+            : TimeSpan.Zero;
+
+        var originalIndex = MapTimelineIndexToOriginalChunkIndex(clip, badChunkTimelineIndex);
+
+        if (originalIndex < 0 || !_excludedChunkIndices.Add(originalIndex) || _recoveryAttempts >= MaxRecoveryAttemptsPerClip)
+        {
+            Log.Error(
+                "Giving up on clip playback after repeated unreadable chunks. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; Attempts={Attempts}",
+                clip.Name,
+                clip.FullPath,
+                originalIndex,
+                _recoveryAttempts);
+            ErrorMessage = "Playback stopped: too many unreadable video files.";
+            IsMediaOpen = false;
+            return;
+        }
+
+        _recoveryAttempts++;
+
+        Log.Warning(
+            "Premature end of playback detected; excluding chunk and resuming. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; ChunkTimestamp={ChunkTimestamp}; FailurePosition={FailurePosition}; Attempt={Attempt}",
+            clip.Name,
+            clip.FullPath,
+            originalIndex,
+            clip.Chunks[originalIndex].Timestamp,
+            failurePosition,
+            _recoveryAttempts);
+
+        var requestId = BeginNewRequest();
+
+        try
+        {
+            await RunSerializedPlaybackOperationAsync(async ct =>
+            {
+                if (!IsRequestActive(requestId) || clip != CurrentClip)
+                    return;
+
+                var newMediaSource = await Task.Run(
+                    () => _mediaSourceBuilder.Build(clip, _excludedChunkIndices),
+                    ct);
+                Duration = newMediaSource.Duration;
+
+                await OpenClipInternalAsync(clip, newMediaSource, playAfterOpen: false, requestId, ct);
+
+                if (!IsRequestActive(requestId) || clip != CurrentClip || !IsMediaOpen)
+                    return;
+
+                var clampedResumePosition = Clamp(resumePosition, TimeSpan.Zero, Duration);
+                await SeekOpenPlayersAsync(clampedResumePosition);
+                Position = clampedResumePosition;
+
+                if (wasPlaying)
+                {
+                    await PlayOpenPlayersAsync();
+                    IsPlaying = true;
+                }
+            }, replacePlaybackCts: true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(
+                ex,
+                "Error recovering from premature end of playback. ClipName={ClipName}; ClipPath={ClipPath}; RequestId={RequestId}",
+                clip.Name,
+                clip.FullPath,
+                requestId);
+            ErrorMessage = $"Playback error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Maps an index into the currently opened (possibly already-shrunk) timeline's
+    /// <see cref="ClipMediaSource.ChunkStarts"/> back to the corresponding index in the original
+    /// clip's <see cref="CamClip.Chunks"/>, accounting for chunks already excluded.
+    /// </summary>
+    private int MapTimelineIndexToOriginalChunkIndex(CamClip clip, int timelineIndex)
+    {
+        var remaining = timelineIndex;
+
+        for (var originalIndex = 0; originalIndex < clip.Chunks.Count; originalIndex++)
+        {
+            if (_excludedChunkIndices.Contains(originalIndex))
+            {
+                continue;
+            }
+
+            if (remaining == 0)
+            {
+                return originalIndex;
+            }
+
+            remaining--;
+        }
+
+        return -1;
     }
 
     private void OnPlayerFailed(object sender, CameraPlaybackFailedEventArgs e)

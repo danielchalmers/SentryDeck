@@ -16,14 +16,20 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
     private static readonly string PlaylistDirectory =
         Path.Combine(Path.GetTempPath(), "SentryReplay", "playlists");
 
-    public ClipMediaSource Build(CamClip clip)
+    public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
         ArgumentNullException.ThrowIfNull(clip);
 
         Directory.CreateDirectory(PlaylistDirectory);
 
-        var chunkDurations = clip.Chunks
-            .Select(chunk => ProbeChunkDuration(chunk))
+        // The remaining (non-excluded) chunks, in original order, with their original clip index
+        // preserved so callers can map a timeline position back to a chunk in the source clip.
+        var includedIndices = Enumerable.Range(0, clip.Chunks.Count)
+            .Where(index => excludedChunkIndices is null || !excludedChunkIndices.Contains(index))
+            .ToList();
+
+        var chunkDurations = includedIndices
+            .Select(index => ProbeChunkDuration(clip.Chunks[index]))
             .ToList();
 
         var chunkStarts = new List<TimeSpan>(chunkDurations.Count);
@@ -39,15 +45,15 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
         foreach (var camera in CameraNames.All)
         {
-            if (clip.Chunks.Count == 0 || !clip.Chunks[0].Files.ContainsKey(camera))
+            if (includedIndices.Count == 0 || !clip.Chunks[includedIndices[0]].Files.ContainsKey(camera))
             {
                 continue;
             }
 
             var entries = new List<(string FilePath, TimeSpan Duration)>();
-            for (var i = 0; i < clip.Chunks.Count; i++)
+            for (var i = 0; i < includedIndices.Count; i++)
             {
-                if (!clip.Chunks[i].Files.TryGetValue(camera, out var file))
+                if (!clip.Chunks[includedIndices[i]].Files.TryGetValue(camera, out var file))
                 {
                     break;
                 }

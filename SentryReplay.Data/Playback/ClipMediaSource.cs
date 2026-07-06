@@ -14,5 +14,11 @@ public sealed record class ClipMediaSource(
 /// </summary>
 public interface IClipMediaSourceBuilder
 {
-    ClipMediaSource Build(CamClip clip);
+    /// <summary>
+    /// Builds the media source for a clip, optionally skipping chunks (by their index in
+    /// <see cref="CamClip.Chunks"/>) that are known to be corrupt or unreadable. Excluded chunks
+    /// contribute no playlist entries, duration, or <see cref="ClipMediaSource.ChunkStarts"/> entry
+    /// for any camera, so the timeline simply shrinks and all cameras stay in sync.
+    /// </summary>
+    ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null);
 }
