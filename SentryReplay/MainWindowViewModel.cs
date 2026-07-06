@@ -295,6 +295,8 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(CanSeek))]
+    [NotifyCanExecuteChangedFor(nameof(StepFrameBackwardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -592,6 +594,24 @@ public partial class MainWindowViewModel : ObservableObject
         NowPlayingClip = null;
     }
 
+    [RelayCommand(CanExecute = nameof(CanSeek))]
+    private async Task StepFrameBackwardAsync()
+    {
+        if (_playerController is not null)
+        {
+            await _playerController.StepFrameAsync(forward: false);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSeek))]
+    private async Task StepFrameForwardAsync()
+    {
+        if (_playerController is not null)
+        {
+            await _playerController.StepFrameAsync(forward: true);
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(HasEventMarker))]
     private async Task JumpToEventAsync()
     {
@@ -755,6 +775,14 @@ public partial class MainWindowViewModel : ObservableObject
         {
             case Key.Space:
                 await _playerController.TogglePlayPauseAsync();
+                return true;
+
+            case Key.OemComma when modifiers == ModifierKeys.None && CanSeek:
+                await _playerController.StepFrameAsync(forward: false);
+                return true;
+
+            case Key.OemPeriod when modifiers == ModifierKeys.None && CanSeek:
+                await _playerController.StepFrameAsync(forward: true);
                 return true;
 
             case Key.Left:
@@ -928,6 +956,8 @@ public partial class MainWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(DurationText));
                 OnPropertyChanged(nameof(PositionText));
                 OnPropertyChanged(nameof(CanSeek));
+                StepFrameBackwardCommand.NotifyCanExecuteChanged();
+                StepFrameForwardCommand.NotifyCanExecuteChanged();
                 break;
 
             case nameof(VideoPlayerController.Position):
@@ -950,6 +980,8 @@ public partial class MainWindowViewModel : ObservableObject
 
             case nameof(VideoPlayerController.IsMediaOpen):
                 OnPropertyChanged(nameof(CanSeek));
+                StepFrameBackwardCommand.NotifyCanExecuteChanged();
+                StepFrameForwardCommand.NotifyCanExecuteChanged();
                 break;
         }
     }

@@ -111,6 +111,16 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
         return Task.CompletedTask;
     }
 
+    /// <summary>Ordered log of <see cref="StepFrameAsync"/> calls: <c>"forward"</c> or <c>"backward"</c>.</summary>
+    public List<string> StepLog { get; } = [];
+
+    public Task StepFrameAsync(bool forward)
+    {
+        StepLog.Add(forward ? "forward" : "backward");
+        CallLog.Add(forward ? "step:forward" : "step:backward");
+        return Task.CompletedTask;
+    }
+
     public void RaiseEnded()
     {
         Ended?.Invoke(this, EventArgs.Empty);

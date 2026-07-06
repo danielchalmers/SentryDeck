@@ -1295,6 +1295,17 @@
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
 
+                            <Button Command="{Binding StepFrameBackwardCommand}"
+                                    Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Previous frame"
+                                    IsEnabled="{Binding CanSeek}"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Previous frame (,)">
+                                <TextBlock Text="&#xE76B;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+
                             <Button x:Name="PlayPauseButton"
                                     Content="{Binding PlayPauseIcon}"
                                     Command="{Binding PlayPauseCommand}"
@@ -1308,6 +1319,17 @@
                                     IsEnabled="{Binding CanPlayPause}"
                                     Style="{StaticResource AccentButtonStyle}"
                                     ToolTip="Play/Pause (Space)" />
+
+                            <Button Command="{Binding StepFrameForwardCommand}"
+                                    Margin="0,0,10,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Next frame"
+                                    IsEnabled="{Binding CanSeek}"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Next frame (.)">
+                                <TextBlock Text="&#xE76C;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
 
                             <Button Command="{Binding NextCommand}"
                                     VerticalAlignment="Center"
@@ -1594,6 +1616,16 @@
                                         <TextBlock Text="F" Style="{StaticResource KeycapText}" />
                                     </Border>
                                     <TextBlock Text="Focus search (also F3 or F6)" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="," Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="." Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Step one frame back / forward" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,8"
                                             Orientation="Horizontal">
