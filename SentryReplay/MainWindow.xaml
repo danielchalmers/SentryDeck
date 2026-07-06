@@ -849,10 +849,12 @@
 
                     <Grid x:Name="FlyleafHostPool"
                           Visibility="Collapsed">
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost" />
-                        <fl:FlyleafHost x:Name="BackFlyleafHost" />
-                        <fl:FlyleafHost x:Name="LeftFlyleafHost" />
-                        <fl:FlyleafHost x:Name="RightFlyleafHost" />
+                        <!--  KeyBindings=None: shortcuts are app-wide (Window_KeyDown acts on all cameras);
+                              Flyleaf's per-surface key handling would pause/seek a single camera only.  -->
+                        <fl:FlyleafHost x:Name="FrontFlyleafHost" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="BackFlyleafHost" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="LeftFlyleafHost" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="RightFlyleafHost" KeyBindings="None" />
                     </Grid>
 
                     <!--  Video Player  -->
@@ -863,12 +865,18 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0"
+                        <!--  Focusable: keyboard focus is parked here after a camera-tile click so app-wide
+                              shortcuts bubble to Window_KeyDown. Focusing the Window instead doesn't work —
+                              it's a focus scope, so WPF redirects to the last focused child (often a clip
+                              ListBoxItem, which swallows Space/arrows for list navigation).  -->
+                        <Border x:Name="VideoContainer"
+                                Grid.Row="0"
                                 Background="Black"
                                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                                 BorderThickness="1"
                                 ClipToBounds="True"
-                                CornerRadius="6">
+                                CornerRadius="6"
+                                Focusable="True">
                             <Grid>
                                 <Grid Visibility="{Binding IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
                                     <Grid.RowDefinitions>
