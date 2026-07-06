@@ -121,7 +121,7 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task FrontMediaFailed_ReportsPlaybackFailure()
+    public async Task FrontMediaFailed_NearEndOfClip_ReportsPlaybackFailure()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var front = new FakeCameraPlayer();
@@ -129,8 +129,11 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
+        // A failure within the premature-end tolerance of Duration is not a corrupt-chunk
+        // candidate, so it must surface as a plain playback error.
+        front.RaisePositionChanged(controller.Duration - TimeSpan.FromSeconds(1));
         front.RaiseFailed(new InvalidOperationException("decode failed"));
 
         controller.ErrorMessage.ShouldContain("decode failed");
@@ -167,11 +170,13 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
         var openCountBeforeEnded = front.OpenedPaths.Count;
         var duration = controller.Duration;
 
+        // A genuine end-of-clip: position reaches (within tolerance of) Duration before Ended fires.
+        front.RaisePositionChanged(duration);
         front.RaiseEnded();
 
         await WaitUntilAsync(() => !controller.IsMediaOpen);
@@ -194,8 +199,10 @@ public sealed class VideoPlayerControllerTests
 
         controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await WaitUntilClipOpenedAsync(controller, front);
 
+        // A genuine end-of-clip: position reaches (within tolerance of) Duration before Ended fires.
+        front.RaisePositionChanged(controller.Duration);
         front.RaiseEnded();
 
         await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
@@ -330,6 +337,226 @@ public sealed class VideoPlayerControllerTests
         front.CloseCount.ShouldBeGreaterThan(0);
     }
 
+    [Fact]
+    public async Task FrontMediaEnded_FarBeforeDuration_ExcludesBadChunkAndResumesPlayback()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Duration is 3 * 60s = 180s. Ending partway through chunk 1 (at 90s, far short of 180s)
+        // means chunk 1 is where playback died. All files still probe as healthy (probe-clean
+        // corruption), so recovery first rebuilds with no new exclusions (build 2), finds nothing,
+        // then falls back to excluding the failure-position chunk (build 3).
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+
+        mediaSourceBuilder.ExclusionsPerBuild.Count.ShouldBe(3);
+        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBeEmpty();
+        mediaSourceBuilder.ExclusionsPerBuild[2].ShouldBe(new HashSet<int> { 1 });
+
+        // Resume position is chunk 1's start in the OLD timeline (60s), since everything before
+        // the bad chunk is unchanged.
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+
+        // The resume must play BEFORE seeking: a seek issued while paused right after open can
+        // be swallowed by the real player, whereas seeks during active playback are reliable.
+        front.CallLog.LastIndexOf("play").ShouldBeGreaterThan(-1);
+        front.CallLog.LastIndexOf("seek:60").ShouldBeGreaterThan(front.CallLog.LastIndexOf("play"));
+
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
+        controller.IsPlaying.ShouldBeTrue();
+        controller.ErrorMessage.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task FrontMediaEnded_WithinTolerance_CompletesNormallyWithoutRebuilding()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        var duration = controller.Duration;
+
+        // End just short of Duration (within the 3s tolerance) -- a normal completion.
+        front.RaisePositionChanged(duration - TimeSpan.FromMilliseconds(500));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => !controller.IsMediaOpen);
+
+        mediaSourceBuilder.BuildCount.ShouldBe(1);
+        controller.Position.ShouldBe(duration);
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task FrontMediaEnded_FourthPrematureEndOnSameClip_GivesUpWithErrorMessage()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 5);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Trigger 3 successful recoveries (chunks 0, 1, 2 excluded one at a time), each ending
+        // partway through the earliest remaining chunk so the "bad chunk" is always chunk 0 of
+        // what's left, keeping this deterministic regardless of exact resume timing. Every file
+        // probes as healthy here, so each recovery is probe-clean: a probe-first rebuild plus a
+        // fallback rebuild with the position-derived exclusion (2 builds per recovery).
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var expectedBuildCount = mediaSourceBuilder.BuildCount + 2;
+            front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+            front.RaiseEnded();
+            await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= expectedBuildCount);
+            await WaitUntilAsync(() => front.PlayCount > attempt + 1);
+        }
+
+        mediaSourceBuilder.BuildCount.ShouldBe(7);
+        var buildCountBeforeFourth = mediaSourceBuilder.BuildCount;
+
+        // A 4th premature end must give up rather than attempt another rebuild.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+
+        mediaSourceBuilder.BuildCount.ShouldBe(buildCountBeforeFourth);
+        controller.ErrorMessage.ShouldContain("too many unreadable video files");
+        controller.IsMediaOpen.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SelectingNewClip_ResetsExclusionsFromPreviousClip()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 3);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 2);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Trigger one (probe-clean, two-build) recovery on the first clip so it has a non-empty
+        // exclusion set.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+        await WaitUntilAsync(() => front.PlayCount > 1);
+
+        await controller.GoToClipAsync(secondClipFiles.Clip);
+        await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
+        await WaitUntilAsync(() => front.OpenedPaths.Count > 0 && controller.IsMediaOpen && !controller.IsLoading);
+
+        var buildCountAfterSelectingSecondClip = mediaSourceBuilder.BuildCount;
+        var lastExclusions = mediaSourceBuilder.ExclusionsPerBuild[^1];
+        lastExclusions.ShouldBeEmpty();
+
+        // Ending the second clip prematurely should exclude relative to a fresh (empty) set, not
+        // carry over chunk 1 from the first clip. Probe-clean again: wait for both rebuilds so
+        // the fallback exclusion is recorded.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(0));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= buildCountAfterSelectingSecondClip + 2);
+
+        mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 0 });
+    }
+
+    [Fact]
+    public async Task FrontMediaFailed_MidClip_ProbeFindsRealBadChunk_KeepsHealthyChunk()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 4);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Chunk 2's file becomes unreadable AFTER the clip opened (e.g. removed/truncated
+        // mid-playback); the fake's probe will auto-exclude it on the next rebuild.
+        mediaSourceBuilder.AutoExcludeChunkIndices.Add(2);
+
+        // The demuxer reads ahead of the presentation position, so Failed fires while playback
+        // is still inside HEALTHY chunk 1 (90s). Probe-first recovery must find chunk 2 via the
+        // rebuild's probe and keep chunk 1 -- excluding the chunk under the failure position
+        // would throw away a healthy minute.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+
+        // The probe found the culprit, so exactly one rebuild happened and no Build call ever
+        // received a position-derived (healthy-chunk) exclusion.
+        mediaSourceBuilder.BuildCount.ShouldBe(2);
+        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBeEmpty();
+
+        // Chunks 0, 1, and 3 remain: healthy chunk 1 was NOT excluded.
+        controller.Duration.ShouldBe(TimeSpan.FromSeconds(180));
+
+        // Playback resumes from the start of the chunk containing the failure position.
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
+        controller.IsPlaying.ShouldBeTrue();
+        controller.ErrorMessage.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Recovery_AccountsForBuilderAutoExcludedChunks()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        mediaSourceBuilder.AutoExcludeChunkIndices.Add(1);
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // The builder dropped chunk 1 on its own, so the opened timeline is [chunk0, chunk2]
+        // and Duration is 120s.
+        controller.Duration.ShouldBe(TimeSpan.FromSeconds(120));
+
+        // A premature end at 90s is inside timeline slot 1, which maps back to ORIGINAL chunk 2
+        // (not 1) because the auto-exclusion must be accounted for in the mapping. Chunk 1 is
+        // already excluded, so the probe-first rebuild reports nothing new (probe-clean) and the
+        // fallback rebuild carries the position-derived exclusion.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+
+        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBe(new HashSet<int> { 1 });
+        mediaSourceBuilder.ExclusionsPerBuild[2].ShouldBe(new HashSet<int> { 1, 2 });
+
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+
+        controller.ErrorMessage.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
     private static VideoPlayerController CreateController(
         FakeCameraPlayer front = null,
         FakeCameraPlayer back = null,
@@ -345,9 +572,20 @@ public sealed class VideoPlayerControllerTests
             mediaSourceBuilder ?? new FakeClipMediaSourceBuilder());
     }
 
+    /// <summary>
+    /// Waits until a clip is fully opened: playback has started AND the open operation has
+    /// completed (IsLoading cleared). Events raised between Play and the end of the open
+    /// operation are dropped by the controller's stale-event guards, so tests that raise
+    /// front-player events must wait for this state, not just PlayCount.
+    /// </summary>
+    private static Task WaitUntilClipOpenedAsync(VideoPlayerController controller, FakeCameraPlayer front)
+    {
+        return WaitUntilAsync(() => front.PlayCount > 0 && controller.IsMediaOpen && !controller.IsLoading);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         while (!condition())
         {
