@@ -121,7 +121,7 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task FrontMediaFailed_ReportsPlaybackFailure()
+    public async Task FrontMediaFailed_NearEndOfClip_ReportsPlaybackFailure()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var front = new FakeCameraPlayer();
@@ -131,6 +131,9 @@ public sealed class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilAsync(() => front.PlayCount > 0);
 
+        // A failure within the premature-end tolerance of Duration is not a corrupt-chunk
+        // candidate, so it must surface as a plain playback error.
+        front.RaisePositionChanged(controller.Duration - TimeSpan.FromSeconds(1));
         front.RaiseFailed(new InvalidOperationException("decode failed"));
 
         controller.ErrorMessage.ShouldContain("decode failed");
@@ -465,6 +468,69 @@ public sealed class VideoPlayerControllerTests
         await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > buildCountAfterSelectingSecondClip);
 
         mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 0 });
+    }
+
+    [Fact]
+    public async Task FrontMediaFailed_MidClip_ExcludesBadChunkAndResumesPlayback()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        // A truncated chunk whose moov survived probing makes Flyleaf raise Failed (not Ended)
+        // when the concat demuxer dies mid-clip; that must route into the same recovery.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > 1);
+
+        mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 1 });
+
+        await WaitUntilAsync(() => front.PlayCount > 1);
+
+        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(60));
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
+        controller.IsPlaying.ShouldBeTrue();
+        controller.ErrorMessage.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Recovery_AccountsForBuilderAutoExcludedChunks()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        mediaSourceBuilder.AutoExcludeChunkIndices.Add(1);
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        // The builder dropped chunk 1 on its own, so the opened timeline is [chunk0, chunk2]
+        // and Duration is 120s.
+        controller.Duration.ShouldBe(TimeSpan.FromSeconds(120));
+
+        // A premature end at 90s is inside timeline slot 1, which maps back to ORIGINAL chunk 2
+        // (not 1) because the auto-exclusion must be accounted for in the mapping.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > 1);
+
+        mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 1, 2 });
+
+        await WaitUntilAsync(() => front.PlayCount > 1);
+
+        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(60));
+        controller.ErrorMessage.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeTrue();
     }
 
     private static VideoPlayerController CreateController(

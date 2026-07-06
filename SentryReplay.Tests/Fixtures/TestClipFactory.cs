@@ -38,7 +38,10 @@ internal sealed class TestClipFiles : IDisposable
             var files = cameras.Select(camera =>
             {
                 var path = Path.Combine(root, $"{chunkTimestamp:yyyy-MM-dd_HH-mm-ss}-{camera}.mp4");
-                File.WriteAllBytes(path, []);
+
+                // Minimal valid mp4 bytes (60s moov/mvhd) so the file probes as healthy; tests
+                // that need a corrupt file overwrite it with TestMp4.GarbageBytes.
+                File.WriteAllBytes(path, TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
                 return new CamFile(path, chunkTimestamp, camera);
             });
 

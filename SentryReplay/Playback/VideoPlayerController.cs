@@ -534,6 +534,20 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             _openedClip = clip;
             _openedMediaSource = mediaSource;
+
+            // The builder may have dropped unreadable chunks on its own; fold those into the
+            // exclusion set so position-to-chunk mapping during recovery stays aligned with the
+            // shrunken timeline. They are not recovery attempts and don't count toward the cap.
+            if (mediaSource.AutoExcludedChunkIndices.Count > 0)
+            {
+                Log.Warning(
+                    "Builder auto-excluded unreadable chunks. ClipName={ClipName}; ClipPath={ClipPath}; AutoExcludedChunkIndices={AutoExcludedChunkIndices}",
+                    clip.Name,
+                    clip.FullPath,
+                    mediaSource.AutoExcludedChunkIndices);
+                _excludedChunkIndices.UnionWith(mediaSource.AutoExcludedChunkIndices);
+            }
+
             IsMediaOpen = _frontPlayer.IsOpen;
 
             ApplyPlaybackSpeed();
@@ -791,7 +805,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var originalIndex = MapTimelineIndexToOriginalChunkIndex(clip, badChunkTimelineIndex);
 
-        if (originalIndex < 0 || !_excludedChunkIndices.Add(originalIndex) || _recoveryAttempts >= MaxRecoveryAttemptsPerClip)
+        if (originalIndex < 0
+            || !_excludedChunkIndices.Add(originalIndex)
+            || _recoveryAttempts >= MaxRecoveryAttemptsPerClip
+            || _excludedChunkIndices.Count >= clip.Chunks.Count)
         {
             Log.Error(
                 "Giving up on clip playback after repeated unreadable chunks. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; Attempts={Attempts}",
@@ -887,7 +904,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         return -1;
     }
 
-    private void OnPlayerFailed(object sender, CameraPlaybackFailedEventArgs e)
+    private async void OnPlayerFailed(object sender, CameraPlaybackFailedEventArgs e)
     {
         var camera = GetCameraName(sender);
         if (!ReferenceEquals(sender, _frontPlayer))
@@ -899,6 +916,31 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 CurrentClip?.Name,
                 CurrentClip?.FullPath);
             return;
+        }
+
+        // A chunk whose moov is intact but whose media data is truncated/corrupt makes Flyleaf
+        // raise Failed ("Playback stopped unexpectedly") rather than Ended when the concat
+        // demuxer dies mid-clip. Route that into the same corrupt-chunk recovery as a premature
+        // Ended; only genuinely unrecoverable failures fall through to the error UI below.
+        if (!_isDisposed && !_isOpeningMedia && IsMediaOpen && _openedMediaSource is not null
+            && Duration - Position > PrematureEndTolerance)
+        {
+            var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
+            if (mediaRequestId != 0 && mediaRequestId == Volatile.Read(ref _activeRequestId) && !IsLoading)
+            {
+                Log.Warning(
+                    e.ErrorException,
+                    "Front camera playback failed mid-clip; attempting corrupt-chunk recovery. ClipName={ClipName}; ClipPath={ClipPath}; Position={Position}; Duration={Duration}",
+                    CurrentClip?.Name,
+                    CurrentClip?.FullPath,
+                    Position,
+                    Duration);
+
+                var wasPlaying = IsPlaying;
+                IsPlaying = false;
+                await RecoverFromPrematureEndAsync(wasPlaying);
+                return;
+            }
         }
 
         Log.Error(

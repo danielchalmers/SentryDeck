@@ -18,13 +18,26 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
     /// </summary>
     public List<IReadOnlySet<int>> ExclusionsPerBuild { get; } = [];
 
+    /// <summary>
+    /// Original chunk indices this fake drops on its own, mirroring the real builder's
+    /// auto-exclusion of chunks whose front file is unreadable. Reported via
+    /// <see cref="ClipMediaSource.AutoExcludedChunkIndices"/> unless already caller-excluded.
+    /// </summary>
+    public HashSet<int> AutoExcludeChunkIndices { get; } = [];
+
     public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
         BuildCount++;
         ExclusionsPerBuild.Add(excludedChunkIndices ?? new HashSet<int>());
 
+        var autoExcludedIndices = Enumerable.Range(0, clip.Chunks.Count)
+            .Where(index => AutoExcludeChunkIndices.Contains(index)
+                && (excludedChunkIndices is null || !excludedChunkIndices.Contains(index)))
+            .ToList();
+
         var includedIndices = Enumerable.Range(0, clip.Chunks.Count)
-            .Where(index => excludedChunkIndices is null || !excludedChunkIndices.Contains(index))
+            .Where(index => (excludedChunkIndices is null || !excludedChunkIndices.Contains(index))
+                && !AutoExcludeChunkIndices.Contains(index))
             .ToList();
 
         var chunkStarts = Enumerable.Range(0, includedIndices.Count)
@@ -62,6 +75,6 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
             playlistPaths[camera] = playlistPath;
         }
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths);
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices);
     }
 }
