@@ -34,6 +34,8 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
 
     public bool IsOpen => _isOpen;
 
+    public TimeSpan Position => TimeSpan.FromTicks(_player.CurTime);
+
     public double Speed
     {
         get => _player.Speed;

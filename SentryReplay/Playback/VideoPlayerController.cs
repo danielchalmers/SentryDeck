@@ -527,20 +527,6 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var secondaryOpenTasks = _players
-                .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _frontPlayer))
-                .Select(cameraPlayer => OpenCameraPlayerAsync(
-                    cameraPlayer.Key,
-                    cameraPlayer.Value,
-                    mediaSource,
-                    required: false,
-                    requestId,
-                    cancellationToken));
-
-            await Task.WhenAll(secondaryOpenTasks);
-
-            cancellationToken.ThrowIfCancellationRequested();
-
             _openedClip = clip;
             _openedMediaSource = mediaSource;
 
@@ -566,11 +552,26 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             if (playAfterOpen)
             {
-                await PlayOpenPlayersAsync();
+                // Get the user watching video as soon as the front camera (the authoritative,
+                // required source) is ready, rather than gating first-frame on the slowest of
+                // four opens. Side cameras join in progress once their own opens complete, below.
+                await _frontPlayer.PlayAsync();
                 IsPlaying = true;
+
+                // Position events can now flow: the front player is genuinely playing, so this is
+                // no different from a fully-completed open as far as Ended/Failed/PositionChanged
+                // are concerned. Side opens below still run under _isOpeningMedia's other
+                // protections indirectly -- those handlers only special-case the front player.
+                _isOpeningMedia = false;
+
+                await OpenAndJoinSecondaryCamerasAsync(mediaSource, requestId, cancellationToken);
             }
             else
             {
+                await OpenSecondaryCamerasAsync(mediaSource, requestId, cancellationToken);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
                 await PauseOpenPlayersAsync();
                 IsPlaying = false;
             }
@@ -594,6 +595,105 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             _isOpeningMedia = false;
         }
+    }
+
+    /// <summary>
+    /// Opens the three non-front cameras in parallel (as before) but, unlike the pre-playback
+    /// path, joins each one in as soon as ITS OWN open completes rather than waiting for all
+    /// three: seeks it to the front player's current (live) position and starts it playing, so
+    /// the user isn't blocked on the slowest secondary camera to see the front feed.
+    /// </summary>
+    private async Task OpenAndJoinSecondaryCamerasAsync(
+        ClipMediaSource mediaSource,
+        long requestId,
+        CancellationToken cancellationToken)
+    {
+        var joinTasks = _players
+            .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _frontPlayer))
+            .Select(cameraPlayer => OpenAndJoinSecondaryCameraAsync(
+                cameraPlayer.Key,
+                cameraPlayer.Value,
+                mediaSource,
+                requestId,
+                cancellationToken));
+
+        await Task.WhenAll(joinTasks);
+    }
+
+    /// <summary>
+    /// Opens a single secondary camera and, once open, joins it into the already-playing front
+    /// stream: seeks to the front's current position and plays. Performs a single-shot
+    /// correction afterward if the join seek's own latency let the gap grow further, so the
+    /// camera doesn't visibly trail the front by much more than one seek's worth of drift.
+    /// </summary>
+    private async Task OpenAndJoinSecondaryCameraAsync(
+        string camera,
+        ICameraPlayer player,
+        ClipMediaSource mediaSource,
+        long requestId,
+        CancellationToken cancellationToken)
+    {
+        var opened = await OpenCameraPlayerAsync(camera, player, mediaSource, required: false, requestId, cancellationToken);
+
+        if (!opened || cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var joinPosition = _frontPlayer.Position;
+
+        Log.Debug(
+            "Joining secondary camera to in-progress playback. Camera={Camera}; JoinPosition={JoinPosition}; RequestId={RequestId}",
+            camera,
+            joinPosition,
+            requestId);
+
+        await player.SeekAsync(joinPosition);
+        await player.PlayAsync();
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        // The seek above takes some non-zero time, during which the front kept playing; do one
+        // single-shot correction if the gap grew meaningfully rather than looping/polling.
+        var driftAfterJoin = _frontPlayer.Position - joinPosition;
+        if (driftAfterJoin > TimeSpan.FromMilliseconds(250))
+        {
+            var correctedPosition = _frontPlayer.Position;
+
+            Log.Debug(
+                "Secondary camera join drifted; reissuing seek. Camera={Camera}; DriftAfterJoin={DriftAfterJoin}; CorrectedPosition={CorrectedPosition}; RequestId={RequestId}",
+                camera,
+                driftAfterJoin,
+                correctedPosition,
+                requestId);
+
+            await player.SeekAsync(correctedPosition);
+        }
+    }
+
+    /// <summary>
+    /// Opens the three non-front cameras in parallel without playing or seeking them -- used by
+    /// the recovery path, which stays paused until the caller positions and plays everything.
+    /// </summary>
+    private async Task OpenSecondaryCamerasAsync(
+        ClipMediaSource mediaSource,
+        long requestId,
+        CancellationToken cancellationToken)
+    {
+        var secondaryOpenTasks = _players
+            .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _frontPlayer))
+            .Select(cameraPlayer => OpenCameraPlayerAsync(
+                cameraPlayer.Key,
+                cameraPlayer.Value,
+                mediaSource,
+                required: false,
+                requestId,
+                cancellationToken));
+
+        await Task.WhenAll(secondaryOpenTasks);
     }
 
     private async Task<bool> OpenCameraPlayerAsync(
