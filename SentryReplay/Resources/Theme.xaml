@@ -79,6 +79,52 @@
 
     <!--
         ============================================================
+        App icon — the "Sentry Eye" mark, kept in sync by hand with
+        SentryReplay.ico so in-app usages stay vector-crisp. Brand
+        colors are fixed on purpose; it does not follow the theme.
+        ============================================================
+    -->
+    <DrawingImage x:Key="AppIconImage">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#D91E2E">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry RadiusX="29"
+                                           RadiusY="29"
+                                           Rect="0,0,128,128" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="White"
+                             Thickness="9" />
+                    </GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="64,64"
+                                         RadiusX="31"
+                                         RadiusY="31" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="White">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="64,64"
+                                         RadiusX="13"
+                                         RadiusY="13" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="White">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="99,29"
+                                         RadiusX="7"
+                                         RadiusY="7" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!--
+        ============================================================
         Buttons. Reuse the Fluent Default/Accent button styles; add
         a subtle icon-button and a press-scale variant WITHOUT
         re-templating, so the Fluent focus visual is preserved.
