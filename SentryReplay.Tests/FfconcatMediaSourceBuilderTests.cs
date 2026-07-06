@@ -243,4 +243,150 @@ public sealed class FfconcatMediaSourceBuilderTests
         frontContent.ShouldContain(clipFiles.GetPath(1, CameraNames.Front).Replace('\\', '/'));
         frontContent.ShouldContain(clipFiles.GetPath(2, CameraNames.Front).Replace('\\', '/'));
     }
+
+    // --- Gap-aware timeline: GapPositions and ToMediaTime ---
+
+    [Fact]
+    public void Build_ContiguousClip_HasNoGapPositions()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var builder = new FfconcatMediaSourceBuilder();
+
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        mediaSource.GapPositions.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Build_MissingMiddleChunk_ProducesOneGapAtTheRightMediaTime()
+    {
+        // Chunk 1 (which would start at wall-clock +60s) is entirely absent from the clip -- as if
+        // deleted from disk -- so chunk 2's timestamp (+180s, i.e. a 2-minute jump from chunk 0's
+        // end at +60s) leaves a wall-clock gap the builder never even sees as an exclusion.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var firstTimestamp = clipFiles.Clip.Chunks[0].Timestamp;
+        var laterTimestamp = firstTimestamp.AddMinutes(3);
+
+        var laterChunkDir = clipFiles.RootPath;
+        var files = CameraNames.All.Select(camera =>
+        {
+            var path = Path.Combine(laterChunkDir, $"{laterTimestamp:yyyy-MM-dd_HH-mm-ss}-{camera}.mp4");
+            File.WriteAllBytes(path, TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+            return new CamFile(path, laterTimestamp, camera);
+        });
+        var laterChunk = new CamChunk(laterTimestamp, files);
+
+        var clip = new CamClip(
+            clipFiles.Clip.FullPath,
+            clipFiles.Clip.Name,
+            clipFiles.Clip.Timestamp,
+            [clipFiles.Clip.Chunks[0], laterChunk],
+            camEvent: null);
+
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clip);
+
+        // Chunk 0 is 60s of media, starting at media time 0; the second included chunk starts
+        // right after it at media time 60s, regardless of the 3-minute wall-clock jump.
+        mediaSource.ChunkStarts.ShouldBe([TimeSpan.Zero, TimeSpan.FromSeconds(60)]);
+        mediaSource.GapPositions.ShouldBe([TimeSpan.FromSeconds(60)]);
+    }
+
+    [Fact]
+    public void Build_AutoExcludedChunk_ProducesAGap()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+
+        // Corrupting chunk 1's front file makes the builder auto-exclude it, which should leave
+        // the same kind of wall-clock gap as a chunk that was simply missing from disk.
+        File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.Front), TestMp4.GarbageBytes);
+
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        mediaSource.AutoExcludedChunkIndices.ShouldBe([1]);
+        mediaSource.GapPositions.ShouldBe([TimeSpan.FromSeconds(60)]);
+    }
+
+    [Fact]
+    public void Build_CallerExcludedMiddleChunk_ProducesAGap()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var builder = new FfconcatMediaSourceBuilder();
+
+        var mediaSource = builder.Build(clipFiles.Clip, new HashSet<int> { 1 });
+
+        mediaSource.GapPositions.ShouldBe([TimeSpan.FromSeconds(60)]);
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantInsideFirstChunk_MapsToOffsetWithinIt()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        var instant = clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(15);
+
+        mediaSource.ToMediaTime(instant).ShouldBe(TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantInsideChunkAfterAGap_MapsToThatChunksMediaOffset()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        File.Delete(clipFiles.GetPath(1, CameraNames.Front));
+        var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
+        var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent: null);
+
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clip);
+
+        // Chunk 2's wall-clock timestamp is +120s; it lands at media time 60s (right after chunk 0).
+        var instant = clipFiles.Clip.Chunks[2].Timestamp.AddSeconds(10);
+
+        mediaSource.ToMediaTime(instant).ShouldBe(TimeSpan.FromSeconds(70));
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantInsideTheGap_SnapsForwardToNextChunkStart()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        File.Delete(clipFiles.GetPath(1, CameraNames.Front));
+        var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
+        var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent: null);
+
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clip);
+
+        // An instant that falls between chunk 0's probed end (+60s) and chunk 2's timestamp
+        // (+120s) has no media time of its own; it snaps forward to where footage resumes.
+        var instantInsideGap = clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(90);
+
+        mediaSource.ToMediaTime(instantInsideGap).ShouldBe(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantBeforeClipStart_ReturnsNull()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        var instant = clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(-1);
+
+        mediaSource.ToMediaTime(instant).ShouldBeNull();
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantAfterClipEnd_ReturnsNull()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(61);
+
+        mediaSource.ToMediaTime(instant).ShouldBeNull();
+    }
 }

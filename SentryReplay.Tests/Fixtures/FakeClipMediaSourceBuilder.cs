@@ -89,6 +89,9 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 
         var duration = TimeSpan.FromTicks(ChunkDuration.Ticks * includedIndices.Count);
 
+        var chunkTimestamps = includedIndices.Select(index => clip.Chunks[index].Timestamp).ToList();
+        var chunkDurations = includedIndices.Select(_ => ChunkDuration).ToList();
+
         var playlistPaths = new Dictionary<string, string>();
         foreach (var camera in CameraNames.All)
         {
@@ -118,6 +121,6 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
             playlistPaths[camera] = playlistPath;
         }
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices);
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations);
     }
 }

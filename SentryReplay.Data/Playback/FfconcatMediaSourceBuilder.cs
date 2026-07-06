@@ -97,7 +97,9 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
             ? TimeSpan.Zero
             : chunkStarts[^1] + chunkDurations[^1];
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices);
+        var chunkTimestamps = includedIndices.Select(index => clip.Chunks[index].Timestamp).ToList();
+
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations);
     }
 
     private static TimeSpan? ProbeFrontChunkDuration(CamChunk chunk)
