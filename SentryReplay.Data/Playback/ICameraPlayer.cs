@@ -24,4 +24,10 @@ public interface ICameraPlayer : IDisposable
     /// thumb is being dragged, where responsiveness matters more than frame precision.
     /// </summary>
     Task SeekAsync(TimeSpan position, bool accurate = true);
+
+    /// <summary>
+    /// Steps a single frame forward or backward from the current position. Intended for use while
+    /// paused; the caller is responsible for pausing first if playback is active.
+    /// </summary>
+    Task StepFrameAsync(bool forward);
 }

@@ -686,6 +686,100 @@ public sealed class VideoPlayerControllerTests
         controller.IsPlaying.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task StepFrameAsync_WhilePaused_StepsAllOpenPlayersInDirection()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        using var controller = CreateController(front, back);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        await controller.PauseAsync();
+        front.CallLog.Clear();
+        back.CallLog.Clear();
+
+        await controller.StepFrameAsync(forward: true);
+
+        front.StepLog.ShouldBe(["forward"]);
+        back.StepLog.ShouldBe(["forward"]);
+        front.CallLog.ShouldNotContain("pause");
+        back.CallLog.ShouldNotContain("pause");
+        controller.IsPlaying.ShouldBeFalse();
+
+        await controller.StepFrameAsync(forward: false);
+
+        front.StepLog.ShouldBe(["forward", "backward"]);
+        back.StepLog.ShouldBe(["forward", "backward"]);
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_WhilePlaying_PausesFirstThenSteps()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        using var controller = CreateController(front, back);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        front.CallLog.Clear();
+        back.CallLog.Clear();
+
+        controller.IsPlaying.ShouldBeTrue();
+
+        await controller.StepFrameAsync(forward: true);
+
+        front.PauseCount.ShouldBe(1);
+        back.PauseCount.ShouldBe(1);
+        front.StepLog.ShouldBe(["forward"]);
+        back.StepLog.ShouldBe(["forward"]);
+        front.CallLog.IndexOf("pause").ShouldBeLessThan(front.CallLog.IndexOf("step:forward"));
+        back.CallLog.IndexOf("pause").ShouldBeLessThan(back.CallLog.IndexOf("step:forward"));
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_OnlyStepsOpenPlayers()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1, omitCamerasFromChunkZero: new HashSet<string> { CameraNames.LeftRepeater });
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        var left = new FakeCameraPlayer();
+        var right = new FakeCameraPlayer();
+        using var controller = CreateController(front, back, left, right);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0 && right.PlayCount > 0);
+
+        await controller.PauseAsync();
+
+        await controller.StepFrameAsync(forward: true);
+
+        front.StepLog.ShouldBe(["forward"]);
+        back.StepLog.ShouldBe(["forward"]);
+        right.StepLog.ShouldBe(["forward"]);
+        left.StepLog.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_WhenNoMediaOpen_IsNoOp()
+    {
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front);
+
+        await controller.StepFrameAsync(forward: true);
+
+        front.StepLog.ShouldBeEmpty();
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
     private static VideoPlayerController CreateController(
         FakeCameraPlayer front = null,
         FakeCameraPlayer back = null,

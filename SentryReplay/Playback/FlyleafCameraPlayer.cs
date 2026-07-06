@@ -135,6 +135,28 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         return Task.CompletedTask;
     }
 
+    public Task StepFrameAsync(bool forward)
+    {
+        ThrowIfDisposed();
+
+        if (!_isOpen)
+        {
+            return Task.CompletedTask;
+        }
+
+        return Task.Run(() =>
+        {
+            if (forward)
+            {
+                _player.ShowFrameNext();
+            }
+            else
+            {
+                _player.ShowFramePrev();
+            }
+        });
+    }
+
     public void Dispose()
     {
         if (_isDisposed)

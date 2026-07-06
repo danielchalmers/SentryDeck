@@ -238,6 +238,58 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
     }
 
+    /// <summary>
+    /// Steps every open player one frame forward or backward -- for frame-by-frame incident review.
+    /// Stepping only makes sense paused, so playback is paused first if active; all open players are
+    /// stepped in the same direction to keep the four cameras in sync (they share the same frame rate).
+    /// </summary>
+    public async Task StepFrameAsync(bool forward)
+    {
+        if (CurrentClip is null || _isDisposed || !IsMediaOpen)
+            return;
+
+        try
+        {
+            await RunSerializedPlaybackOperationAsync(async _ =>
+            {
+                if (!IsMediaOpen || _openedClip != CurrentClip)
+                {
+                    return;
+                }
+
+                if (IsPlaying)
+                {
+                    await PauseOpenPlayersAsync();
+                    IsPlaying = false;
+                }
+
+                foreach (var player in _players.Values.Where(player => player.IsOpen))
+                {
+                    await player.StepFrameAsync(forward);
+                }
+
+                // Flyleaf raises PositionChanged (via CurTime) when a stepped frame shows, even while
+                // paused, so Position normally updates on its own via OnPositionChanged. This is a
+                // belt-and-suspenders sync from the front player in case that event doesn't fire for a
+                // given step.
+                Position = Clamp(_frontPlayer.Position, TimeSpan.Zero, Duration);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(
+                ex,
+                "Frame step error. ClipName={ClipName}; ClipPath={ClipPath}; Forward={Forward}",
+                CurrentClip?.Name,
+                CurrentClip?.FullPath,
+                forward);
+            ErrorMessage = $"Frame step error: {ex.Message}";
+        }
+    }
+
     public async Task NextAsync()
     {
         if (!Playlist.HasNext)
