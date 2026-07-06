@@ -20,6 +20,12 @@ public sealed class ClipPlaylist
 
     public bool HasNext => _currentIndex < _clips.Count - 1;
 
+    /// <summary>
+    /// The clip that <see cref="MoveNext"/> would land on, or null when there isn't one. Used to
+    /// prewarm the next clip's media source while the current one is still playing.
+    /// </summary>
+    public CamClip NextClip => IsValidIndex(_currentIndex + 1) ? _clips[_currentIndex + 1] : null;
+
     public event EventHandler<CamClip> CurrentClipChanged;
     public event EventHandler PlaylistChanged;
 

@@ -31,11 +31,21 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private static readonly TimeSpan PostRecoverySeekTolerance = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Bounds for warming the OS file cache for a prewarmed next clip: read only the start of
+    /// each camera's first chunk file (what Flyleaf's Open touches first), and only for up to
+    /// this many files, so prewarm stays cheap.
+    /// </summary>
+    private const int PrewarmReadBytes = 2 * 1024 * 1024;
+
+    private const int PrewarmMaxFiles = 4;
+
     private readonly ICameraPlayer _frontPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
     private readonly IClipMediaSourceBuilder _mediaSourceBuilder;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly HashSet<int> _excludedChunkIndices = [];
+    private readonly Lock _prewarmLock = new();
     private CancellationTokenSource _playbackCts;
     private bool _isDisposed;
     private bool _isOpeningMedia;
@@ -44,6 +54,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private CamClip _openedClip;
     private ClipMediaSource _openedMediaSource;
     private int _recoveryAttempts;
+    private (CamClip Clip, ClipMediaSource Source) _prewarmedNextClip;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
@@ -353,6 +364,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         _isDisposed = true;
         CancelAndDisposePlaybackCts();
+        ClearPrewarmedMediaSource();
 
         Playlist.CurrentClipChanged -= OnCurrentClipChanged;
         Playlist.PlaylistChanged -= OnPlaylistChanged;
@@ -469,7 +481,20 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     return;
                 }
 
-                var mediaSource = await Task.Run(() => _mediaSourceBuilder.Build(clip), ct);
+                var mediaSource = TakePrewarmedMediaSource(clip);
+                if (mediaSource is not null)
+                {
+                    Log.Debug(
+                        "Using prewarmed media source for clip open. ClipName={ClipName}; ClipPath={ClipPath}; RequestId={RequestId}",
+                        clip.Name,
+                        clip.FullPath,
+                        requestId);
+                }
+                else
+                {
+                    mediaSource = await Task.Run(() => _mediaSourceBuilder.Build(clip), ct);
+                }
+
                 Duration = mediaSource.Duration;
 
                 Log.Information(
@@ -482,6 +507,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     Duration,
                     requestId);
                 await OpenClipInternalAsync(clip, mediaSource, playAfterOpen: true, requestId, ct);
+
+                PrewarmNextClip();
             }, replacePlaybackCts: true);
         }
         catch (OperationCanceledException)
@@ -502,6 +529,149 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             if (IsRequestActive(requestId))
             {
                 IsLoading = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns and consumes the prewarmed media source for <paramref name="clip"/> if the cache
+    /// holds one matching it by reference, or null on a cache miss (nothing prewarmed yet, a
+    /// prewarm for a different clip, or the cache was cleared). Matching by reference rather than
+    /// value keeps this correct even if two distinct <see cref="CamClip"/> instances happened to
+    /// be otherwise equal.
+    /// </summary>
+    private ClipMediaSource TakePrewarmedMediaSource(CamClip clip)
+    {
+        lock (_prewarmLock)
+        {
+            if (ReferenceEquals(_prewarmedNextClip.Clip, clip) && _prewarmedNextClip.Source is not null)
+            {
+                var source = _prewarmedNextClip.Source;
+                _prewarmedNextClip = default;
+                return source;
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Clears any cached prewarm entry, e.g. because the playlist changed underneath it and the
+    /// cached clip/source pair may no longer be the right "next clip" to consume.
+    /// </summary>
+    private void ClearPrewarmedMediaSource()
+    {
+        lock (_prewarmLock)
+        {
+            _prewarmedNextClip = default;
+        }
+    }
+
+    /// <summary>
+    /// Fires a background, best-effort build of the playlist's next clip (if there is one) so
+    /// that when playback actually advances there, <see cref="PlayInternalAsync"/> can skip the
+    /// build/probe I/O via <see cref="TakePrewarmedMediaSource"/>. Also warms the OS file cache
+    /// for the first bytes of the next clip's first chunk, which is what Flyleaf's Open reads
+    /// first. Entirely fire-and-forget: exceptions are contained and logged, never surfaced to
+    /// the caller, and the eventual result is only ever consulted via the single-entry cache, so
+    /// a prewarm that finishes after the user has already moved on is simply ignored.
+    /// </summary>
+    private void PrewarmNextClip()
+    {
+        var nextClip = Playlist.NextClip;
+        if (nextClip is null || nextClip.Chunks.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            try
+            {
+                Log.Debug(
+                    "Prewarming next clip. ClipName={ClipName}; ClipPath={ClipPath}",
+                    nextClip.Name,
+                    nextClip.FullPath);
+
+                var mediaSource = _mediaSourceBuilder.Build(nextClip);
+
+                lock (_prewarmLock)
+                {
+                    _prewarmedNextClip = (nextClip, mediaSource);
+                }
+
+                WarmFileCache(nextClip);
+
+                stopwatch.Stop();
+                Log.Debug(
+                    "Prewarmed next clip. ClipName={ClipName}; ClipPath={ClipPath}; Duration={Duration}; ElapsedMs={ElapsedMs}",
+                    nextClip.Name,
+                    nextClip.FullPath,
+                    mediaSource.Duration,
+                    stopwatch.ElapsedMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(
+                    ex,
+                    "Prewarm of next clip failed; the foreground open will build normally. ClipName={ClipName}; ClipPath={ClipPath}; ElapsedMs={ElapsedMs}",
+                    nextClip.Name,
+                    nextClip.FullPath,
+                    stopwatch.ElapsedMilliseconds);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Warms the OS file cache for exactly what Flyleaf's Open touches first: the beginning of
+    /// each camera's first chunk file. Bounded to <see cref="PrewarmMaxFiles"/> files and
+    /// <see cref="PrewarmReadBytes"/> bytes each so prewarm stays cheap; per-file failures are
+    /// logged and skipped rather than aborting the rest of the warm.
+    /// </summary>
+    private static void WarmFileCache(CamClip clip)
+    {
+        if (clip.Chunks.Count == 0)
+        {
+            return;
+        }
+
+        var firstChunk = clip.Chunks[0];
+        var buffer = new byte[PrewarmReadBytes];
+
+        foreach (var camera in CameraNames.All.Take(PrewarmMaxFiles))
+        {
+            if (!firstChunk.Files.TryGetValue(camera, out var file))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var stream = new FileStream(
+                    file.FullPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 1,
+                    FileOptions.SequentialScan);
+
+                var totalRead = 0;
+                int bytesRead;
+                while (totalRead < buffer.Length
+                    && (bytesRead = stream.Read(buffer, totalRead, buffer.Length - totalRead)) > 0)
+                {
+                    totalRead += bytesRead;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(
+                    ex,
+                    "Failed to warm file cache for camera file. Camera={Camera}; File={File}",
+                    camera,
+                    file.FullPath);
             }
         }
     }
@@ -900,6 +1070,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private void OnPlaylistChanged(object sender, EventArgs e)
     {
+        // The clip set changed entirely (LoadClips/LoadClipsAsync); a cached prewarm keyed off
+        // the old playlist's "next clip" no longer means anything.
+        ClearPrewarmedMediaSource();
+
         OnPropertyChanged(nameof(CurrentClip));
         OnPropertyChanged(nameof(CanPlayPause));
         OnPropertyChanged(nameof(CanGoNext));

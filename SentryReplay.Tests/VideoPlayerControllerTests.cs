@@ -247,6 +247,124 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task ClipOpened_WithNextClipInPlaylist_PrewarmsNextClipInBackground()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // The prewarm build runs on a background task fired after the open completes; wait for
+        // it rather than assuming it already ran by the time the open finished.
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
+
+        // Still on clip A: the prewarm build must not have disturbed current playback.
+        controller.CurrentClip.ShouldBe(firstClipFiles.Clip);
+        mediaSourceBuilder.BuildCountFor(firstClipFiles.Clip).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task AdvancingToPrewarmedClip_UsesCachedMediaSourceWithoutRebuilding()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
+
+        // Advance via genuine end-of-clip (auto-advance path).
+        front.RaisePositionChanged(controller.Duration);
+        front.RaiseEnded();
+
+        await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Cache hit: exactly the one prewarm build for clip B, never a second (foreground) build.
+        mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task AdvancingToPrewarmedClipViaGoToClipAsync_UsesCachedMediaSourceWithoutRebuilding()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
+
+        await controller.GoToClipAsync(secondClipFiles.Clip);
+
+        await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SelectingDifferentClip_DoesNotConsumePrewarmedEntryAndBuildsNormally()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var thirdClipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip, thirdClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Clip B gets prewarmed as the playlist's next clip.
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
+
+        // Jump straight to clip C instead of advancing to the prewarmed clip B.
+        await controller.GoToClipAsync(thirdClipFiles.Clip);
+
+        await WaitUntilAsync(() => controller.CurrentClip == thirdClipFiles.Clip);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Clip C was built normally (foreground), clip B's prewarmed entry was never consumed
+        // and is simply left to be overwritten/ignored.
+        mediaSourceBuilder.BuildCountFor(thirdClipFiles.Clip).ShouldBe(1);
+        mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task LastClipInPlaylist_DoesNotAttemptPrewarm()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Give any errant background prewarm task a chance to run before asserting its absence.
+        await Task.Delay(200);
+
+        mediaSourceBuilder.BuildCount.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task SeekAsync_PastOldChunkBoundary_SeeksOpenPlayersWithoutReopening()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);
@@ -500,12 +618,16 @@ public sealed class VideoPlayerControllerTests
         await WaitUntilAsync(() => front.PlayCount > 1);
 
         await controller.GoToClipAsync(secondClipFiles.Clip);
-        await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip);
-        await WaitUntilAsync(() => front.OpenedPaths.Count > 0 && controller.IsMediaOpen && !controller.IsLoading);
+        await WaitUntilClipOpenedAsync(controller, front);
 
-        var buildCountAfterSelectingSecondClip = mediaSourceBuilder.BuildCount;
-        var lastExclusions = mediaSourceBuilder.ExclusionsPerBuild[^1];
-        lastExclusions.ShouldBeEmpty();
+        // Clip 2 may have been prewarmed in the background while clip 1's recovery was still
+        // running (its next-clip prewarm fires as soon as clip 1's initial open completes), so
+        // don't assume the LAST entry in the shared build log belongs to clip 2 -- a racing
+        // prewarm build could still be in flight. Instead, wait for and inspect clip 2's own most
+        // recent build specifically: whichever build opened/prewarmed it, it must have started
+        // from a fresh (empty) exclusion set, never clip 1's leftover {1}.
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
+        mediaSourceBuilder.LastExclusionsFor(secondClipFiles.Clip).ShouldBeEmpty();
 
         // Ending the second clip prematurely should exclude relative to a fresh (empty) set, not
         // carry over chunk 1 from the first clip. Probe-clean again: wait for both rebuilds so
@@ -513,9 +635,9 @@ public sealed class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(0));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= buildCountAfterSelectingSecondClip + 2);
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) >= 3);
 
-        mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 0 });
+        mediaSourceBuilder.LastExclusionsFor(secondClipFiles.Clip).ShouldBe(new HashSet<int> { 0 });
     }
 
     [Fact]
