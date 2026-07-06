@@ -263,6 +263,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     IsPlaying = false;
                 }
 
+                var positionBeforeStep = _frontPlayer.Position;
+
                 foreach (var player in _players.Values.Where(player => player.IsOpen))
                 {
                     await player.StepFrameAsync(forward);
@@ -273,6 +275,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 // belt-and-suspenders sync from the front player in case that event doesn't fire for a
                 // given step.
                 Position = Clamp(_frontPlayer.Position, TimeSpan.Zero, Duration);
+
+                Log.Debug(
+                    "Stepped frame. Forward={Forward}; PositionBefore={PositionBefore}; PositionAfter={PositionAfter}; ClipName={ClipName}",
+                    forward,
+                    positionBeforeStep,
+                    _frontPlayer.Position,
+                    CurrentClip?.Name);
             });
         }
         catch (OperationCanceledException)

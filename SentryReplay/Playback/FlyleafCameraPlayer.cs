@@ -135,6 +135,18 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Fallback frame rate for the backward-step seek when the open stream doesn't report one.
+    /// </summary>
+    private const double FallbackStepFps = 30.0;
+
+    /// <summary>
+    /// Safety factor applied to the backward-step target so PTS rounding can't make the accurate
+    /// seek land back on the frame currently displayed (accurate seeks present the frame at or
+    /// before the target, so overshooting slightly INTO the previous frame is what we want).
+    /// </summary>
+    private const double BackwardStepPtsGuard = 1.1;
+
     public Task StepFrameAsync(bool forward)
     {
         ThrowIfDisposed();
@@ -152,7 +164,23 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             }
             else
             {
-                _player.ShowFramePrev();
+                // Do NOT "simplify" this back to Flyleaf's ShowFramePrev. On our ffconcat (FFmpeg
+                // concat demuxer) playlists it is a silent no-op -- CurTime never moves, nothing
+                // throws -- and it poisons the decoder so the NEXT ShowFrameNext jumps ahead by
+                // 0.5s+ instead of one frame (verified against real footage, 2026-07). Backward
+                // stepping is therefore a small accurate seek: one frame duration back, padded by
+                // a PTS-rounding guard so the seek reliably presents the PREVIOUS frame rather
+                // than re-presenting the current one. Accurate seeks are proven reliable on these
+                // playlists, including while paused.
+                var fps = _player.Video?.FPS ?? 0;
+                if (fps <= 0 || double.IsNaN(fps))
+                {
+                    fps = FallbackStepFps;
+                }
+
+                var frameTicks = (long)(TimeSpan.TicksPerSecond / fps);
+                var targetTicks = Math.Max(0, _player.CurTime - (long)(BackwardStepPtsGuard * frameTicks));
+                _player.SeekAccurate((int)(targetTicks / TimeSpan.TicksPerMillisecond));
             }
         });
     }
