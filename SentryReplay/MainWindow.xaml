@@ -1450,15 +1450,9 @@
                         <StackPanel>
                             <!--  App identity  -->
                             <StackPanel Orientation="Horizontal">
-                                <Border Width="52"
-                                        Height="52"
-                                        Background="{DynamicResource AccentFillColorDefaultBrush}"
-                                        CornerRadius="12">
-                                    <TextBlock Text="&#xE714;"
-                                               FontSize="28"
-                                               Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
-                                               Style="{StaticResource AppGlyph}" />
-                                </Border>
+                                <Image Width="52"
+                                       Height="52"
+                                       Source="{StaticResource AppIconImage}" />
                                 <StackPanel Margin="16,0,0,0"
                                             VerticalAlignment="Center">
                                     <TextBlock Text="Sentry Replay"
