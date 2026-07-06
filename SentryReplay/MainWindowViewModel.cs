@@ -817,10 +817,12 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Called on every seek-bar value change. While actively dragging (<see cref="_isSeeking"/>),
-    /// each value feeds the scrub coalescer so the video follows the thumb in near-real-time; a
-    /// plain click-without-drag never sets <see cref="_isSeeking"/> (see <see cref="BeginSeek"/> /
-    /// <see cref="EndSeekAsync"/>), so it falls through to just refreshing the time readout.
+    /// Called on every seek-bar value change. While a seek gesture is active (<see cref="_isSeeking"/>,
+    /// set by <see cref="BeginSeek"/> on mouse-down for clicks and drags alike), each value feeds the
+    /// scrub coalescer so the video follows the thumb in near-real-time. A plain click therefore
+    /// issues one scrub seek too; the accurate seek from <see cref="EndSeekAsync"/> runs behind the
+    /// same serialized lock and always lands last. Value changes from playback position sync arrive
+    /// with <see cref="_isSeeking"/> false and are ignored.
     /// </summary>
     public void OnSeekSliderValueChanged()
     {
