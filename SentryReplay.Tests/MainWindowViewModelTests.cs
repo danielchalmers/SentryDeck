@@ -546,7 +546,7 @@ public sealed class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         File.Delete(clipFiles.GetPath(1, CameraNames.Front));
         var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
-        var clip = new CamClip(clipFiles.Clip.FullPath, UniqueClipName(), clipFiles.Clip.Timestamp, chunks, camEvent: null);
+        var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent: null);
 
         var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
         vm.SelectedClip = clip;
@@ -567,7 +567,7 @@ public sealed class MainWindowViewModelTests
         var chunk2Timestamp = clipFiles.Clip.Chunks[2].Timestamp;
         var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
         var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = chunk2Timestamp.AddSeconds(10) };
-        var clip = new CamClip(clipFiles.Clip.FullPath, UniqueClipName(), clipFiles.Clip.Timestamp, chunks, camEvent);
+        var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent);
 
         var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
         vm.SelectedClip = clip;
@@ -716,7 +716,7 @@ public sealed class MainWindowViewModelTests
     public void DragSequence_IssuesFastSeeks_ReleaseIssuesAccurateSeekAtReleasePosition()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1); // 60s clip (see TestClipFiles)
-        var (vm, _, front) = CreateViewModelWithOpenedClip(UniquelyNamed(clipFiles));
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
         vm.BeginSeek();
 
@@ -752,7 +752,7 @@ public sealed class MainWindowViewModelTests
     public void PositionSync_WhenNotDragging_DoesNotTriggerScrubSeeks()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
-        var (vm, controller, front) = CreateViewModelWithOpenedClip(UniquelyNamed(clipFiles));
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
         front.SeekPositions.Clear();
 
@@ -782,23 +782,6 @@ public sealed class MainWindowViewModelTests
             await Task.Delay(10);
         }
     }
-
-    // FfconcatMediaSourceBuilder writes each camera's playlist to a shared temp path keyed only by
-    // the clip's Name (not its folder), and every TestClipFiles.Create() call across the whole
-    // suite uses the same literal name ("Test Clip") -- so under full-suite parallel execution,
-    // concurrently-running tests can race on the very same playlist file. Giving this test's clip
-    // its own unique name sidesteps that shared-fixture collision without touching the fixture (or
-    // the production path-naming) itself, which is shared by dozens of other tests.
-    private static CamClip UniquelyNamed(TestClipFiles clipFiles)
-    {
-        var clip = clipFiles.Clip;
-        return new CamClip(clip.FullPath, UniqueClipName(), clip.Timestamp, clip.Chunks, clip.Event);
-    }
-
-    // See UniquelyNamed's comment: a fresh unique name for any hand-built CamClip (e.g. one with a
-    // gap-inducing chunk list assembled from TestClipFiles pieces) that isn't itself a plain
-    // TestClipFiles.Clip.
-    private static string UniqueClipName() => $"Test Clip {Guid.NewGuid():N}";
 
     // Opens the clip on the controller to completion BEFORE the view-model subscribes to it, then
     // attaches the view-model. Doing it in this order (rather than via CreateViewModelWithController,

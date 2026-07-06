@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Serilog;
@@ -56,7 +57,11 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
         }
 
         var playlistPaths = new Dictionary<string, string>();
-        var clipToken = SanitizeForFileName(clip.Name);
+
+        // Distinct clips can share a display name; only the folder path is unique per clip, so it
+        // is hashed into the filename to keep two clips (built concurrently or not) from clobbering
+        // each other's playlists. Must stay deterministic per clip: rebuilds overwrite in place.
+        var clipToken = $"{SanitizeForFileName(clip.Name)}-{HashForFileName(clip.FullPath)}";
 
         foreach (var camera in CameraNames.All)
         {
@@ -147,6 +152,12 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
     private static string EscapeConcatPath(string path)
     {
         return path.Replace('\\', '/').Replace("'", "'\\''");
+    }
+
+    private static string HashForFileName(string path)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(path ?? string.Empty));
+        return Convert.ToHexString(hash, 0, 4).ToLowerInvariant();
     }
 
     private static string SanitizeForFileName(string name)
