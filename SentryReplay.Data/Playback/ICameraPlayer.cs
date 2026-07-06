@@ -16,5 +16,12 @@ public interface ICameraPlayer : IDisposable
     Task PauseAsync();
     Task StopAsync();
     Task CloseAsync();
-    Task SeekAsync(TimeSpan position);
+
+    /// <summary>
+    /// Seeks to <paramref name="position"/>. Accurate seeks (the default) decode forward to land
+    /// exactly on the target frame; fast seeks jump to the nearest keyframe, which is far cheaper
+    /// but can land slightly before the target -- intended for live scrubbing while the seek bar
+    /// thumb is being dragged, where responsiveness matters more than frame precision.
+    /// </summary>
+    Task SeekAsync(TimeSpan position, bool accurate = true);
 }

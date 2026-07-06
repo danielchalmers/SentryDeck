@@ -649,6 +649,123 @@ public sealed class MainWindowViewModelTests
         vm.SeekPosition.ShouldBe(0.25, 0.0001);
     }
 
+    // Synchronous (no async/await in the test body itself -- see CreateViewModelWithOpenedClip's
+    // comment on why thread affinity matters here). FakeCameraPlayer's SeekAsync/OpenAsync and an
+    // uncontended SemaphoreSlim all complete synchronously, so blocking on the resulting tasks
+    // never suspends the thread and keeps every controller property change on it.
+    [Fact]
+    public void DragSequence_IssuesFastSeeks_ReleaseIssuesAccurateSeekAtReleasePosition()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1); // 60s clip (see TestClipFiles)
+        var (vm, _, front) = CreateViewModelWithOpenedClip(UniquelyNamed(clipFiles));
+
+        vm.BeginSeek();
+
+        // Simulate a drag: each slider value change while dragging should scrub-seek (fast/keyframe).
+        vm.SeekPosition = 0.2; // 12s of 60s
+        vm.OnSeekSliderValueChanged();
+
+        vm.SeekPosition = 0.5; // 30s
+        vm.OnSeekSliderValueChanged();
+
+        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
+        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(30));
+
+        // Every seek issued so far while dragging must have been fast (non-accurate).
+        front.SeekAccurateFlags.ShouldAllBe(accurate => accurate == false);
+
+        // Release at 0.75 (45s): EndSeekAsync must issue exactly one ACCURATE seek at the release position.
+        vm.SeekPosition = 0.75;
+
+        // Blocking rather than awaiting is deliberate here, not an oversight: this whole test must stay
+        // pinned to one thread (see CreateViewModelWithOpenedClip's comment), and EndSeekAsync only ever
+        // awaits FakeCameraPlayer calls and an uncontended SemaphoreSlim, both of which complete
+        // synchronously -- so this never actually blocks.
+#pragma warning disable xUnit1031
+        vm.EndSeekAsync().GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+
+        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(45));
+        front.SeekAccurateFlags[^1].ShouldBeTrue();
+    }
+
+    [Fact]
+    public void PositionSync_WhenNotDragging_DoesNotTriggerScrubSeeks()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(UniquelyNamed(clipFiles));
+
+        front.SeekPositions.Clear();
+
+        // Playback position advances on its own (not a drag): SeekPosition updates via the
+        // controller -> UpdateSeekPositionFromController path, which does not go through
+        // OnSeekSliderValueChanged, so no scrub seek should ever be issued.
+        controller.Position = TimeSpan.FromSeconds(10);
+        vm.OnSeekSliderValueChanged(); // the view raises ValueChanged for programmatic changes too
+
+        front.SeekPositions.ShouldBeEmpty();
+    }
+
+    // A generous 20s deadline (vs. the 5s used elsewhere in these test files): this helper waits on
+    // a real clip-open flowing through Task.Run/the media source builder, which can slow down a lot
+    // under the CPU/disk contention of the full suite's many parallel test classes; 20s comfortably
+    // absorbs that while still catching a genuine hang.
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("Condition was not met within the timeout.");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    // FfconcatMediaSourceBuilder writes each camera's playlist to a shared temp path keyed only by
+    // the clip's Name (not its folder), and every TestClipFiles.Create() call across the whole
+    // suite uses the same literal name ("Test Clip") -- so under full-suite parallel execution,
+    // concurrently-running tests can race on the very same playlist file. Giving this test's clip
+    // its own unique name sidesteps that shared-fixture collision without touching the fixture (or
+    // the production path-naming) itself, which is shared by dozens of other tests.
+    private static CamClip UniquelyNamed(TestClipFiles clipFiles)
+    {
+        var clip = clipFiles.Clip;
+        return new CamClip(clip.FullPath, $"{clip.Name} {Guid.NewGuid():N}", clip.Timestamp, clip.Chunks, clip.Event);
+    }
+
+    // Opens the clip on the controller to completion BEFORE the view-model subscribes to it, then
+    // attaches the view-model. Doing it in this order (rather than via CreateViewModelWithController,
+    // which subscribes up front) avoids the deadlock described on that helper: the real open flow's
+    // ObservableProperty writes happen on background-thread continuations, and if the view-model were
+    // already subscribed, its PropertyChanged handler would call Dispatcher.Invoke from that background
+    // thread with no pumped message loop to service it, hanging the open forever. Once the clip is
+    // fully open and idle, driving the view-model's own seek APIs from the test thread afterward is safe.
+    // Synchronous by design (no async/await): the view-model's constructor captures
+    // Dispatcher.CurrentDispatcher for whatever thread calls it, and RunOnUiThread only stays
+    // deadlock-free while every later controller property change happens on that exact same
+    // thread (see the comment on CreateViewModelWithController above). An async method resumes
+    // its continuation after an await on a thread-pool thread with no guarantee it matches the
+    // thread that ran the code before the await -- which silently breaks that invariant. Blocking
+    // on the wait here (instead of awaiting it) keeps everything, including the VM construction
+    // and every later test action, pinned to the single calling thread.
+    private static (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateViewModelWithOpenedClip(
+        CamClip clip)
+    {
+        var front = new FakeCameraPlayer();
+        var built = new VideoPlayerController(front, new FakeCameraPlayer(), new FakeCameraPlayer(), new FakeCameraPlayer());
+
+        built.LoadClips([clip]);
+        built.Playlist.MoveTo(0);
+        WaitUntilAsync(() => front.PlayCount > 0 && built.IsMediaOpen && !built.IsLoading).GetAwaiter().GetResult();
+
+        var vm = new MainWindowViewModel(() => built, backgroundYield: () => Task.CompletedTask);
+        vm.InitializePlayer();
+        return (vm, built, front);
+    }
+
     [Fact]
     public void ControllerLoadingAndPlaying_MirrorToViewModel()
     {

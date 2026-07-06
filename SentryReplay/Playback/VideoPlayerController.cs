@@ -193,7 +193,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         });
     }
 
-    public async Task SeekAsync(TimeSpan position)
+    public Task SeekAsync(TimeSpan position) => SeekInternalAsync(position, accurate: true);
+
+    /// <summary>
+    /// Like <see cref="SeekAsync"/> but issues fast keyframe seeks to every open player instead of
+    /// accurate ones -- intended to be called repeatedly and cheaply while the seek bar thumb is
+    /// being dragged, so the video keeps up in near-real-time. Same clamping and serialized-operation
+    /// infrastructure as <see cref="SeekAsync"/>; only the seek mode differs.
+    /// </summary>
+    public Task ScrubSeekAsync(TimeSpan position) => SeekInternalAsync(position, accurate: false);
+
+    private async Task SeekInternalAsync(TimeSpan position, bool accurate)
     {
         if (CurrentClip is null || _isDisposed || !IsMediaOpen || Duration <= TimeSpan.Zero)
             return;
@@ -208,7 +218,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 }
 
                 var clampedPosition = Clamp(position, TimeSpan.Zero, Duration);
-                await SeekOpenPlayersAsync(clampedPosition);
+                await SeekOpenPlayersAsync(clampedPosition, accurate);
                 Position = clampedPosition;
             });
         }
@@ -219,10 +229,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             Log.Error(
                 ex,
-                "Seek error. ClipName={ClipName}; ClipPath={ClipPath}; RequestedPosition={RequestedPosition}",
+                "Seek error. ClipName={ClipName}; ClipPath={ClipPath}; RequestedPosition={RequestedPosition}; Accurate={Accurate}",
                 CurrentClip?.Name,
                 CurrentClip?.FullPath,
-                position);
+                position,
+                accurate);
             ErrorMessage = $"Seek error: {ex.Message}";
         }
     }
@@ -767,11 +778,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
     }
 
-    private async Task SeekOpenPlayersAsync(TimeSpan offset)
+    private async Task SeekOpenPlayersAsync(TimeSpan offset, bool accurate = true)
     {
         foreach (var player in _players.Values.Where(player => player.IsOpen))
         {
-            await player.SeekAsync(offset);
+            await player.SeekAsync(offset, accurate);
         }
     }
 

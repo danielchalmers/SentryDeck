@@ -109,7 +109,7 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         return Task.Run(StopAndClose);
     }
 
-    public Task SeekAsync(TimeSpan position)
+    public Task SeekAsync(TimeSpan position, bool accurate = true)
     {
         ThrowIfDisposed();
 
@@ -119,7 +119,19 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         }
 
         var milliseconds = (int)Math.Clamp(position.TotalMilliseconds, 0, int.MaxValue);
-        _player.SeekAccurate(milliseconds);
+
+        if (accurate)
+        {
+            _player.SeekAccurate(milliseconds);
+        }
+        else
+        {
+            // Keyframe seek: jumps to the nearest preceding keyframe instead of decoding forward
+            // to the exact frame. Far cheaper, so it's used for live scrubbing while dragging the
+            // seek bar; the final release seek always goes through the accurate path above.
+            _player.Seek(milliseconds, forward: false);
+        }
+
         return Task.CompletedTask;
     }
 
