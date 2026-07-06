@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows.Input;
 
 namespace SentryReplay.Tests;
@@ -521,6 +522,64 @@ public sealed class MainWindowViewModelTests
         vm.ChunkBoundaries.ShouldBeEmpty();
     }
 
+    // --- Gap-aware markers: once the controller has actually opened the clip's media, event/gap
+    // positions come from the real ClipMediaSource (probed durations + wall-clock mapping) rather
+    // than the uniform-chunk-length estimate used before the media opens. ---
+
+    [Fact]
+    public void GapPositions_EmptyBeforeMediaOpens()
+    {
+        // No controller at all: RecomputeSelectedClipTimeline can only fall back to the estimate,
+        // which carries no gap information.
+        var vm = CreateViewModel();
+
+        vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(90));
+
+        vm.GapPositions.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void GapPositions_ReflectAGapOnceMediaSourceIsOpen()
+    {
+        // Chunk 1 is missing from disk entirely (as if deleted), leaving a real wall-clock gap
+        // between chunk 0 (60s, ending at +60s) and chunk 2 (timestamped +120s).
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        File.Delete(clipFiles.GetPath(1, CameraNames.Front));
+        var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
+        var clip = new CamClip(clipFiles.Clip.FullPath, UniqueClipName(), clipFiles.Clip.Timestamp, chunks, camEvent: null);
+
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+        vm.SelectedClip = clip;
+
+        // Two included chunks of 60s each = 120s total; the single gap sits at media time 60s.
+        vm.GapPositions.ShouldBe([60.0 / 120], 0.0001);
+    }
+
+    [Fact]
+    public void EventMarker_AfterAGap_UsesGapCorrectedFraction_NotLinearTime()
+    {
+        // Chunk 1 is missing; the event happened 10s into chunk 2 (wall-clock +130s), which the
+        // linear/estimated model (3 x 60s = 180s modeled) would place at (130/180) ~= 0.722, but
+        // the real, gap-aware media only spans 120s and the event lands at media time 70s (60s for
+        // chunk 0 + 10s into chunk 2) = 70/120 ~= 0.583.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        File.Delete(clipFiles.GetPath(1, CameraNames.Front));
+        var chunk2Timestamp = clipFiles.Clip.Chunks[2].Timestamp;
+        var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
+        var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = chunk2Timestamp.AddSeconds(10) };
+        var clip = new CamClip(clipFiles.Clip.FullPath, UniqueClipName(), clipFiles.Clip.Timestamp, chunks, camEvent);
+
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+        vm.SelectedClip = clip;
+
+        vm.HasEventMarker.ShouldBeTrue();
+        vm.EventMarkerPosition.ShouldBe(70.0 / 120, 0.0001);
+
+        // Sanity check that this genuinely differs from what the naive linear/estimated model
+        // (ignoring the gap) would have produced, so the test would fail if gap-awareness regressed.
+        Math.Abs(vm.EventMarkerPosition - 130.0 / 180).ShouldBeGreaterThan(0.01);
+    }
+
     [Fact]
     public void ClearingSelection_ResetsEventMarkerAndChunks()
     {
@@ -733,8 +792,13 @@ public sealed class MainWindowViewModelTests
     private static CamClip UniquelyNamed(TestClipFiles clipFiles)
     {
         var clip = clipFiles.Clip;
-        return new CamClip(clip.FullPath, $"{clip.Name} {Guid.NewGuid():N}", clip.Timestamp, clip.Chunks, clip.Event);
+        return new CamClip(clip.FullPath, UniqueClipName(), clip.Timestamp, clip.Chunks, clip.Event);
     }
+
+    // See UniquelyNamed's comment: a fresh unique name for any hand-built CamClip (e.g. one with a
+    // gap-inducing chunk list assembled from TestClipFiles pieces) that isn't itself a plain
+    // TestClipFiles.Clip.
+    private static string UniqueClipName() => $"Test Clip {Guid.NewGuid():N}";
 
     // Opens the clip on the controller to completion BEFORE the view-model subscribes to it, then
     // attaches the view-model. Doing it in this order (rather than via CreateViewModelWithController,

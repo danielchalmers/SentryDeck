@@ -91,6 +91,42 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
+                            <!--
+                                Gap ticks: where the clip's media time skips over a wall-clock gap
+                                (deleted/corrupt/excluded chunks, or a Sentry idle period). Same
+                                offset math as the chunk seams above but visually distinct: a
+                                dimmer, thinner mark so it doesn't compete with real chunk seams or
+                                the event marker. Empty list (no gaps, or media not opened yet)
+                                draws nothing.
+                            -->
+                            <ItemsControl Focusable="False"
+                                          IsHitTestVisible="False"
+                                          ItemsSource="{Binding Data.GapPositions, Source={StaticResource VmProxy}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Grid />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Rectangle Width="1"
+                                                   Height="6"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center"
+                                                   Fill="{DynamicResource TextFillColorTertiaryBrush}"
+                                                   Opacity="0.6">
+                                            <Rectangle.Margin>
+                                                <MultiBinding Converter="{local:SeekOffsetConverter}">
+                                                    <Binding />
+                                                    <Binding Path="ActualWidth"
+                                                             RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                                </MultiBinding>
+                                            </Rectangle.Margin>
+                                        </Rectangle>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
                             <!--  Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).  -->
                             <Border Width="3"
                                     Height="16"

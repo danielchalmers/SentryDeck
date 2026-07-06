@@ -128,6 +128,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     public CamClip CurrentClip => Playlist.CurrentClip;
 
+    /// <summary>
+    /// The media source backing the currently opened clip, or null when nothing is open. Exposed
+    /// (read-only) so callers can map wall-clock instants (e.g. event timestamps) onto the actual
+    /// playing media time via <see cref="ClipMediaSource.ToMediaTime"/> and read
+    /// <see cref="ClipMediaSource.GapPositions"/>, rather than re-deriving a timeline estimate of
+    /// their own. Changes alongside <see cref="IsMediaOpen"/> and <see cref="Duration"/>.
+    /// </summary>
+    public ClipMediaSource OpenedMediaSource => _openedMediaSource;
+
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
 
     public bool CanGoNext => Playlist.HasNext;
@@ -684,6 +693,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         IsMediaOpen = false;
         _openedClip = null;
         _openedMediaSource = null;
+        OnPropertyChanged(nameof(OpenedMediaSource));
 
         if (resetPlaybackState)
         {
@@ -771,6 +781,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             _openedClip = clip;
             _openedMediaSource = mediaSource;
+            OnPropertyChanged(nameof(OpenedMediaSource));
 
             // The builder may have dropped unreadable chunks on its own; fold those into the
             // exclusion set so position-to-chunk mapping during recovery stays aligned with the

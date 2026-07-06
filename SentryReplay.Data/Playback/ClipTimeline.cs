@@ -1,7 +1,13 @@
 namespace SentryReplay;
 
 /// <summary>
-/// Maps clip chunks to one estimated continuous timeline.
+/// Maps clip chunks to one estimated continuous timeline, assuming every chunk is exactly
+/// <see cref="EstimatedChunkSeconds"/> long. This is a rough, pre-open estimate for contexts where
+/// no real (probed) media source exists yet -- e.g. the clip list's "~N min" duration, or the
+/// selected clip's seek-bar overlays before its media has actually been built and opened. It
+/// knows nothing about wall-clock gaps (deleted/corrupt/excluded chunks, Sentry idle periods);
+/// once a clip's <see cref="ClipMediaSource"/> is available, prefer that instead for anything
+/// gap-aware.
 /// </summary>
 public sealed class ClipTimeline
 {

@@ -221,11 +221,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     public int RenderProgressPercent => (int)(RenderProgress * 100);
 
-    // --- Seek-bar overlays for the selected clip (event moment + chunk seams) ---
-    // Recomputed from the clip's chunks + event.json whenever the selection changes; plain
-    // fields (not ObservableProperty) because they're derived, not independently settable.
+    // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
+    // Recomputed whenever the selection changes or the controller opens/replaces its media
+    // source; plain fields (not ObservableProperty) because they're derived, not independently
+    // settable.
     private double? _eventPosition;
     private IReadOnlyList<double> _chunkBoundaries = [];
+    private IReadOnlyList<double> _gapPositions = [];
 
     /// <summary>The event moment as a 0..1 fraction of the clip timeline (0 when none — pair with <see cref="HasEventMarker"/>).</summary>
     public double EventMarkerPosition => _eventPosition ?? 0d;
@@ -240,6 +242,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>Interior chunk-boundary fractions (i/Count for i in 1..Count-1); empty for fewer than two chunks.</summary>
     public IReadOnlyList<double> ChunkBoundaries => _chunkBoundaries;
+
+    /// <summary>
+    /// Fractional seek-bar positions where the opened clip's media time skips over a wall-clock
+    /// gap (deleted/corrupt/excluded chunks, or a Sentry idle period). Empty until the selected
+    /// clip's media source has actually been built and opened by the controller.
+    /// </summary>
+    public IReadOnlyList<double> GapPositions => _gapPositions;
 
     // FilteredClips/ClipCount are refreshed on a short debounce (see OnFilterTextChanged) rather than
     // per keystroke; HasFilterText stays immediate so the search box's clear affordance is responsive.
@@ -886,9 +895,17 @@ public partial class MainWindowViewModel : ObservableObject
         return TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
     }
 
-    // Derives the seek-bar overlays from the selected clip: the event moment (mapped onto the
-    // 0..1 seek axis) and the interior chunk-boundary fractions. Nulls out cleanly when the
-    // selection is cleared or the clip has no usable event metadata.
+    // Derives the seek-bar overlays for the selected clip: the event moment, the interior
+    // chunk-boundary ticks, and gap ticks (mapped onto the 0..1 seek axis). Nulls out cleanly when
+    // the selection is cleared or the clip has no usable event metadata.
+    //
+    // Prefers the controller's actually-opened ClipMediaSource when it belongs to this clip: that
+    // source has real probed durations and gap-aware wall-clock mapping (see
+    // ClipMediaSource.ToMediaTime), so its positions match what's actually playing. Selecting a
+    // clip is synchronous but opening its media is not, so immediately after selection (or for a
+    // clip that never opens, e.g. in tests with no controller) there is no opened source yet; a
+    // ClipTimeline estimate (uniform assumed chunk length) is used as a same-frame placeholder so
+    // the markers don't flash empty, and is superseded once OpenedMediaSource changes.
     private void RecomputeSelectedClipTimeline()
     {
         var clip = SelectedClip;
@@ -896,13 +913,56 @@ public partial class MainWindowViewModel : ObservableObject
         {
             _eventPosition = null;
             _chunkBoundaries = [];
+            _gapPositions = [];
             return;
         }
 
+        var mediaSource = _playerController?.CurrentClip == clip ? _playerController?.OpenedMediaSource : null;
+
+        if (mediaSource is not null && mediaSource.Duration > TimeSpan.Zero)
+        {
+            RecomputeFromMediaSource(clip, mediaSource);
+        }
+        else
+        {
+            RecomputeFromEstimatedTimeline(clip);
+        }
+    }
+
+    private void RecomputeFromMediaSource(CamClip clip, ClipMediaSource mediaSource)
+    {
+        var durationSeconds = mediaSource.Duration.TotalSeconds;
+
+        _chunkBoundaries = mediaSource.ChunkStarts.Count < 2
+            ? []
+            : mediaSource.ChunkStarts.Skip(1).Select(start => start.TotalSeconds / durationSeconds).ToList();
+
+        _gapPositions = mediaSource.GapPositions
+            .Select(position => position.TotalSeconds / durationSeconds)
+            .ToList();
+
+        var camEvent = clip.Event;
+        if (camEvent is null || camEvent.Timestamp == default)
+        {
+            _eventPosition = null;
+            return;
+        }
+
+        var mediaTime = mediaSource.ToMediaTime(camEvent.Timestamp);
+        var fraction = mediaTime?.TotalSeconds / durationSeconds;
+        _eventPosition = fraction is > 0 and <= 1 ? fraction : null;
+    }
+
+    // Fallback used before the selected clip's media has actually been opened (or when it never
+    // will be, e.g. no controller in tests): the legacy uniform-chunk-length estimate. Carries no
+    // gap information, since gaps can only be known once the builder has probed real durations.
+    private void RecomputeFromEstimatedTimeline(CamClip clip)
+    {
         var timeline = new ClipTimeline(clip.Chunks);
         _chunkBoundaries = timeline.Count < 2
             ? []
             : Enumerable.Range(1, timeline.Count - 1).Select(i => (double)i / timeline.Count).ToList();
+        _gapPositions = [];
 
         var camEvent = clip.Event;
         if (camEvent is null || camEvent.Timestamp == default || clip.Chunks.Count == 0 || timeline.Duration <= TimeSpan.Zero)
@@ -962,6 +1022,19 @@ public partial class MainWindowViewModel : ObservableObject
 
             case nameof(VideoPlayerController.Position):
                 UpdateSeekPositionFromController();
+                break;
+
+            case nameof(VideoPlayerController.OpenedMediaSource):
+                // The controller finished (re)building the media source for the selected clip
+                // (or one under recovery from a corrupt chunk) -- refresh the gap-aware overlays
+                // now that real probed durations/timestamps are available.
+                RecomputeSelectedClipTimeline();
+                OnPropertyChanged(nameof(EventMarkerPosition));
+                OnPropertyChanged(nameof(HasEventMarker));
+                OnPropertyChanged(nameof(EventMarkerTooltip));
+                OnPropertyChanged(nameof(ChunkBoundaries));
+                OnPropertyChanged(nameof(GapPositions));
+                JumpToEventCommand.NotifyCanExecuteChanged();
                 break;
 
             case nameof(VideoPlayerController.ErrorMessage):
@@ -1174,6 +1247,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasEventMarker));
         OnPropertyChanged(nameof(EventMarkerTooltip));
         OnPropertyChanged(nameof(ChunkBoundaries));
+        OnPropertyChanged(nameof(GapPositions));
         JumpToEventCommand.NotifyCanExecuteChanged();
 
         // Cancel any in-flight selection load so quickly arrowing through the list doesn't open every
