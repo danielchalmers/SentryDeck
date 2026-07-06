@@ -22,6 +22,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private const int MaxRecoveryAttemptsPerClip = 3;
 
+    /// <summary>
+    /// One-shot guard for the reopen/seek race after a recovery: how long to wait after issuing
+    /// the resume seek before verifying the front player actually landed near the target, and how
+    /// far below the target the reported position may sit before the seek is reissued once.
+    /// </summary>
+    private static readonly TimeSpan PostRecoverySeekVerifyDelay = TimeSpan.FromMilliseconds(500);
+
+    private static readonly TimeSpan PostRecoverySeekTolerance = TimeSpan.FromSeconds(5);
+
     private readonly ICameraPlayer _frontPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
     private readonly IClipMediaSourceBuilder _mediaSourceBuilder;
@@ -764,11 +773,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Handles the front player ending well short of <see cref="Duration"/>, which means the
-    /// concat demuxer hit a corrupt/truncated chunk and stopped early rather than reaching the
-    /// real end of the clip. Identifies the bad chunk, excludes it, and rebuilds/reopens the clip
-    /// so playback can continue past it. Gives up after <see cref="MaxRecoveryAttemptsPerClip"/>
-    /// attempts on the same clip.
+    /// Handles the front player ending (or failing) well short of <see cref="Duration"/>, which
+    /// means the concat demuxer hit a corrupt/truncated chunk and stopped early rather than
+    /// reaching the real end of the clip. Recovery is probe-first: rebuild with the current
+    /// exclusions and let the builder's per-file probe find the culprit (the demuxer reads ahead
+    /// of the presentation position, so the failure position can sit inside a healthy chunk);
+    /// only when the probe finds nothing new is the chunk containing the failure position
+    /// excluded. Gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on the same clip.
     /// </summary>
     private async Task RecoverFromPrematureEndAsync(bool wasPlaying)
     {
@@ -782,10 +793,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var failurePosition = Clamp(Position, TimeSpan.Zero, Duration);
 
-        // Find the last chunk boundary at or before the failure position; that's the chunk that
-        // stopped feeding data. Map it from the (possibly already-shrunk) opened timeline back to
-        // the original clip's chunk index by walking chunks in original order, skipping ones
-        // already excluded, and counting off entries against ChunkStarts.
+        // Find the last chunk boundary at or before the failure position; that's the chunk the
+        // failure happened inside, and where playback should resume. Map it from the (possibly
+        // already-shrunk) opened timeline back to the original clip's chunk index.
         var badChunkTimelineIndex = 0;
         for (var i = 0; i < mediaSource.ChunkStarts.Count; i++)
         {
@@ -803,33 +813,22 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             ? mediaSource.ChunkStarts[badChunkTimelineIndex]
             : TimeSpan.Zero;
 
-        var originalIndex = MapTimelineIndexToOriginalChunkIndex(clip, badChunkTimelineIndex);
+        var positionDerivedIndex = MapTimelineIndexToOriginalChunkIndex(clip, badChunkTimelineIndex);
 
-        if (originalIndex < 0
-            || !_excludedChunkIndices.Add(originalIndex)
-            || _recoveryAttempts >= MaxRecoveryAttemptsPerClip
-            || _excludedChunkIndices.Count >= clip.Chunks.Count)
+        if (_recoveryAttempts >= MaxRecoveryAttemptsPerClip)
         {
-            Log.Error(
-                "Giving up on clip playback after repeated unreadable chunks. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; Attempts={Attempts}",
-                clip.Name,
-                clip.FullPath,
-                originalIndex,
-                _recoveryAttempts);
-            ErrorMessage = "Playback stopped: too many unreadable video files.";
-            IsMediaOpen = false;
+            GiveUpOnClip(clip, positionDerivedIndex);
             return;
         }
 
         _recoveryAttempts++;
 
         Log.Warning(
-            "Premature end of playback detected; excluding chunk and resuming. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; ChunkTimestamp={ChunkTimestamp}; FailurePosition={FailurePosition}; Attempt={Attempt}",
+            "Premature end of playback detected; attempting corrupt-chunk recovery. ClipName={ClipName}; ClipPath={ClipPath}; FailurePosition={FailurePosition}; Duration={Duration}; Attempt={Attempt}",
             clip.Name,
             clip.FullPath,
-            originalIndex,
-            clip.Chunks[originalIndex].Timestamp,
             failurePosition,
+            Duration,
             _recoveryAttempts);
 
         var requestId = BeginNewRequest();
@@ -841,9 +840,55 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 if (!IsRequestActive(requestId) || clip != CurrentClip)
                     return;
 
+                // Probe-first: rebuild with the current exclusion set only. The builder re-probes
+                // every file, so a chunk that became unreadable since the last build shows up in
+                // AutoExcludedChunkIndices -- that's the real culprit, and the (possibly healthy)
+                // chunk under the failure position must NOT be excluded.
                 var newMediaSource = await Task.Run(
                     () => _mediaSourceBuilder.Build(clip, _excludedChunkIndices),
                     ct);
+
+                var probeFoundCulprits = newMediaSource.AutoExcludedChunkIndices
+                    .Any(index => !_excludedChunkIndices.Contains(index));
+
+                if (probeFoundCulprits)
+                {
+                    Log.Warning(
+                        "Probe found unreadable chunk(s); excluding them instead of the failure-position chunk. ClipName={ClipName}; ClipPath={ClipPath}; AutoExcludedChunkIndices={AutoExcludedChunkIndices}",
+                        clip.Name,
+                        clip.FullPath,
+                        newMediaSource.AutoExcludedChunkIndices);
+                }
+                else
+                {
+                    // Probe-clean corruption (moov intact, media data bad): fall back to
+                    // excluding the chunk containing the failure position and rebuild again.
+                    if (positionDerivedIndex < 0
+                        || !_excludedChunkIndices.Add(positionDerivedIndex)
+                        || _excludedChunkIndices.Count >= clip.Chunks.Count)
+                    {
+                        GiveUpOnClip(clip, positionDerivedIndex);
+                        return;
+                    }
+
+                    Log.Warning(
+                        "Probe found nothing new; excluding the chunk containing the failure position. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; ChunkTimestamp={ChunkTimestamp}",
+                        clip.Name,
+                        clip.FullPath,
+                        positionDerivedIndex,
+                        clip.Chunks[positionDerivedIndex].Timestamp);
+
+                    newMediaSource = await Task.Run(
+                        () => _mediaSourceBuilder.Build(clip, _excludedChunkIndices),
+                        ct);
+                }
+
+                if (newMediaSource.ChunkStarts.Count == 0)
+                {
+                    GiveUpOnClip(clip, positionDerivedIndex);
+                    return;
+                }
+
                 Duration = newMediaSource.Duration;
 
                 await OpenClipInternalAsync(clip, newMediaSource, playAfterOpen: false, requestId, ct);
@@ -852,13 +897,33 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     return;
 
                 var clampedResumePosition = Clamp(resumePosition, TimeSpan.Zero, Duration);
-                await SeekOpenPlayersAsync(clampedResumePosition);
-                Position = clampedResumePosition;
 
+                // Resume playback BEFORE seeking: a seek issued while paused right after open can
+                // be swallowed by the player, whereas seeks during active playback are reliable.
                 if (wasPlaying)
                 {
                     await PlayOpenPlayersAsync();
                     IsPlaying = true;
+                }
+
+                await SeekOpenPlayersAsync(clampedResumePosition);
+                Position = clampedResumePosition;
+
+                // One-shot guard against the reopen/seek race: give the player a moment and, if
+                // its reported position is still far below the resume target, reissue the seek.
+                await Task.Delay(PostRecoverySeekVerifyDelay, ct);
+
+                if (IsRequestActive(requestId)
+                    && clampedResumePosition - Position > PostRecoverySeekTolerance)
+                {
+                    Log.Warning(
+                        "Post-recovery seek did not stick; reissuing. ClipName={ClipName}; ClipPath={ClipPath}; ResumePosition={ResumePosition}; ReportedPosition={ReportedPosition}",
+                        clip.Name,
+                        clip.FullPath,
+                        clampedResumePosition,
+                        Position);
+                    await SeekOpenPlayersAsync(clampedResumePosition);
+                    Position = clampedResumePosition;
                 }
             }, replacePlaybackCts: true);
         }
@@ -875,6 +940,18 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 requestId);
             ErrorMessage = $"Playback error: {ex.Message}";
         }
+    }
+
+    private void GiveUpOnClip(CamClip clip, int badChunkIndex)
+    {
+        Log.Error(
+            "Giving up on clip playback after repeated unreadable chunks. ClipName={ClipName}; ClipPath={ClipPath}; BadChunkIndex={BadChunkIndex}; Attempts={Attempts}",
+            clip.Name,
+            clip.FullPath,
+            badChunkIndex,
+            _recoveryAttempts);
+        ErrorMessage = "Playback stopped: too many unreadable video files.";
+        IsMediaOpen = false;
     }
 
     /// <summary>

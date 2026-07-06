@@ -350,20 +350,27 @@ public sealed class VideoPlayerControllerTests
         await WaitUntilAsync(() => front.PlayCount > 0);
 
         // Duration is 3 * 60s = 180s. Ending partway through chunk 1 (at 90s, far short of 180s)
-        // means chunk 1 is the one that stopped feeding data.
+        // means chunk 1 is where playback died. All files still probe as healthy (probe-clean
+        // corruption), so recovery first rebuilds with no new exclusions (build 2), finds nothing,
+        // then falls back to excluding the failure-position chunk (build 3).
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > 1);
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
 
-        mediaSourceBuilder.ExclusionsPerBuild.Count.ShouldBe(2);
-        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBe(new HashSet<int> { 1 });
-
-        await WaitUntilAsync(() => front.PlayCount > 1);
+        mediaSourceBuilder.ExclusionsPerBuild.Count.ShouldBe(3);
+        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBeEmpty();
+        mediaSourceBuilder.ExclusionsPerBuild[2].ShouldBe(new HashSet<int> { 1 });
 
         // Resume position is chunk 1's start in the OLD timeline (60s), since everything before
         // the bad chunk is unchanged.
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(60));
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+
+        // The resume must play BEFORE seeking: a seek issued while paused right after open can
+        // be swallowed by the real player, whereas seeks during active playback are reliable.
+        front.CallLog.LastIndexOf("play").ShouldBeGreaterThan(-1);
+        front.CallLog.LastIndexOf("seek:60").ShouldBeGreaterThan(front.CallLog.LastIndexOf("play"));
+
         controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
         controller.IsPlaying.ShouldBeTrue();
         controller.ErrorMessage.ShouldBeNull();
@@ -409,17 +416,19 @@ public sealed class VideoPlayerControllerTests
 
         // Trigger 3 successful recoveries (chunks 0, 1, 2 excluded one at a time), each ending
         // partway through the earliest remaining chunk so the "bad chunk" is always chunk 0 of
-        // what's left, keeping this deterministic regardless of exact resume timing.
+        // what's left, keeping this deterministic regardless of exact resume timing. Every file
+        // probes as healthy here, so each recovery is probe-clean: a probe-first rebuild plus a
+        // fallback rebuild with the position-derived exclusion (2 builds per recovery).
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var expectedBuildCount = mediaSourceBuilder.BuildCount + 1;
+            var expectedBuildCount = mediaSourceBuilder.BuildCount + 2;
             front.RaisePositionChanged(TimeSpan.FromSeconds(30));
             front.RaiseEnded();
             await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= expectedBuildCount);
             await WaitUntilAsync(() => front.PlayCount > attempt + 1);
         }
 
-        mediaSourceBuilder.BuildCount.ShouldBe(4);
+        mediaSourceBuilder.BuildCount.ShouldBe(7);
         var buildCountBeforeFourth = mediaSourceBuilder.BuildCount;
 
         // A 4th premature end must give up rather than attempt another rebuild.
@@ -446,10 +455,11 @@ public sealed class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilAsync(() => front.PlayCount > 0);
 
-        // Trigger one recovery on the first clip so it has a non-empty exclusion set.
+        // Trigger one (probe-clean, two-build) recovery on the first clip so it has a non-empty
+        // exclusion set.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > 1);
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
         await WaitUntilAsync(() => front.PlayCount > 1);
 
         await controller.GoToClipAsync(secondClipFiles.Clip);
@@ -461,19 +471,20 @@ public sealed class VideoPlayerControllerTests
         lastExclusions.ShouldBeEmpty();
 
         // Ending the second clip prematurely should exclude relative to a fresh (empty) set, not
-        // carry over chunk 1 from the first clip.
+        // carry over chunk 1 from the first clip. Probe-clean again: wait for both rebuilds so
+        // the fallback exclusion is recorded.
         front.RaisePositionChanged(TimeSpan.FromSeconds(0));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > buildCountAfterSelectingSecondClip);
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= buildCountAfterSelectingSecondClip + 2);
 
         mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 0 });
     }
 
     [Fact]
-    public async Task FrontMediaFailed_MidClip_ExcludesBadChunkAndResumesPlayback()
+    public async Task FrontMediaFailed_MidClip_ProbeFindsRealBadChunk_KeepsHealthyChunk()
     {
-        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        using var clipFiles = TestClipFiles.Create(chunkCount: 4);
         var front = new FakeCameraPlayer();
         var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
         using var controller = CreateController(front, mediaSourceBuilder: mediaSourceBuilder);
@@ -482,18 +493,29 @@ public sealed class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilAsync(() => front.PlayCount > 0);
 
-        // A truncated chunk whose moov survived probing makes Flyleaf raise Failed (not Ended)
-        // when the concat demuxer dies mid-clip; that must route into the same recovery.
+        // Chunk 2's file becomes unreadable AFTER the clip opened (e.g. removed/truncated
+        // mid-playback); the fake's probe will auto-exclude it on the next rebuild.
+        mediaSourceBuilder.AutoExcludeChunkIndices.Add(2);
+
+        // The demuxer reads ahead of the presentation position, so Failed fires while playback
+        // is still inside HEALTHY chunk 1 (90s). Probe-first recovery must find chunk 2 via the
+        // rebuild's probe and keep chunk 1 -- excluding the chunk under the failure position
+        // would throw away a healthy minute.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > 1);
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
-        mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 1 });
+        // The probe found the culprit, so exactly one rebuild happened and no Build call ever
+        // received a position-derived (healthy-chunk) exclusion.
+        mediaSourceBuilder.BuildCount.ShouldBe(2);
+        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBeEmpty();
 
-        await WaitUntilAsync(() => front.PlayCount > 1);
+        // Chunks 0, 1, and 3 remain: healthy chunk 1 was NOT excluded.
+        controller.Duration.ShouldBe(TimeSpan.FromSeconds(180));
 
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(60));
+        // Playback resumes from the start of the chunk containing the failure position.
         controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
         controller.IsPlaying.ShouldBeTrue();
         controller.ErrorMessage.ShouldBeNull();
@@ -518,17 +540,19 @@ public sealed class VideoPlayerControllerTests
         controller.Duration.ShouldBe(TimeSpan.FromSeconds(120));
 
         // A premature end at 90s is inside timeline slot 1, which maps back to ORIGINAL chunk 2
-        // (not 1) because the auto-exclusion must be accounted for in the mapping.
+        // (not 1) because the auto-exclusion must be accounted for in the mapping. Chunk 1 is
+        // already excluded, so the probe-first rebuild reports nothing new (probe-clean) and the
+        // fallback rebuild carries the position-derived exclusion.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount > 1);
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
 
-        mediaSourceBuilder.ExclusionsPerBuild[^1].ShouldBe(new HashSet<int> { 1, 2 });
+        mediaSourceBuilder.ExclusionsPerBuild[1].ShouldBe(new HashSet<int> { 1 });
+        mediaSourceBuilder.ExclusionsPerBuild[2].ShouldBe(new HashSet<int> { 1, 2 });
 
-        await WaitUntilAsync(() => front.PlayCount > 1);
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(60));
         controller.ErrorMessage.ShouldBeNull();
         controller.IsMediaOpen.ShouldBeTrue();
     }

@@ -28,7 +28,10 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
     public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
         BuildCount++;
-        ExclusionsPerBuild.Add(excludedChunkIndices ?? new HashSet<int>());
+
+        // Snapshot the set: the controller passes (and later mutates) its live exclusion set,
+        // so recording the reference would retroactively rewrite earlier entries.
+        ExclusionsPerBuild.Add(excludedChunkIndices is null ? [] : new HashSet<int>(excludedChunkIndices));
 
         var autoExcludedIndices = Enumerable.Range(0, clip.Chunks.Count)
             .Where(index => AutoExcludeChunkIndices.Contains(index)

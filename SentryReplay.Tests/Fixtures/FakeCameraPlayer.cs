@@ -13,6 +13,12 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
 
     public List<string> OpenedPaths { get; } = [];
     public List<TimeSpan> SeekPositions { get; } = [];
+
+    /// <summary>
+    /// Ordered log of play/pause/seek calls so tests can assert on call ordering
+    /// (e.g. that a post-recovery resume plays before it seeks).
+    /// </summary>
+    public List<string> CallLog { get; } = [];
     public bool OpenResult { get; init; } = true;
     public bool ThrowOnStop { get; init; }
     public TaskCompletionSource<object> StopGate { get; set; }
@@ -40,12 +46,14 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     public Task PlayAsync()
     {
         PlayCount++;
+        CallLog.Add("play");
         return Task.CompletedTask;
     }
 
     public Task PauseAsync()
     {
         PauseCount++;
+        CallLog.Add("pause");
         return Task.CompletedTask;
     }
 
@@ -72,6 +80,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     public Task SeekAsync(TimeSpan position)
     {
         SeekPositions.Add(position);
+        CallLog.Add($"seek:{position.TotalSeconds}");
         PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
         return Task.CompletedTask;
     }
