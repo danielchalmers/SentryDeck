@@ -1225,6 +1225,90 @@ public sealed class MainWindowViewModelTests
         vm.SaveEventClipCommand.CanExecute(ClipWithChunksAndEvent(1, TimeSpan.FromSeconds(10))).ShouldBeTrue();
     }
 
+    [Fact]
+    public void SpeedStepper_WalksTheLadder_AndClampsAtTheEnds()
+    {
+        var vm = CreateViewModel();
+        vm.PlaybackSpeed.ShouldBe(1.0);
+
+        vm.IncreaseSpeedCommand.Execute(null);
+        vm.PlaybackSpeed.ShouldBe(1.25);
+
+        // Run the ladder up: it must stop at the top step (Flyleaf's 16x clamp).
+        for (var i = 0; i < 20; i++)
+            vm.IncreaseSpeedCommand.Execute(null);
+        vm.PlaybackSpeed.ShouldBe(16.0);
+        vm.CanIncreaseSpeed.ShouldBeFalse();
+        vm.IncreaseSpeedCommand.CanExecute(null).ShouldBeFalse();
+
+        // And back down to the bottom step.
+        for (var i = 0; i < 20; i++)
+            vm.DecreaseSpeedCommand.Execute(null);
+        vm.PlaybackSpeed.ShouldBe(0.25);
+        vm.CanDecreaseSpeed.ShouldBeFalse();
+        vm.DecreaseSpeedCommand.CanExecute(null).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ResetSpeed_ReturnsToRealtime()
+    {
+        var vm = CreateViewModel();
+        vm.PlaybackSpeed = 8.0;
+
+        vm.ResetSpeedCommand.Execute(null);
+
+        vm.PlaybackSpeed.ShouldBe(1.0);
+    }
+
+    [Theory]
+    [InlineData(0.25, "0.25x")]
+    [InlineData(1.0, "1x")]
+    [InlineData(1.5, "1.5x")]
+    [InlineData(16.0, "16x")]
+    public void PlaybackSpeedText_FormatsCompactly(double speed, string expected)
+    {
+        var vm = CreateViewModel();
+
+        vm.PlaybackSpeed = speed;
+
+        vm.PlaybackSpeedText.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task SpeedShortcuts_StepTheLadder()
+    {
+        var vm = CreateViewModel();
+
+        (await vm.HandleKeyDownAsync(Key.OemPeriod, ModifierKeys.Shift)).ShouldBeTrue();
+        vm.PlaybackSpeed.ShouldBe(1.25);
+
+        (await vm.HandleKeyDownAsync(Key.OemComma, ModifierKeys.Shift)).ShouldBeTrue();
+        (await vm.HandleKeyDownAsync(Key.OemComma, ModifierKeys.Shift)).ShouldBeTrue();
+        vm.PlaybackSpeed.ShouldBe(0.75);
+    }
+
+    [Fact]
+    public async Task SpeedShortcuts_DoNotActBehindAboutPage()
+    {
+        var vm = CreateViewModel();
+        vm.ShowAboutPage = true;
+
+        var handled = await vm.HandleKeyDownAsync(Key.OemPeriod, ModifierKeys.Shift);
+
+        handled.ShouldBeFalse();
+        vm.PlaybackSpeed.ShouldBe(1.0);
+    }
+
+    [Fact]
+    public void ChangingSpeed_FlowsToTheController()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+
+        vm.PlaybackSpeed = 4.0;
+
+        controller.PlaybackSpeed.ShouldBe(4.0);
+    }
+
     // Controller-backed tests deliberately keep every controller property change on the test thread.
     // The VM captures Dispatcher.CurrentDispatcher in its constructor and there is no pumped dispatcher
     // here, so RunOnUiThread stays deadlock-free only while CheckAccess() is true (same thread). Don't add

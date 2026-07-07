@@ -1656,34 +1656,43 @@
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </TextBlock>
 
-                        <!--  Playback speed: the speedometer glyph sits inside the combo (left, over the padded content) so it clearly labels the control.  -->
-                        <Grid Grid.Column="4"
-                              Margin="16,0,0,0"
-                              VerticalAlignment="Center">
-                            <ComboBox Width="108"
-                                      Height="32"
-                                      Padding="28,0,0,0"
-                                      VerticalAlignment="Center"
-                                      VerticalContentAlignment="Center"
-                                      AutomationProperties.Name="Playback speed"
-                                      ItemsSource="{Binding PlaybackSpeedOptions}"
-                                      SelectedItem="{Binding SelectedPlaybackSpeed, Mode=TwoWay}"
-                                      ToolTip="Playback speed">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding StringFormat={}{0:0.##}x}" />
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <TextBlock Text="&#xEC57;"
-                                       Margin="10,0,0,0"
-                                       HorizontalAlignment="Left"
-                                       VerticalAlignment="Center"
-                                       FontSize="15"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       IsHitTestVisible="False"
-                                       Style="{StaticResource AppGlyph}" />
-                        </Grid>
+                        <!--  Playback speed stepper: walks a fixed ladder (0.25x to 16x, Flyleaf's ceiling)
+                              instead of listing every speed in a dropdown. Click the readout to reset to 1x.  -->
+                        <StackPanel Grid.Column="4"
+                                    Margin="16,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal">
+                            <Button Command="{Binding DecreaseSpeedCommand}"
+                                    AutomationProperties.Name="Slower"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Slower (Shift+,)">
+                                <TextBlock Text="&#xE738;"
+                                           FontSize="13"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+                            <Button MinWidth="72"
+                                    Command="{Binding ResetSpeedCommand}"
+                                    AutomationProperties.Name="Playback speed"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Playback speed — click to reset to 1x">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xEC57;"
+                                               FontSize="15"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               Style="{StaticResource AppGlyphInButton}" />
+                                    <TextBlock Text="{Binding PlaybackSpeedText}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding IncreaseSpeedCommand}"
+                                    AutomationProperties.Name="Faster"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Faster (Shift+.)">
+                                <TextBlock Text="&#xE710;"
+                                           FontSize="13"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+                        </StackPanel>
                     </Grid>
                     </Border>
                 </StackPanel>
@@ -1889,6 +1898,16 @@
                                         <TextBlock Text="." Style="{StaticResource KeycapText}" />
                                     </Border>
                                     <TextBlock Text="Step one frame back / forward" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="Shift" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text=", / ." Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Slower / faster playback" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,8"
                                             Orientation="Horizontal">
