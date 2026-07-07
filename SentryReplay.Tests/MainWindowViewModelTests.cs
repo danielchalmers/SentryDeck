@@ -960,6 +960,30 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void TrimCommands_ReEnableWhenLoadingEndsLast()
+    {
+        // Mirrors the real clip-open order: the controller reports Duration and IsMediaOpen while
+        // the view-model is still loading, so CanSeek only becomes true when IsLoading flips off.
+        // Every CanSeek-gated command must be re-queried on that final transition — the Trim
+        // button shipped permanently disabled because it wasn't.
+        var vm = CreateViewModelWithController(out var controller, out _);
+        vm.IsLoading = true;
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        var trimCanExecuteChanged = false;
+        vm.ToggleTrimmingCommand.CanExecuteChanged += (_, _) => trimCanExecuteChanged = true;
+
+        vm.IsLoading = false;
+
+        vm.CanSeek.ShouldBeTrue();
+        trimCanExecuteChanged.ShouldBeTrue();
+        vm.ToggleTrimmingCommand.CanExecute(null).ShouldBeTrue();
+        vm.MarkSelectionStartCommand.CanExecute(null).ShouldBeTrue();
+        vm.MarkSelectionEndCommand.CanExecute(null).ShouldBeTrue();
+    }
+
+    [Fact]
     public void MarkingAPoint_OpensTheTrimPanel()
     {
         var vm = CreateViewModelWithController(out var controller, out _);

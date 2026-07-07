@@ -401,6 +401,7 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
     [NotifyCanExecuteChangedFor(nameof(MarkSelectionStartCommand))]
     [NotifyCanExecuteChangedFor(nameof(MarkSelectionEndCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleTrimmingCommand))]
     [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
     private bool _isLoading;
 
