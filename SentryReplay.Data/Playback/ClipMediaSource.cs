@@ -110,7 +110,62 @@ public sealed record class ClipMediaSource(
 
         return wallClock == lastChunkEnd ? ChunkStarts[lastIndex] + ChunkDurations[lastIndex] : null;
     }
+
+    /// <summary>
+    /// Maps a media-time range onto the included chunks: one segment per chunk the (clamped)
+    /// range overlaps, identified by the chunk's wall-clock timestamp. <see cref="ClipTrimSegment.InPoint"/>
+    /// and <see cref="ClipTrimSegment.OutPoint"/> are offsets within that chunk, null when the
+    /// range covers the chunk from its start / to its end. Empty when the range is empty, lies
+    /// entirely outside the clip, or timestamp/duration data wasn't supplied.
+    /// </summary>
+    public IReadOnlyList<ClipTrimSegment> GetTrimSegments(TimeSpan start, TimeSpan end)
+    {
+        if (ChunkTimestamps.Count == 0 || ChunkStarts.Count != ChunkTimestamps.Count || ChunkDurations.Count != ChunkTimestamps.Count)
+        {
+            return [];
+        }
+
+        if (start < TimeSpan.Zero)
+        {
+            start = TimeSpan.Zero;
+        }
+
+        if (end > Duration)
+        {
+            end = Duration;
+        }
+
+        if (end <= start)
+        {
+            return [];
+        }
+
+        var segments = new List<ClipTrimSegment>();
+
+        for (var i = 0; i < ChunkStarts.Count; i++)
+        {
+            var chunkStart = ChunkStarts[i];
+            var chunkEnd = chunkStart + ChunkDurations[i];
+
+            if (chunkEnd <= start || chunkStart >= end)
+            {
+                continue;
+            }
+
+            TimeSpan? inPoint = start > chunkStart ? start - chunkStart : null;
+            TimeSpan? outPoint = end < chunkEnd ? end - chunkStart : null;
+            segments.Add(new ClipTrimSegment(ChunkTimestamps[i], inPoint, outPoint));
+        }
+
+        return segments;
+    }
 }
+
+/// <summary>
+/// One chunk's share of a trimmed media-time range: the chunk (by wall-clock timestamp, the
+/// stable key back into <see cref="CamClip.Chunks"/>) plus the optional in/out offsets within it.
+/// </summary>
+public sealed record class ClipTrimSegment(DateTime ChunkTimestamp, TimeSpan? InPoint, TimeSpan? OutPoint);
 
 /// <summary>
 /// Builds a <see cref="ClipMediaSource"/> for a clip.

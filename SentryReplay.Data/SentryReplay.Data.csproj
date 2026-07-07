@@ -4,4 +4,8 @@
     <PackageReference Include="Serilog" Version="4.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SentryReplay.Tests" />
+  </ItemGroup>
+
 </Project>
