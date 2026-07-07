@@ -1078,6 +1078,14 @@ public partial class MainWindowViewModel : ObservableObject
             return true;
         }
 
+        // The About/Help page replaces the player, so playback/camera/trim shortcuts must not act
+        // on the hidden player behind it. (F1/Esc page navigation lives in the view's PreviewKeyDown,
+        // and the search shortcut above intentionally still leaves the page.)
+        if (ShowAboutPage)
+        {
+            return false;
+        }
+
         // Number keys 1-5 switch camera views (Grid / Front / Rear / Left / Right).
         if (modifiers == ModifierKeys.None)
         {
