@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Navigation;
+using System.Windows.Threading;
 using FlyleafLib.Controls.WPF;
 using Serilog;
 
@@ -128,6 +129,16 @@ public partial class MainWindow : Window
         // the button-down handled suppresses the ListBox's right-click selection; the context menu still
         // opens on button-up and targets the right-clicked item via its PlacementTarget.
         e.Handled = true;
+    }
+
+    private void ClipListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        // A left-click selects a clip but leaves keyboard focus on the ListBoxItem, which then
+        // swallows Space/arrows before they bubble to Window_KeyDown — so playback shortcuts die
+        // after clicking a clip. Re-park focus on the neutral VideoContainer (same fix the camera
+        // tiles use). Deferred to Input priority because the ListBox's own click handling re-takes
+        // focus after this handler; mouse-only so Tab/arrow keyboard navigation of the list still works.
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Keyboard.Focus(VideoContainer)));
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)

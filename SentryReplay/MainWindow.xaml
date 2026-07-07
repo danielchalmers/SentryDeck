@@ -614,6 +614,7 @@
                          BorderThickness="0"
                          IsSynchronizedWithCurrentItem="False"
                          ItemsSource="{Binding Source={StaticResource GroupedClips}}"
+                         PreviewMouseLeftButtonUp="ClipListBox_PreviewMouseLeftButtonUp"
                          PreviewMouseRightButtonDown="ClipListBox_PreviewMouseRightButtonDown"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
