@@ -114,7 +114,11 @@ public partial class MainWindowViewModel : ObservableObject
         ? $"Version {LatestVersionText} is available."
         : "No newer release was found.";
 
-    public IReadOnlyList<double> PlaybackSpeedOptions { get; } =
+    /// <summary>
+    /// Ladder the speed stepper walks: fine increments around 1x, doubling above.
+    /// Flyleaf clamps Player.Speed to [0.125, 16], so 16x is the hard ceiling.
+    /// </summary>
+    public static IReadOnlyList<double> PlaybackSpeedSteps { get; } =
     [
         0.25,
         0.5,
@@ -123,9 +127,17 @@ public partial class MainWindowViewModel : ObservableObject
         1.25,
         1.5,
         2.0,
-        3.0,
         4.0,
+        8.0,
+        16.0,
     ];
+
+    /// <summary>Speed readout shown on the stepper, e.g. "1x" or "0.25x".</summary>
+    public string PlaybackSpeedText => $"{PlaybackSpeed:0.##}x";
+
+    public bool CanIncreaseSpeed => PlaybackSpeed < PlaybackSpeedSteps[^1];
+
+    public bool CanDecreaseSpeed => PlaybackSpeed > PlaybackSpeedSteps[0];
 
     public IReadOnlyList<CamClip> FilteredClips => _allClips
         .Where(MatchesFilter)
@@ -431,7 +443,12 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isPlaying;
 
     [ObservableProperty]
-    private double _selectedPlaybackSpeed = 1.0;
+    [NotifyPropertyChangedFor(nameof(PlaybackSpeedText))]
+    [NotifyPropertyChangedFor(nameof(CanIncreaseSpeed))]
+    [NotifyPropertyChangedFor(nameof(CanDecreaseSpeed))]
+    [NotifyCanExecuteChangedFor(nameof(IncreaseSpeedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DecreaseSpeedCommand))]
+    private double _playbackSpeed = 1.0;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsGridViewSelected))]
@@ -504,7 +521,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         _playerController = _playerControllerFactory();
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
-        _playerController.PlaybackSpeed = SelectedPlaybackSpeed;
+        _playerController.PlaybackSpeed = PlaybackSpeed;
     }
 
     public async Task LoadClipsAsync(IEnumerable<string> roots, TimeSpan minimumLoadingDuration = default)
@@ -1136,6 +1153,23 @@ public partial class MainWindowViewModel : ObservableObject
             return true;
         }
 
+        // Shift+, / Shift+. (i.e. < / >) step the playback speed, YouTube-style. Unmodified
+        // , / . remain frame-step below.
+        if (modifiers == ModifierKeys.Shift)
+        {
+            if (key == Key.OemComma)
+            {
+                DecreaseSpeed();
+                return true;
+            }
+
+            if (key == Key.OemPeriod)
+            {
+                IncreaseSpeed();
+                return true;
+            }
+        }
+
         if (_playerController is null)
         {
             return false;
@@ -1640,7 +1674,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    partial void OnSelectedPlaybackSpeedChanged(double value)
+    partial void OnPlaybackSpeedChanged(double value)
     {
         if (_playerController is not null)
         {
@@ -1648,4 +1682,15 @@ public partial class MainWindowViewModel : ObservableObject
             _playerController.PlaybackSpeed = value;
         }
     }
+
+    [RelayCommand(CanExecute = nameof(CanIncreaseSpeed))]
+    private void IncreaseSpeed() =>
+        PlaybackSpeed = PlaybackSpeedSteps.FirstOrDefault(step => step > PlaybackSpeed, PlaybackSpeedSteps[^1]);
+
+    [RelayCommand(CanExecute = nameof(CanDecreaseSpeed))]
+    private void DecreaseSpeed() =>
+        PlaybackSpeed = PlaybackSpeedSteps.LastOrDefault(step => step < PlaybackSpeed, PlaybackSpeedSteps[0]);
+
+    [RelayCommand]
+    private void ResetSpeed() => PlaybackSpeed = 1.0;
 }
