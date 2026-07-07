@@ -368,6 +368,35 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task Dispose_WhileOperationInFlight_DoesNotThrow()
+    {
+        using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondClipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front);
+
+        controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => front.PlayCount > 0);
+
+        // Hold the clip-change operation in flight -- it stops the current clip inside the serialized
+        // operation lock, so the lock is held while we dispose.
+        front.StopGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var changeClipTask = controller.GoToClipAsync(secondClipFiles.Clip);
+        await WaitUntilAsync(() => front.StopCount > 0);
+
+        // Closing the window disposes the controller (and its operation lock) mid-operation.
+        controller.Dispose();
+
+        // Let the in-flight operation finish. Before the fix, releasing the now-disposed operation
+        // lock threw ObjectDisposedException, which surfaced through the awaited task.
+        front.StopGate.SetResult(null);
+        await changeClipTask;
+
+        front.DisposeCount.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task LoadClipsAsync_StopsCurrentPlaybackAndResetsSelection()
     {
         using var firstClipFiles = TestClipFiles.Create(chunkCount: 1);
