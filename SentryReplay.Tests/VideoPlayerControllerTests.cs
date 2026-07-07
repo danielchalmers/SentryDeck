@@ -216,7 +216,7 @@ public sealed class VideoPlayerControllerTests
         front.RaisePositionChanged(duration);
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => !controller.IsMediaOpen);
+        await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
         // The whole clip is one playlist per camera opened once; hitting the end of the
         // playlist must not trigger another OpenAsync call (that would be the old per-chunk stall).
@@ -224,6 +224,8 @@ public sealed class VideoPlayerControllerTests
         mediaSourceBuilder.BuildCount.ShouldBe(1);
         controller.Position.ShouldBe(duration);
         controller.IsPlaying.ShouldBeFalse();
+        // The media stays open at the end so the scrubber and frame-step remain usable.
+        controller.IsMediaOpen.ShouldBeTrue();
     }
 
     [Fact]
@@ -245,7 +247,7 @@ public sealed class VideoPlayerControllerTests
         front.RaisePositionChanged(duration);
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => !controller.IsMediaOpen);
+        await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
         // No auto-advance: the user stays on the finished clip (most likely to replay it), and
         // the next clip is never opened or built. Next remains an explicit action.
@@ -254,6 +256,8 @@ public sealed class VideoPlayerControllerTests
         controller.Position.ShouldBe(duration);
         controller.IsPlaying.ShouldBeFalse();
         controller.CanGoNext.ShouldBeTrue();
+        // The media stays open at the end so the scrubber and frame-step remain usable.
+        controller.IsMediaOpen.ShouldBeTrue();
     }
 
     [Fact]
@@ -442,11 +446,13 @@ public sealed class VideoPlayerControllerTests
         front.RaisePositionChanged(duration - TimeSpan.FromMilliseconds(500));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => !controller.IsMediaOpen);
+        await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
         mediaSourceBuilder.BuildCount.ShouldBe(1);
         controller.Position.ShouldBe(duration);
         controller.IsPlaying.ShouldBeFalse();
+        // The media stays open at the end so the scrubber and frame-step remain usable.
+        controller.IsMediaOpen.ShouldBeTrue();
     }
 
     [Fact]

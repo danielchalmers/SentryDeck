@@ -947,9 +947,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         // Deliberately no auto-advance to the next clip: each clip is its own incident, and the
         // most likely follow-up to watching one is replaying it, not being yanked to the next.
-        // Playback simply finishes; Next/Previous remain explicit user actions.
+        // Playback simply parks at the end. The media stays open (IsMediaOpen unchanged) so the
+        // scrubber and frame-step remain usable to review the final moments, and PlayAsync replays
+        // from the start when pressed at the end. Next/Previous remain explicit user actions.
         Position = Duration;
-        IsMediaOpen = false;
     }
 
     /// <summary>
