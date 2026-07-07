@@ -14,7 +14,7 @@ Review Tesla dashcam and Sentry Mode footage on Windows.
 - **Every angle** — watch a 2×2 grid or any single camera, with live previews of all four. Click a preview to switch.
 - **Finds your footage** — auto-detects the `TeslaCam` folder on a connected USB drive, or point it at any folder.
 - **Smooth playback** — variable speed (0.25×–4×), scrubbing, and previous/next clip navigation.
-- **Cut & share** — mark an in/out range on the seek bar (`I`/`O`) and export it as a single MP4, or right-click a clip to save ±30s around its event. Lossless and instant — no re-encoding.
+- **Cut & share** — hit **Trim**, mark the start and end, and export that section as a single MP4, or right-click a clip to save ±30s around its event. Lossless and instant — no re-encoding.
 
 ## Install
 

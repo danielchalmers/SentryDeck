@@ -1392,11 +1392,115 @@
                     </Border>
                 </Grid>
 
-                <!--  Player Controls: transport · jump-to-event · scrubber · time · speed, one row  -->
-                <Border Grid.Row="1"
-                        Padding="16,10"
-                        Background="{DynamicResource LayerFillColorDefaultBrush}">
-                    <Grid>
+                <StackPanel Grid.Row="1">
+                    <!--
+                        Trim panel: appears above the player controls while cutting a range.
+                        Deliberately wordy — labeled steps plus a hint line that walks through
+                        start → end → export, so the feature needs no manual. All state lives in
+                        the view-model (IsTrimming + the selection marks); closing always discards
+                        the marks.
+                    -->
+                    <Border Padding="16,10"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,1"
+                            Visibility="{Binding IsTrimming, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0"
+                                        Margin="0,0,14,0"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal">
+                                <TextBlock Text="&#xE8C6;"
+                                           Margin="0,0,8,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Style="{StaticResource AppGlyph}" />
+                                <TextBlock Text="Trim clip"
+                                           VerticalAlignment="Center"
+                                           FontWeight="SemiBold" />
+                            </StackPanel>
+
+                            <Button Grid.Column="1"
+                                    Command="{Binding MarkSelectionStartCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Set start"
+                                    Style="{StaticResource DefaultButtonStyle}"
+                                    ToolTip="Mark the start of the cut at the playhead (I)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="["
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Consolas"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="Set start"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button Grid.Column="2"
+                                    Command="{Binding MarkSelectionEndCommand}"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Set end"
+                                    Style="{StaticResource DefaultButtonStyle}"
+                                    ToolTip="Mark the end of the cut at the playhead (O)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="]"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Consolas"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="Set end"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <!--  Live guidance: which step is next, then the selected length.  -->
+                            <TextBlock Grid.Column="3"
+                                       Text="{Binding TrimHintText}"
+                                       Margin="16,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+
+                            <Button Grid.Column="4"
+                                    Command="{Binding ExportSelectionCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Export trimmed clip"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    ToolTip="Save the marked section as an MP4 — lossless and instant (Ctrl+E)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE792;"
+                                               Style="{StaticResource AppGlyphInButton}" />
+                                    <TextBlock Text="Export…"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button Grid.Column="5"
+                                    Content="Cancel"
+                                    Command="{Binding CancelTrimCommand}"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Cancel trim"
+                                    Style="{StaticResource DefaultButtonStyle}"
+                                    ToolTip="Close and discard the marks (Esc)" />
+                        </Grid>
+                    </Border>
+
+                    <!--  Player Controls: transport · event/trim · scrubber · time · speed, one row  -->
+                    <Border Padding="16,10"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}">
+                        <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
@@ -1477,63 +1581,49 @@
                             </Button>
                         </StackPanel>
 
-                        <!--  Jump-to-event + export selection cluster  -->
+                        <!--
+                            Event + Trim cluster. Unlike the transport icons (universal player
+                            symbols), these two are app-specific actions, so they carry text
+                            labels; a divider separates them from the transport cluster.
+                        -->
                         <StackPanel Grid.Column="1"
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal">
+                            <Rectangle Width="1"
+                                       Height="24"
+                                       Margin="14,0,4,0"
+                                       VerticalAlignment="Center"
+                                       Fill="{DynamicResource DividerStrokeColorDefaultBrush}" />
+
                             <!--  Jump straight to the moment the incident happened  -->
                             <Button Command="{Binding JumpToEventCommand}"
-                                    Margin="14,0,0,0"
+                                    Margin="10,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Jump to event"
                                     IsEnabled="{Binding HasEventMarker}"
                                     Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Jump to event (E)">
-                                <TextBlock Text="&#xE7C1;"
-                                           Style="{StaticResource AppGlyph}" />
+                                    ToolTip="Jump to the moment the event fired (E)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE7C1;"
+                                               Style="{StaticResource AppGlyphInButton}" />
+                                    <TextBlock Text="Event"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
                             </Button>
 
-                            <!--  Mark an in/out range on the seek bar, then export it losslessly.  -->
-                            <Button Command="{Binding MarkSelectionStartCommand}"
-                                    Margin="10,0,0,0"
+                            <!--  Opens the trim panel (above this bar) for cutting a shareable MP4.  -->
+                            <Button Command="{Binding ToggleTrimmingCommand}"
+                                    Margin="6,0,0,0"
                                     VerticalAlignment="Center"
-                                    AutomationProperties.Name="Mark selection start"
+                                    AutomationProperties.Name="Trim clip"
                                     Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Mark selection start here (I)">
-                                <TextBlock Text="["
-                                           FontFamily="Consolas"
-                                           FontSize="16"
-                                           FontWeight="SemiBold" />
-                            </Button>
-
-                            <Button Command="{Binding MarkSelectionEndCommand}"
-                                    VerticalAlignment="Center"
-                                    AutomationProperties.Name="Mark selection end"
-                                    Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Mark selection end here (O)">
-                                <TextBlock Text="]"
-                                           FontFamily="Consolas"
-                                           FontSize="16"
-                                           FontWeight="SemiBold" />
-                            </Button>
-
-                            <Button Command="{Binding ClearSelectionCommand}"
-                                    VerticalAlignment="Center"
-                                    AutomationProperties.Name="Clear selection"
-                                    Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Clear selection"
-                                    Visibility="{Binding HasAnySelectionMark, Converter={local:BoolToVisibilityConverter}}">
-                                <TextBlock Text="&#xE711;"
-                                           Style="{StaticResource AppGlyph}" />
-                            </Button>
-
-                            <Button Command="{Binding ExportSelectionCommand}"
-                                    VerticalAlignment="Center"
-                                    AutomationProperties.Name="Export selection"
-                                    Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Export selection as MP4 — lossless, no re-encode (Ctrl+E)">
-                                <TextBlock Text="&#xE792;"
-                                           Style="{StaticResource AppGlyph}" />
+                                    ToolTip="Cut a section of this clip to share (I / O to mark)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8C6;"
+                                               Style="{StaticResource AppGlyphInButton}" />
+                                    <TextBlock Text="Trim"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
                             </Button>
                         </StackPanel>
 
@@ -1594,7 +1684,8 @@
                                        Style="{StaticResource AppGlyph}" />
                         </Grid>
                     </Grid>
-                </Border>
+                    </Border>
+                </StackPanel>
             </Grid>
         </Grid>
 
@@ -1820,16 +1911,23 @@
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="O" Style="{StaticResource KeycapText}" />
                                     </Border>
-                                    <TextBlock Text="Mark selection start / end" Style="{StaticResource AboutShortcutLabel}" />
+                                    <TextBlock Text="Mark the trim start / end" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="Ctrl" Style="{StaticResource KeycapText}" />
                                     </Border>
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="E" Style="{StaticResource KeycapText}" />
                                     </Border>
-                                    <TextBlock Text="Export the selection as MP4" Style="{StaticResource AboutShortcutLabel}" />
+                                    <TextBlock Text="Export the trimmed section as MP4" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="Esc" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Cancel the trim" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                             </StackPanel>
 

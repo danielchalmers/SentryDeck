@@ -960,6 +960,93 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void MarkingAPoint_OpensTheTrimPanel()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.IsTrimming.ShouldBeFalse();
+
+        vm.SeekPosition = 0.3;
+        vm.MarkSelectionStartCommand.Execute(null);
+
+        vm.IsTrimming.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ToggleTrimming_OpensEmpty_AndClosingDiscardsTheMarks()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.ToggleTrimmingCommand.Execute(null);
+        vm.IsTrimming.ShouldBeTrue();
+        vm.HasAnySelectionMark.ShouldBeFalse();
+
+        vm.SeekPosition = 0.3;
+        vm.MarkSelectionStartCommand.Execute(null);
+
+        vm.ToggleTrimmingCommand.Execute(null); // acts as cancel while open
+
+        vm.IsTrimming.ShouldBeFalse();
+        vm.HasAnySelectionMark.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void CancelTrim_ClosesThePanelAndDiscardsTheMarks()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.SeekPosition = 0.3;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.SeekPosition = 0.7;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+        vm.CancelTrimCommand.Execute(null);
+
+        vm.IsTrimming.ShouldBeFalse();
+        vm.HasAnySelectionMark.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void TrimPanel_ClosesWhenAnotherClipIsSelected()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.ToggleTrimmingCommand.Execute(null);
+        vm.SelectedClip = TestClips.Create(1)[0];
+
+        vm.IsTrimming.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void TrimHintText_WalksThroughStartEndExport()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(2);
+        controller.IsMediaOpen = true;
+
+        vm.TrimHintText.ShouldContain("set the start");
+
+        vm.SeekPosition = 0.25;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.TrimHintText.ShouldContain("set the end");
+
+        vm.SeekPosition = 0.75;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+        // Half of a 2:00 clip is selected.
+        vm.SelectionDurationText.ShouldBe("1:00");
+        vm.TrimHintText.ShouldBe("1:00 selected — ready to export.");
+    }
+
+    [Fact]
     public void MarkSelection_RequiresSeekableMedia()
     {
         var vm = CreateViewModel();
