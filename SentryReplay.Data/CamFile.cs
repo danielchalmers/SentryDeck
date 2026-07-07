@@ -52,7 +52,14 @@ public partial record class CamFile
             return null;
         }
 
-        var timestamp = DateTime.ParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
+        // The regex only checks digit counts, so a pattern-valid but calendar-invalid name
+        // (e.g. month 13) reaches here; TryParseExact skips it instead of throwing and aborting
+        // the whole scan.
+        if (!DateTime.TryParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var timestamp))
+        {
+            return null;
+        }
+
         var camera = match.Groups["camera"].Value;
         return new CamFile(path, timestamp, camera);
     }

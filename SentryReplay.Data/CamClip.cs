@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Serilog;
 
 namespace SentryReplay;
 
@@ -59,9 +60,10 @@ public partial record class CamClip
         DateTime timestamp = default;
 
         var match = FolderNameRegex().Match(title);
-        if (match.Success)
+        if (match.Success
+            && DateTime.TryParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var folderTimestamp))
         {
-            timestamp = DateTime.ParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
+            timestamp = folderTimestamp;
             title = timestamp.ToString(CultureInfo.InvariantCulture);
         }
         else if (eventData?.Timestamp != default)
@@ -85,11 +87,28 @@ public partial record class CamClip
     {
         foreach (var directory in EnumerateClipCandidates(rootDirectory))
         {
-            var clip = Map(directory);
+            var clip = TryMap(directory);
             if (clip is not null)
             {
                 yield return clip;
             }
+        }
+    }
+
+    /// <summary>
+    /// Maps one folder, skipping (and logging) any folder that can't be read so a single bad
+    /// clip never discards the rest of the library.
+    /// </summary>
+    private static CamClip TryMap(string directory)
+    {
+        try
+        {
+            return Map(directory);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Skipping unreadable clip folder. Folder={Folder}", directory);
+            return null;
         }
     }
 
@@ -117,7 +136,15 @@ public partial record class CamClip
     {
         yield return rootDirectory;
 
-        foreach (var directory in Directory.EnumerateDirectories(rootDirectory, "*", SearchOption.AllDirectories))
+        // IgnoreInaccessible so one ACL-denied subfolder (e.g. System Volume Information at a
+        // drive root) is skipped rather than aborting the entire scan.
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            IgnoreInaccessible = true,
+        };
+
+        foreach (var directory in Directory.EnumerateDirectories(rootDirectory, "*", options))
         {
             yield return directory;
         }
