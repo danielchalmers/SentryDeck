@@ -276,6 +276,24 @@ public sealed class MainWindowViewModelTests
     }
 
     [Theory]
+    [InlineData(Key.D4, ModifierKeys.None)]     // camera view (would otherwise switch to Left)
+    [InlineData(Key.Space, ModifierKeys.None)]  // play / pause
+    [InlineData(Key.I, ModifierKeys.None)]      // trim mark-in
+    public async Task AboutPage_SwallowsPlayerShortcuts(Key key, ModifierKeys modifiers)
+    {
+        var vm = CreateViewModel();
+        vm.ShowAboutPage = true;
+        var cameraViewBefore = vm.SelectedCameraView;
+
+        var handled = await vm.HandleKeyDownAsync(key, modifiers);
+
+        handled.ShouldBeFalse();
+        vm.SelectedCameraView.ShouldBe(cameraViewBefore); // no camera switch behind the About page
+        vm.IsTrimming.ShouldBeFalse();
+        vm.ShowAboutPage.ShouldBeTrue(); // the page stays open
+    }
+
+    [Theory]
     [InlineData(Key.Space, ModifierKeys.None)]
     [InlineData(Key.Left, ModifierKeys.None)]
     [InlineData(Key.A, ModifierKeys.None)]
