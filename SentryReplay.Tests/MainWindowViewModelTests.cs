@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.Input;
 
 namespace SentryReplay.Tests;
 
@@ -799,7 +800,9 @@ public sealed class MainWindowViewModelTests
     // on the wait here (instead of awaiting it) keeps everything, including the VM construction
     // and every later test action, pinned to the single calling thread.
     private static (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateViewModelWithOpenedClip(
-        CamClip clip)
+        CamClip clip,
+        IClipExporter clipExporter = null,
+        Func<string, string> savePathPicker = null)
     {
         var front = new FakeCameraPlayer();
         var built = new VideoPlayerController(front, new FakeCameraPlayer(), new FakeCameraPlayer(), new FakeCameraPlayer());
@@ -808,7 +811,14 @@ public sealed class MainWindowViewModelTests
         built.Playlist.MoveTo(0);
         WaitUntilAsync(() => front.PlayCount > 0 && built.IsMediaOpen && !built.IsLoading).GetAwaiter().GetResult();
 
-        var vm = new MainWindowViewModel(() => built, backgroundYield: () => Task.CompletedTask);
+        var vm = new MainWindowViewModel(
+            () => built,
+            backgroundYield: () => Task.CompletedTask,
+            clipExporter: clipExporter,
+            savePathPicker: savePathPicker)
+        {
+            RevealInExplorer = _ => { },
+        };
         vm.InitializePlayer();
         return (vm, built, front);
     }
@@ -864,6 +874,226 @@ public sealed class MainWindowViewModelTests
         // selection triggers the auto-play loading state. Opening media is VideoPlayerController's own job.
         vm.IsLoading.ShouldBeTrue();
         vm.ShowErrorOverlay.ShouldBeFalse();
+    }
+
+    // --- Export selection: in/out marks and the FFmpeg-free export path (FakeClipExporter) ---
+
+    [Fact]
+    public void MarkSelection_SetsFractions_AndCompletesTheRange()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.SeekPosition = 0.3;
+        vm.MarkSelectionStartCommand.Execute(null);
+
+        vm.HasSelectionStart.ShouldBeTrue();
+        vm.SelectionStartPosition.ShouldBe(0.3);
+        vm.HasSelection.ShouldBeFalse(); // no end yet
+
+        vm.SeekPosition = 0.7;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+        vm.HasSelection.ShouldBeTrue();
+        vm.SelectionEndPosition.ShouldBe(0.7);
+        vm.CanExportSelection.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MarkSelection_InvertedOrder_ClearsTheOtherMark()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.SeekPosition = 0.3;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.SeekPosition = 0.7;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+        // A start at/past the end invalidates the end...
+        vm.SeekPosition = 0.9;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.SelectionStartPosition.ShouldBe(0.9);
+        vm.HasSelectionEnd.ShouldBeFalse();
+
+        // ...and an end at/before the start invalidates the start.
+        vm.SeekPosition = 0.1;
+        vm.MarkSelectionEndCommand.Execute(null);
+        vm.SelectionEndPosition.ShouldBe(0.1);
+        vm.HasSelectionStart.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ClearSelection_RemovesBothMarks()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.ClearSelectionCommand.CanExecute(null).ShouldBeFalse(); // nothing to clear yet
+
+        vm.SeekPosition = 0.2;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.HasAnySelectionMark.ShouldBeTrue();
+
+        vm.ClearSelectionCommand.Execute(null);
+
+        vm.HasAnySelectionMark.ShouldBeFalse();
+        vm.HasSelection.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Selection_ClearsWhenAnotherClipIsSelected()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.SeekPosition = 0.2;
+        vm.MarkSelectionStartCommand.Execute(null);
+
+        vm.SelectedClip = TestClips.Create(1)[0];
+
+        vm.HasAnySelectionMark.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void MarkSelection_RequiresSeekableMedia()
+    {
+        var vm = CreateViewModel();
+
+        vm.MarkSelectionStartCommand.CanExecute(null).ShouldBeFalse();
+        vm.MarkSelectionEndCommand.CanExecute(null).ShouldBeFalse();
+        vm.ExportSelectionCommand.CanExecute(null).ShouldBeFalse();
+    }
+
+    // Synchronous/blocking for the same thread-affinity reasons as the drag-sequence test above:
+    // the fake exporter and save picker complete synchronously, so the export never suspends.
+    [Fact]
+    public void ExportSelection_SendsMediaTimeRangeAndActiveCameraToTheExporter()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1); // one 60s chunk
+        var exporter = new FakeClipExporter();
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
+
+        vm.SelectCameraViewCommand.Execute("rear");
+        vm.SeekPosition = 0.25;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.SeekPosition = 0.75;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+#pragma warning disable xUnit1031
+        vm.ExportSelectionCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+
+        var request = exporter.Requests.ShouldHaveSingleItem();
+        request.Clip.ShouldBe(clipFiles.Clip);
+        request.Camera.ShouldBe(CameraNames.Back);
+        request.Start.ShouldBe(TimeSpan.FromSeconds(15));
+        request.End.ShouldBe(TimeSpan.FromSeconds(45));
+        request.OutputPath.ShouldBe(@"C:\out\clip.mp4");
+        vm.IsExporting.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ExportSelection_SaveDialogCanceled_DoesNotExport()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var exporter = new FakeClipExporter();
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => null);
+
+        vm.SeekPosition = 0.25;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.SeekPosition = 0.75;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+#pragma warning disable xUnit1031
+        vm.ExportSelectionCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+
+        exporter.Requests.ShouldBeEmpty();
+        vm.ShowErrorOverlay.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ExportSelection_ExporterFailure_ShowsErrorAndResetsBusyState()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var exporter = new FakeClipExporter { ExceptionToThrow = new InvalidOperationException("ffmpeg exploded") };
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
+
+        vm.SeekPosition = 0.25;
+        vm.MarkSelectionStartCommand.Execute(null);
+        vm.SeekPosition = 0.75;
+        vm.MarkSelectionEndCommand.Execute(null);
+
+#pragma warning disable xUnit1031
+        vm.ExportSelectionCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.ErrorTitle.ShouldBe("Export Failed");
+        vm.ErrorDetails.ShouldContain("ffmpeg exploded");
+        vm.IsExporting.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SaveEventClip_ExportsFrontCameraWindowAroundTheEvent()
+    {
+        // 3-chunk clip, event 90s in: the ±30s window is media time 60s-120s. The clip is not
+        // open in any player, so the media source is built on demand via the injected builder.
+        var clip = ClipWithChunksAndEvent(chunkCount: 3, eventOffset: TimeSpan.FromSeconds(90));
+        var exporter = new FakeClipExporter();
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: exporter,
+            savePathPicker: _ => @"C:\out\event.mp4",
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
+        {
+            RevealInExplorer = _ => { },
+        };
+
+        await vm.SaveEventClipCommand.ExecuteAsync(clip);
+
+        var request = exporter.Requests.ShouldHaveSingleItem();
+        request.Camera.ShouldBe(CameraNames.Front);
+        request.Start.ShouldBe(TimeSpan.FromSeconds(60));
+        request.End.ShouldBe(TimeSpan.FromSeconds(120));
+        request.OutputPath.ShouldBe(@"C:\out\event.mp4");
+    }
+
+    [Fact]
+    public async Task SaveEventClip_WindowIsClampedToTheClip()
+    {
+        // Event 10s into a one-minute clip: ±30s clamps to 0s-40s.
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        var exporter = new FakeClipExporter();
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: exporter,
+            savePathPicker: _ => @"C:\out\event.mp4",
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
+        {
+            RevealInExplorer = _ => { },
+        };
+
+        await vm.SaveEventClipCommand.ExecuteAsync(clip);
+
+        var request = exporter.Requests.ShouldHaveSingleItem();
+        request.Start.ShouldBe(TimeSpan.Zero);
+        request.End.ShouldBe(TimeSpan.FromSeconds(40));
+    }
+
+    [Fact]
+    public void SaveEventClip_RequiresAnEventMoment()
+    {
+        var vm = CreateViewModel();
+
+        vm.SaveEventClipCommand.CanExecute(ClipWithChunks(1)).ShouldBeFalse(); // no event
+        vm.SaveEventClipCommand.CanExecute(ClipWithEvent("clip", "sentry_aware_object_detection", "Bellevue")).ShouldBeFalse(); // event without timestamp
+        vm.SaveEventClipCommand.CanExecute(ClipWithChunksAndEvent(1, TimeSpan.FromSeconds(10))).ShouldBeTrue();
     }
 
     // Controller-backed tests deliberately keep every controller property change on the test thread.

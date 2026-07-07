@@ -241,6 +241,34 @@ public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
 }
 
 /// <summary>
+/// Width of the selection-range highlight on the seek bar: (end − start) × rail width.
+/// [0] start fraction (0..1), [1] end fraction (0..1), [2] rail ActualWidth. Pairs with
+/// <see cref="SeekOffsetConverter"/> (which places the highlight's left edge) so the band spans
+/// exactly the marked range and reflows on resize.
+/// </summary>
+public sealed class SelectionWidthConverter : MarkupExtension, IMultiValueConverter
+{
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (values.Length == 3
+            && values[0] is double start
+            && values[1] is double end
+            && values[2] is double width
+            && width > 0)
+        {
+            return Math.Clamp(end - start, 0, 1) * width;
+        }
+
+        return 0d;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Visibility.Visible when the bound clip is the one currently playing.
 /// Multi-binding: [0] the clip, [1] the view-model's NowPlayingClip.
 /// </summary>

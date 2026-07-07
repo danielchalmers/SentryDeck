@@ -17,4 +17,9 @@ public static class CameraNames
         LeftRepeater,
         RightRepeater,
     ];
+
+    /// <summary>
+    /// Friendly label for a camera name, e.g. "left_repeater" -> "left repeater".
+    /// </summary>
+    public static string DisplayName(string camera) => camera?.Replace('_', ' ') ?? string.Empty;
 }

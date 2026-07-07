@@ -36,6 +36,9 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly Func<Task> _backgroundYield;
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _filterDebounceTimer;
+    private readonly IClipExporter _clipExporter;
+    private readonly Func<string, string> _savePathPicker;
+    private readonly IClipMediaSourceBuilder _exportMediaSourceBuilder;
     private VideoPlayerController _playerController;
     private CancellationTokenSource _selectionCts;
     private readonly SeekScrubCoalescer _scrubCoalescer;
@@ -49,14 +52,23 @@ public partial class MainWindowViewModel : ObservableObject
     /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param>
     /// <param name="clipLoader">Maps a dashcam root to its clips. Defaults to scanning the filesystem; overridable for tests.</param>
     /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive. Overridable for tests.</param>
+    /// <param name="clipExporter">Exports trimmed clip ranges. Defaults to the FFmpeg-backed exporter; overridable for tests.</param>
+    /// <param name="savePathPicker">Maps a suggested file name to the chosen save path (null = canceled). Defaults to a save dialog; overridable for tests.</param>
+    /// <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open. Overridable for tests.</param>
     public MainWindowViewModel(
         Func<VideoPlayerController> playerControllerFactory,
         Func<string, IReadOnlyList<CamClip>> clipLoader = null,
-        Func<Task> backgroundYield = null)
+        Func<Task> backgroundYield = null,
+        IClipExporter clipExporter = null,
+        Func<string, string> savePathPicker = null,
+        IClipMediaSourceBuilder exportMediaSourceBuilder = null)
     {
         _playerControllerFactory = playerControllerFactory;
         _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
         _backgroundYield = backgroundYield ?? (async () => await Dispatcher.Yield(DispatcherPriority.Background));
+        _clipExporter = clipExporter ?? new ClipExporter(PackageManager.FindFFmpegDirectory);
+        _savePathPicker = savePathPicker ?? PickSavePathWithDialog;
+        _exportMediaSourceBuilder = exportMediaSourceBuilder ?? new FfconcatMediaSourceBuilder();
         _dispatcher = Dispatcher.CurrentDispatcher;
         _scrubCoalescer = new SeekScrubCoalescer(ScrubToAsync);
 
@@ -250,6 +262,36 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public IReadOnlyList<double> GapPositions => _gapPositions;
 
+    // --- Export selection (in/out marks on the seek bar, as 0..1 fractions like SeekPosition) ---
+    // Plain fields + an explicit notify helper (not ObservableProperty) because the pair changes
+    // together under shared invariants (start < end) and several derived properties hang off both.
+    private double? _selectionStart;
+    private double? _selectionEnd;
+
+    /// <summary>How much footage to keep on each side of the event moment in "Save event clip".</summary>
+    public static readonly TimeSpan EventClipPadding = TimeSpan.FromSeconds(30);
+
+    /// <summary>The selection start as a 0..1 fraction of the clip timeline (0 when unset — pair with <see cref="HasSelectionStart"/>).</summary>
+    public double SelectionStartPosition => _selectionStart ?? 0d;
+
+    /// <summary>The selection end as a 0..1 fraction of the clip timeline (0 when unset — pair with <see cref="HasSelectionEnd"/>).</summary>
+    public double SelectionEndPosition => _selectionEnd ?? 0d;
+
+    public bool HasSelectionStart => _selectionStart.HasValue;
+
+    public bool HasSelectionEnd => _selectionEnd.HasValue;
+
+    /// <summary>True when both marks are set (a complete, exportable range).</summary>
+    public bool HasSelection => _selectionStart.HasValue && _selectionEnd.HasValue;
+
+    public bool CanExportSelection => HasSelection && !IsExporting && CanSeek;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportSelection))]
+    [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveEventClipCommand))]
+    private bool _isExporting;
+
     // FilteredClips/ClipCount are refreshed on a short debounce (see OnFilterTextChanged) rather than
     // per keystroke; HasFilterText stays immediate so the search box's clear affordance is responsive.
     [ObservableProperty]
@@ -304,8 +346,12 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(CanSeek))]
+    [NotifyPropertyChangedFor(nameof(CanExportSelection))]
     [NotifyCanExecuteChangedFor(nameof(StepFrameBackwardCommand))]
     [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MarkSelectionStartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MarkSelectionEndCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -632,6 +678,206 @@ public partial class MainWindowViewModel : ObservableObject
         await SeekToCurrentPositionAsync();
     }
 
+    /// <summary>
+    /// Marks the selection start at the current playhead. A mark that would invert the range
+    /// (start at or past the existing end) clears the other mark instead of silently swapping.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSeek))]
+    private void MarkSelectionStart()
+    {
+        _selectionStart = SeekPosition;
+        if (_selectionEnd is { } end && end <= SeekPosition)
+        {
+            _selectionEnd = null;
+        }
+
+        NotifySelectionChanged();
+    }
+
+    /// <summary>Marks the selection end at the current playhead (see <see cref="MarkSelectionStart"/> for the invariant).</summary>
+    [RelayCommand(CanExecute = nameof(CanSeek))]
+    private void MarkSelectionEnd()
+    {
+        _selectionEnd = SeekPosition;
+        if (_selectionStart is { } start && start >= SeekPosition)
+        {
+            _selectionStart = null;
+        }
+
+        NotifySelectionChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(HasAnySelectionMark))]
+    private void ClearSelection()
+    {
+        _selectionStart = null;
+        _selectionEnd = null;
+        NotifySelectionChanged();
+    }
+
+    /// <summary>True when either mark is set (drives the clear affordance).</summary>
+    public bool HasAnySelectionMark => _selectionStart.HasValue || _selectionEnd.HasValue;
+
+    // Everything downstream of CanSeek: the mark/export commands gate on it alongside the
+    // frame-step commands.
+    private void NotifyCanSeekChanged()
+    {
+        OnPropertyChanged(nameof(CanSeek));
+        OnPropertyChanged(nameof(CanExportSelection));
+        StepFrameBackwardCommand.NotifyCanExecuteChanged();
+        StepFrameForwardCommand.NotifyCanExecuteChanged();
+        MarkSelectionStartCommand.NotifyCanExecuteChanged();
+        MarkSelectionEndCommand.NotifyCanExecuteChanged();
+        ExportSelectionCommand.NotifyCanExecuteChanged();
+    }
+
+    private void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectionStartPosition));
+        OnPropertyChanged(nameof(SelectionEndPosition));
+        OnPropertyChanged(nameof(HasSelectionStart));
+        OnPropertyChanged(nameof(HasSelectionEnd));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasAnySelectionMark));
+        OnPropertyChanged(nameof(CanExportSelection));
+        ClearSelectionCommand.NotifyCanExecuteChanged();
+        ExportSelectionCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExportSelection))]
+    private async Task ExportSelectionAsync()
+    {
+        var clip = _playerController?.CurrentClip;
+        var mediaSource = _playerController?.OpenedMediaSource;
+        if (clip is null || mediaSource is null || mediaSource.Duration <= TimeSpan.Zero
+            || _selectionStart is not { } startFraction || _selectionEnd is not { } endFraction)
+        {
+            return;
+        }
+
+        var start = TimeSpan.FromSeconds(startFraction * mediaSource.Duration.TotalSeconds);
+        var end = TimeSpan.FromSeconds(endFraction * mediaSource.Duration.TotalSeconds);
+        var camera = ActiveExportCameraName;
+        var defaultFileName = $"{clip.Name} {CameraNames.DisplayName(camera)} {FormatTimeSpanForFileName(start)}-{FormatTimeSpanForFileName(end)}.mp4";
+
+        await ExportAsync(clip, mediaSource, camera, start, end, defaultFileName);
+    }
+
+    /// <summary>
+    /// Exports the front-camera footage around the clip's event moment (±<see cref="EventClipPadding"/>)
+    /// in one step — no in/out marks needed. Works from the clip list context menu even when the
+    /// clip isn't the one currently playing (its media source is built on demand).
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSaveEventClip))]
+    private async Task SaveEventClipAsync(CamClip clip)
+    {
+        if (clip?.Event is null || clip.Event.Timestamp == default || IsExporting)
+        {
+            return;
+        }
+
+        var mediaSource = _playerController?.CurrentClip == clip ? _playerController.OpenedMediaSource : null;
+        mediaSource ??= await Task.Run(() => _exportMediaSourceBuilder.Build(clip));
+
+        var eventTime = mediaSource.Duration > TimeSpan.Zero ? mediaSource.ToMediaTime(clip.Event.Timestamp) : null;
+        if (eventTime is null)
+        {
+            ShowError("Export Failed", "The event moment isn't within this clip's saved footage.");
+            return;
+        }
+
+        var start = eventTime.Value - EventClipPadding;
+        if (start < TimeSpan.Zero)
+        {
+            start = TimeSpan.Zero;
+        }
+
+        var end = eventTime.Value + EventClipPadding;
+        if (end > mediaSource.Duration)
+        {
+            end = mediaSource.Duration;
+        }
+
+        await ExportAsync(clip, mediaSource, CameraNames.Front, start, end, $"{clip.Name} event.mp4");
+    }
+
+    private bool CanSaveEventClip(CamClip clip) =>
+        clip?.Event is not null && clip.Event.Timestamp != default && !IsExporting;
+
+    private async Task ExportAsync(CamClip clip, ClipMediaSource mediaSource, string camera, TimeSpan start, TimeSpan end, string defaultFileName)
+    {
+        var outputPath = _savePathPicker(SanitizeFileName(defaultFileName));
+        if (string.IsNullOrEmpty(outputPath))
+        {
+            return;
+        }
+
+        IsExporting = true;
+
+        try
+        {
+            Log.Information(
+                "Exporting clip range. Clip={ClipName}; Camera={Camera}; Start={Start}; End={End}; Output={Output}",
+                clip.Name,
+                camera,
+                start,
+                end,
+                outputPath);
+            await _clipExporter.ExportAsync(new ClipExportRequest(clip, mediaSource, camera, start, end, outputPath));
+            RevealInExplorer(outputPath);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Export failed. Clip={ClipName}; Camera={Camera}; Output={Output}", clip.Name, camera, outputPath);
+            ShowError("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
+        }
+        finally
+        {
+            IsExporting = false;
+        }
+    }
+
+    // The currently enlarged camera; grid view exports the front (primary) angle.
+    private string ActiveExportCameraName => SelectedCameraView switch
+    {
+        RearCameraView => CameraNames.Back,
+        LeftCameraView => CameraNames.LeftRepeater,
+        RightCameraView => CameraNames.RightRepeater,
+        _ => CameraNames.Front,
+    };
+
+    private static string PickSavePathWithDialog(string defaultFileName)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export clip",
+            FileName = defaultFileName,
+            DefaultExt = ".mp4",
+            Filter = "MP4 video|*.mp4",
+        };
+
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    /// <summary>Points Explorer at the exported file so it's immediately ready to share. Overridable for tests.</summary>
+    internal Action<string> RevealInExplorer { get; set; } = path =>
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+
+    private static string FormatTimeSpanForFileName(TimeSpan ts) => FormatTimeSpan(ts).Replace(':', '.');
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+
+        return name;
+    }
+
     [RelayCommand]
     private async Task PreviousAsync()
     {
@@ -773,6 +1019,24 @@ public partial class MainWindowViewModel : ObservableObject
                 await JumpToEventAsync();
                 return true;
             }
+
+            if (key == Key.I && CanSeek)
+            {
+                MarkSelectionStart();
+                return true;
+            }
+
+            if (key == Key.O && CanSeek)
+            {
+                MarkSelectionEnd();
+                return true;
+            }
+        }
+
+        if (key == Key.E && modifiers == ModifierKeys.Control && CanExportSelection)
+        {
+            await ExportSelectionAsync();
+            return true;
         }
 
         if (_playerController is null)
@@ -1015,9 +1279,7 @@ public partial class MainWindowViewModel : ObservableObject
                 UpdateSeekPositionFromController();
                 OnPropertyChanged(nameof(DurationText));
                 OnPropertyChanged(nameof(PositionText));
-                OnPropertyChanged(nameof(CanSeek));
-                StepFrameBackwardCommand.NotifyCanExecuteChanged();
-                StepFrameForwardCommand.NotifyCanExecuteChanged();
+                NotifyCanSeekChanged();
                 break;
 
             case nameof(VideoPlayerController.Position):
@@ -1027,7 +1289,14 @@ public partial class MainWindowViewModel : ObservableObject
             case nameof(VideoPlayerController.OpenedMediaSource):
                 // The controller finished (re)building the media source for the selected clip
                 // (or one under recovery from a corrupt chunk) -- refresh the gap-aware overlays
-                // now that real probed durations/timestamps are available.
+                // now that real probed durations/timestamps are available. A rebuild can reshape
+                // the timeline (chunks excluded during recovery), so in/out fractions marked
+                // against the old timeline no longer point at the same footage.
+                if (HasAnySelectionMark)
+                {
+                    ClearSelection();
+                }
+
                 RecomputeSelectedClipTimeline();
                 OnPropertyChanged(nameof(EventMarkerPosition));
                 OnPropertyChanged(nameof(HasEventMarker));
@@ -1052,9 +1321,7 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case nameof(VideoPlayerController.IsMediaOpen):
-                OnPropertyChanged(nameof(CanSeek));
-                StepFrameBackwardCommand.NotifyCanExecuteChanged();
-                StepFrameForwardCommand.NotifyCanExecuteChanged();
+                NotifyCanSeekChanged();
                 break;
         }
     }
@@ -1242,6 +1509,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedClipChanged(CamClip value)
     {
+        // In/out marks are fractions of the previous clip's timeline; they mean nothing on the new one.
+        if (HasAnySelectionMark)
+        {
+            ClearSelection();
+        }
+
         RecomputeSelectedClipTimeline();
         OnPropertyChanged(nameof(EventMarkerPosition));
         OnPropertyChanged(nameof(HasEventMarker));

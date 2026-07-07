@@ -20,4 +20,8 @@
     <ProjectReference Include="..\SentryReplay.Data\SentryReplay.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SentryReplay.Tests" />
+  </ItemGroup>
+
 </Project>

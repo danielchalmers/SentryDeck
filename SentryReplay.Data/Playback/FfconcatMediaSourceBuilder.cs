@@ -149,7 +149,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
         File.WriteAllText(path, builder.ToString());
     }
 
-    private static string EscapeConcatPath(string path)
+    internal static string EscapeConcatPath(string path)
     {
         return path.Replace('\\', '/').Replace("'", "'\\''");
     }

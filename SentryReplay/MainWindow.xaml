@@ -59,6 +59,78 @@
                             </Border>
 
                             <!--
+                                Export selection: a translucent accent band over the marked in/out
+                                range, plus a taller tick at each set mark (each shows on its own,
+                                so a lone in-point is visible while placing the out-point). Same
+                                offset math as the other overlays; hidden while no marks are set.
+                            -->
+                            <Border Height="8"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                    CornerRadius="2"
+                                    IsHitTestVisible="False"
+                                    Opacity="0.3"
+                                    Visibility="{Binding Data.HasSelection, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                <Border.Margin>
+                                    <MultiBinding Converter="{local:SeekOffsetConverter}">
+                                        <Binding Path="Data.SelectionStartPosition"
+                                                 Source="{StaticResource VmProxy}" />
+                                        <Binding ElementName="SeekRail"
+                                                 Path="ActualWidth" />
+                                    </MultiBinding>
+                                </Border.Margin>
+                                <Border.Width>
+                                    <MultiBinding Converter="{local:SelectionWidthConverter}">
+                                        <Binding Path="Data.SelectionStartPosition"
+                                                 Source="{StaticResource VmProxy}" />
+                                        <Binding Path="Data.SelectionEndPosition"
+                                                 Source="{StaticResource VmProxy}" />
+                                        <Binding ElementName="SeekRail"
+                                                 Path="ActualWidth" />
+                                    </MultiBinding>
+                                </Border.Width>
+                            </Border>
+
+                            <Rectangle Width="2"
+                                       Height="14"
+                                       HorizontalAlignment="Left"
+                                       VerticalAlignment="Center"
+                                       Fill="{DynamicResource AccentFillColorDefaultBrush}"
+                                       IsHitTestVisible="False"
+                                       RadiusX="1"
+                                       RadiusY="1"
+                                       Visibility="{Binding Data.HasSelectionStart, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                <Rectangle.Margin>
+                                    <MultiBinding Converter="{local:SeekOffsetConverter}">
+                                        <Binding Path="Data.SelectionStartPosition"
+                                                 Source="{StaticResource VmProxy}" />
+                                        <Binding ElementName="SeekRail"
+                                                 Path="ActualWidth" />
+                                    </MultiBinding>
+                                </Rectangle.Margin>
+                            </Rectangle>
+
+                            <Rectangle Width="2"
+                                       Height="14"
+                                       HorizontalAlignment="Left"
+                                       VerticalAlignment="Center"
+                                       Fill="{DynamicResource AccentFillColorDefaultBrush}"
+                                       IsHitTestVisible="False"
+                                       RadiusX="1"
+                                       RadiusY="1"
+                                       Visibility="{Binding Data.HasSelectionEnd, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                <Rectangle.Margin>
+                                    <MultiBinding Converter="{local:SeekOffsetConverter}">
+                                        <Binding Path="Data.SelectionEndPosition"
+                                                 Source="{StaticResource VmProxy}" />
+                                        <Binding ElementName="SeekRail"
+                                                 Path="ActualWidth" />
+                                    </MultiBinding>
+                                </Rectangle.Margin>
+                            </Rectangle>
+
+                            <!--
                                 Chunk seams: faint ~60s boundary ticks. Each tick offsets by
                                 fraction × rail width; the ItemsControl matches the rail's width,
                                 so ticks stay aligned on resize. Empty list draws nothing.
@@ -405,6 +477,14 @@
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xECAF;" Style="{StaticResource AppGlyph}" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <!--  ±30s of front-camera footage around the event moment, stream-copied (no re-encode).  -->
+            <MenuItem Header="Save event clip…"
+                      Command="{Binding PlacementTarget.Tag.SaveEventClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                <MenuItem.Icon>
+                    <TextBlock Text="&#xE792;" Style="{StaticResource AppGlyph}" />
                 </MenuItem.Icon>
             </MenuItem>
             <Separator />
@@ -1397,18 +1477,65 @@
                             </Button>
                         </StackPanel>
 
-                        <!--  Jump straight to the moment the incident happened  -->
-                        <Button Grid.Column="1"
-                                Command="{Binding JumpToEventCommand}"
-                                Margin="14,0,0,0"
-                                VerticalAlignment="Center"
-                                AutomationProperties.Name="Jump to event"
-                                IsEnabled="{Binding HasEventMarker}"
-                                Style="{StaticResource SubtleIconButton}"
-                                ToolTip="Jump to event (E)">
-                            <TextBlock Text="&#xE7C1;"
-                                       Style="{StaticResource AppGlyph}" />
-                        </Button>
+                        <!--  Jump-to-event + export selection cluster  -->
+                        <StackPanel Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal">
+                            <!--  Jump straight to the moment the incident happened  -->
+                            <Button Command="{Binding JumpToEventCommand}"
+                                    Margin="14,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Jump to event"
+                                    IsEnabled="{Binding HasEventMarker}"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Jump to event (E)">
+                                <TextBlock Text="&#xE7C1;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+
+                            <!--  Mark an in/out range on the seek bar, then export it losslessly.  -->
+                            <Button Command="{Binding MarkSelectionStartCommand}"
+                                    Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Mark selection start"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Mark selection start here (I)">
+                                <TextBlock Text="["
+                                           FontFamily="Consolas"
+                                           FontSize="16"
+                                           FontWeight="SemiBold" />
+                            </Button>
+
+                            <Button Command="{Binding MarkSelectionEndCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Mark selection end"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Mark selection end here (O)">
+                                <TextBlock Text="]"
+                                           FontFamily="Consolas"
+                                           FontSize="16"
+                                           FontWeight="SemiBold" />
+                            </Button>
+
+                            <Button Command="{Binding ClearSelectionCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Clear selection"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Clear selection"
+                                    Visibility="{Binding HasAnySelectionMark, Converter={local:BoolToVisibilityConverter}}">
+                                <TextBlock Text="&#xE711;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+
+                            <Button Command="{Binding ExportSelectionCommand}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Export selection"
+                                    Style="{StaticResource SubtleIconButton}"
+                                    ToolTip="Export selection as MP4 — lossless, no re-encode (Ctrl+E)">
+                                <TextBlock Text="&#xE792;"
+                                           Style="{StaticResource AppGlyph}" />
+                            </Button>
+                        </StackPanel>
 
                         <!--  Scrubber (carries the event marker + chunk seams)  -->
                         <Slider x:Name="SeekSlider"
@@ -1678,11 +1805,31 @@
                                     </Border>
                                     <TextBlock Text="Jump to the event moment" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="1 – 5" Style="{StaticResource KeycapText}" />
                                     </Border>
                                     <TextBlock Text="Switch camera view" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="I" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="O" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Mark selection start / end" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="Ctrl" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="E" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Export the selection as MP4" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                             </StackPanel>
 
