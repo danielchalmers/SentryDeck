@@ -286,6 +286,56 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool CanExportSelection => HasSelection && !IsExporting && CanSeek;
 
+    /// <summary>
+    /// True while the trim panel is open. Opens explicitly (the Trim button) or implicitly
+    /// (marking a point via I/O); closing it always discards the marks, so the panel and the
+    /// selection can't drift apart.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isTrimming;
+
+    /// <summary>
+    /// One-line guidance for the trim panel: walks the user through start → end → export, and
+    /// shows the selected length once the range is complete.
+    /// </summary>
+    public string TrimHintText
+    {
+        get
+        {
+            if (HasSelection)
+            {
+                return $"{SelectionDurationText} selected — ready to export.";
+            }
+
+            if (HasSelectionStart)
+            {
+                return "Now play or scrub ahead to the end of your cut, then set the end.";
+            }
+
+            if (HasSelectionEnd)
+            {
+                return "Now play or scrub back to where your cut should begin, then set the start.";
+            }
+
+            return "Play or scrub to where your cut should begin, then set the start.";
+        }
+    }
+
+    /// <summary>Length of the marked range, e.g. "0:42" (empty until both marks are set).</summary>
+    public string SelectionDurationText
+    {
+        get
+        {
+            if (_selectionStart is not { } start || _selectionEnd is not { } end)
+            {
+                return string.Empty;
+            }
+
+            var duration = _playerController?.Duration ?? TimeSpan.Zero;
+            return FormatTimeSpan(TimeSpan.FromSeconds((end - start) * duration.TotalSeconds));
+        }
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanExportSelection))]
     [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
@@ -351,6 +401,7 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
     [NotifyCanExecuteChangedFor(nameof(MarkSelectionStartCommand))]
     [NotifyCanExecuteChangedFor(nameof(MarkSelectionEndCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleTrimmingCommand))]
     [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
     private bool _isLoading;
 
@@ -685,6 +736,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSeek))]
     private void MarkSelectionStart()
     {
+        IsTrimming = true;
         _selectionStart = SeekPosition;
         if (_selectionEnd is { } end && end <= SeekPosition)
         {
@@ -698,6 +750,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSeek))]
     private void MarkSelectionEnd()
     {
+        IsTrimming = true;
         _selectionEnd = SeekPosition;
         if (_selectionStart is { } start && start >= SeekPosition)
         {
@@ -715,6 +768,31 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelectionChanged();
     }
 
+    /// <summary>The control-bar Trim button: opens the trim panel, or cancels an open one.</summary>
+    [RelayCommand(CanExecute = nameof(CanSeek))]
+    private void ToggleTrimming()
+    {
+        if (IsTrimming)
+        {
+            CancelTrim();
+        }
+        else
+        {
+            IsTrimming = true;
+        }
+    }
+
+    /// <summary>Closes the trim panel and discards any marks.</summary>
+    [RelayCommand]
+    private void CancelTrim()
+    {
+        IsTrimming = false;
+        if (HasAnySelectionMark)
+        {
+            ClearSelection();
+        }
+    }
+
     /// <summary>True when either mark is set (drives the clear affordance).</summary>
     public bool HasAnySelectionMark => _selectionStart.HasValue || _selectionEnd.HasValue;
 
@@ -724,10 +802,13 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanSeek));
         OnPropertyChanged(nameof(CanExportSelection));
+        OnPropertyChanged(nameof(SelectionDurationText)); // scales with Duration
+        OnPropertyChanged(nameof(TrimHintText));
         StepFrameBackwardCommand.NotifyCanExecuteChanged();
         StepFrameForwardCommand.NotifyCanExecuteChanged();
         MarkSelectionStartCommand.NotifyCanExecuteChanged();
         MarkSelectionEndCommand.NotifyCanExecuteChanged();
+        ToggleTrimmingCommand.NotifyCanExecuteChanged();
         ExportSelectionCommand.NotifyCanExecuteChanged();
     }
 
@@ -740,6 +821,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasAnySelectionMark));
         OnPropertyChanged(nameof(CanExportSelection));
+        OnPropertyChanged(nameof(TrimHintText));
+        OnPropertyChanged(nameof(SelectionDurationText));
         ClearSelectionCommand.NotifyCanExecuteChanged();
         ExportSelectionCommand.NotifyCanExecuteChanged();
     }
@@ -1029,6 +1112,12 @@ public partial class MainWindowViewModel : ObservableObject
             if (key == Key.O && CanSeek)
             {
                 MarkSelectionEnd();
+                return true;
+            }
+
+            if (key == Key.Escape && IsTrimming)
+            {
+                CancelTrim();
                 return true;
             }
         }
@@ -1509,11 +1598,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedClipChanged(CamClip value)
     {
-        // In/out marks are fractions of the previous clip's timeline; they mean nothing on the new one.
-        if (HasAnySelectionMark)
-        {
-            ClearSelection();
-        }
+        // In/out marks are fractions of the previous clip's timeline; they mean nothing on the
+        // new one, and a trim panel guiding a cut of the old clip would now be lying.
+        CancelTrim();
 
         RecomputeSelectedClipTimeline();
         OnPropertyChanged(nameof(EventMarkerPosition));
