@@ -390,6 +390,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private async Task RunSerializedPlaybackOperationAsync(Func<CancellationToken, Task> operation, bool replacePlaybackCts = false)
     {
+        if (_isDisposed)
+            return;
+
         var acquired = false;
 
         try
@@ -403,11 +406,24 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             await operation(token);
         }
+        catch (ObjectDisposedException) when (_isDisposed)
+        {
+            // The controller was disposed (window closed) while this operation was in flight, so
+            // the lock or a player is already gone. We're shutting down; nothing to recover.
+        }
         finally
         {
             if (acquired)
             {
-                _operationLock.Release();
+                // Dispose() can run on the UI thread while this operation is mid-flight and then
+                // dispose the semaphore; releasing it afterwards would throw. Benign at shutdown.
+                try
+                {
+                    _operationLock.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
             }
         }
     }
