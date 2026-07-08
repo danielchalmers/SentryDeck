@@ -3,12 +3,12 @@
 These instructions apply to Codex and other coding agents working in this repo.
 
 ## Scope
-- This repo is the **Sentry Replay** WPF desktop app (XAML + C#).
+- This repo is the **Sentry Deck** WPF desktop app (XAML + C#).
 - Media playback uses Flyleaf; logging uses `Serilog`.
 
 ## Architecture
-- **`SentryReplay.Data`** — pure domain logic: TeslaCam storage models (`Cam*`) and playback types (`ClipPlaylist`, `ClipTimeline`, `ICameraPlayer`, …). It has no WPF, Flyleaf, or UI dependencies — keep it that way so this logic stays unit-testable.
-- **`SentryReplay`** — the WPF app: views (`*.xaml` + thin `*.xaml.cs`), view-models (`*ViewModel.cs`), and services (`Services/`).
+- **`SentryDeck.Data`** — pure domain logic: TeslaCam storage models (`Cam*`) and playback types (`ClipPlaylist`, `ClipTimeline`, `ICameraPlayer`, …). It has no WPF, Flyleaf, or UI dependencies — keep it that way so this logic stays unit-testable.
+- **`SentryDeck`** — the WPF app: views (`*.xaml` + thin `*.xaml.cs`), view-models (`*ViewModel.cs`), and services (`Services/`).
 - Keep view-models free of WPF control references. A view-model exposes state and commands; the view binds to them. Anything that must touch a named control, the dispatcher, or the visual tree (focus, control re-parenting, window lifecycle) belongs in the view's code-behind, not the view-model.
 
 ## Where new code goes
@@ -33,6 +33,6 @@ These instructions apply to Codex and other coding agents working in this repo.
 
 ## Testing/Validation
 - Always run `dotnet format`.
-- Tests live in `SentryReplay.Tests` and use xUnit/Shouldly.
+- Tests live in `SentryDeck.Tests` and use xUnit/Shouldly.
 - Add tests for new view-model and domain logic — view-models are plain objects that can be constructed directly in tests (see `MainWindowViewModelTests`).
 - If you change UI behavior, mention how to verify it (e.g., which view to open, what to click).

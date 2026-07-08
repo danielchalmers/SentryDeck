@@ -1,17 +1,17 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="Sentry Replay"
+  <Package Name="Sentry Deck"
            Manufacturer="Daniel Chalmers"
            Version="$(var.Version)"
            UpgradeCode="98E07D4B-45EB-45A6-90A5-2A68E772F2E7"
            Scope="perUser">
     <Property Id="ARPNOMODIFY" Value="1" />
     <MajorUpgrade AllowSameVersionUpgrades="yes"
-                  DowngradeErrorMessage="A newer version of Sentry Replay is already installed." />
+                  DowngradeErrorMessage="A newer version of Sentry Deck is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <CustomAction Id="LaunchApp"
                   Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]SentryReplay.exe&quot;"
+                  ExeCommand="&quot;[INSTALLFOLDER]SentryDeck.exe&quot;"
                   Execute="immediate"
                   Impersonate="yes"
                   Return="asyncNoWait" />
@@ -20,46 +20,46 @@
       <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed" />
     </InstallExecuteSequence>
 
-    <Feature Id="Main" Title="SentryReplay" Level="1">
+    <Feature Id="Main" Title="SentryDeck" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
     </Feature>
   </Package>
 
   <Fragment>
     <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="SentryReplayRoot" Name="SentryReplay">
-        <Directory Id="INSTALLFOLDER" Name="SentryReplay" />
+      <Directory Id="SentryDeckRoot" Name="SentryDeck">
+        <Directory Id="INSTALLFOLDER" Name="SentryDeck" />
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ProgramMenuSentryReplay" Name="Sentry Replay" />
+      <Directory Id="ProgramMenuSentryDeck" Name="Sentry Deck" />
     </StandardDirectory>
   </Fragment>
 
   <Fragment>
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="*">
-        <File Id="SentryReplayExe" Source="publish/$(var.Arch)/SentryReplay.exe" KeyPath="yes" />
+        <File Id="SentryDeckExe" Source="publish/$(var.Arch)/SentryDeck.exe" KeyPath="yes" />
         <RemoveFile Id="RemoveOldFiles" Name="*.*" On="both" />
         <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
       </Component>
       <Component Id="StartMenuShortcut" Guid="*">
-        <Shortcut Id="SentryReplayShortcut"
-                  Name="Sentry Replay"
-                  Description="Sentry Replay"
-                  Directory="ProgramMenuSentryReplay"
-                  Target="[INSTALLFOLDER]SentryReplay.exe"
+        <Shortcut Id="SentryDeckShortcut"
+                  Name="Sentry Deck"
+                  Description="Sentry Deck"
+                  Directory="ProgramMenuSentryDeck"
+                  Target="[INSTALLFOLDER]SentryDeck.exe"
                   WorkingDirectory="INSTALLFOLDER" />
-        <RemoveFolder Id="RemoveStartMenuFolder" Directory="ProgramMenuSentryReplay" On="uninstall" />
+        <RemoveFolder Id="RemoveStartMenuFolder" Directory="ProgramMenuSentryDeck" On="uninstall" />
         <RegistryValue Root="HKCU"
-                       Key="Software\\Daniel Chalmers\\SentryReplay"
+                       Key="Software\\Daniel Chalmers\\SentryDeck"
                        Name="StartMenuShortcut"
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
       </Component>
       <Files Include="publish/$(var.Arch)/**">
-        <Exclude Files="publish/$(var.Arch)/SentryReplay.exe" />
+        <Exclude Files="publish/$(var.Arch)/SentryDeck.exe" />
       </Files>
     </ComponentGroup>
   </Fragment>
