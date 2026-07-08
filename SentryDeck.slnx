@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="SentryDeck.Data/SentryDeck.Data.csproj" />
+  <Project Path="SentryDeck.Tests/SentryDeck.Tests.csproj" />
+  <Project Path="SentryDeck/SentryDeck.csproj" />
+</Solution>

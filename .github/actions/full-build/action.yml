@@ -34,7 +34,7 @@ runs:
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          dotnet publish ./SentryReplay/SentryReplay.csproj -o "publish/$arch" -c Release -f net10.0-windows --os win --arch $arch --self-contained -p:PublishSingleFile=true -p:DebugType=embedded -p:Version=${{ inputs.version }}
+          dotnet publish ./SentryDeck/SentryDeck.csproj -o "publish/$arch" -c Release -f net10.0-windows --os win --arch $arch --self-contained -p:PublishSingleFile=true -p:DebugType=embedded -p:Version=${{ inputs.version }}
         done
 
     - name: Create Portable ZIPs
@@ -42,14 +42,14 @@ runs:
       run: |
         $archs = "${{ inputs.archs }}".Split(" ")
         foreach ($arch in $archs) {
-          Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryReplay-${{ inputs.version }}-$arch.zip"
+          Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryDeck-${{ inputs.version }}-$arch.zip"
         }
 
     - name: Create MSI Installers
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          wix build Package.wxs -arch $arch -d Version=${{ inputs.version }} -d Arch=$arch -o "publish/SentryReplay-${{ inputs.version }}-$arch.msi"
+          wix build Package.wxs -arch $arch -d Version=${{ inputs.version }} -d Arch=$arch -o "publish/SentryDeck-${{ inputs.version }}-$arch.msi"
         done
 
     - uses: actions/upload-artifact@v7
