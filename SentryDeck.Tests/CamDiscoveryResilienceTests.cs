@@ -42,6 +42,25 @@ public static class CamDiscoveryResilienceTests
     }
 
     [Fact]
+    public static void FindFiles_CanonicalizesLegacyRearViewSuffixToBack()
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            Touch(dir, "2023-02-23_14-14-48-rear_view.mp4"); // old-firmware rear-camera token
+
+            var files = CamFile.FindFiles(dir).ToList();
+
+            files.ShouldHaveSingleItem();
+            files[0].Camera.ShouldBe(CameraNames.Back);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public static void FindClips_OneCalendarInvalidFileDoesNotDiscardOtherClips()
     {
         var root = CreateTempDir();

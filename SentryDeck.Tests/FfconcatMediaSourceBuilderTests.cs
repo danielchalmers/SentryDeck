@@ -35,6 +35,51 @@ public sealed class FfconcatMediaSourceBuilderTests
     }
 
     [Fact]
+    public void Build_SixCameraClip_BuildsPillarPlaylists()
+    {
+        // An HW4/AI4 clip carries the classic four cameras plus the two B-pillar cameras.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var builder = new FfconcatMediaSourceBuilder();
+
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        mediaSource.CameraPlaylistPaths.Keys.ShouldContain(CameraNames.LeftPillar);
+        mediaSource.CameraPlaylistPaths.Keys.ShouldContain(CameraNames.RightPillar);
+
+        var leftPillar = File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.LeftPillar]);
+        leftPillar.ShouldContain(clipFiles.GetPath(0, CameraNames.LeftPillar).Replace('\\', '/'));
+        leftPillar.ShouldContain(clipFiles.GetPath(1, CameraNames.LeftPillar).Replace('\\', '/'));
+    }
+
+    [Fact]
+    public void Build_Hw3FourCameraClip_BuildsExactlyThoseFourAndNoPillars()
+    {
+        // An HW3 clip has no pillar files; their absence is normal, not corruption.
+        string[] hw3 = [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater];
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2, cameras: hw3);
+        var builder = new FfconcatMediaSourceBuilder();
+
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        mediaSource.CameraPlaylistPaths.Keys.ShouldBe(hw3, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Build_UnknownCameraSuffix_StillGetsAPlaylist()
+    {
+        // A future/unrecognized camera must be surfaced, not silently dropped.
+        string[] cameras = [CameraNames.Front, "front_bumper"];
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1, cameras: cameras);
+        var builder = new FfconcatMediaSourceBuilder();
+
+        var mediaSource = builder.Build(clipFiles.Clip);
+
+        mediaSource.CameraPlaylistPaths.Keys.ShouldContain("front_bumper");
+        File.ReadAllText(mediaSource.CameraPlaylistPaths["front_bumper"])
+            .ShouldContain(clipFiles.GetPath(0, "front_bumper").Replace('\\', '/'));
+    }
+
+    [Fact]
     public void Build_CameraMissingFromLaterChunk_TruncatesThatCamerasPlaylist()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);

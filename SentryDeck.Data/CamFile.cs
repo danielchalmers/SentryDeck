@@ -60,7 +60,10 @@ public partial record class CamFile
             return null;
         }
 
-        var camera = match.Groups["camera"].Value;
+        // Canonicalize legacy aliases (e.g. rear_view -> back) so old and new clips share one
+        // camera vocabulary. The capture stays greedy on purpose: an unrecognized suffix (a future
+        // camera) is kept as-is rather than dropped.
+        var camera = CameraNames.Canonicalize(match.Groups["camera"].Value);
         return new CamFile(path, timestamp, camera);
     }
 
