@@ -15,7 +15,9 @@ public sealed partial class CameraViewOption : ObservableObject
         IsGrid = isGrid;
     }
 
-    /// <summary><see cref="MainWindowViewModel.GridCameraView"/> or a canonical <see cref="CameraNames"/> name.</summary>
+    /// <summary>
+    /// <see cref="MainWindowViewModel.GridCameraView"/> or a canonical <see cref="CameraNames"/> name.
+    /// </summary>
     public string ViewId { get; }
 
     public string Label { get; }
