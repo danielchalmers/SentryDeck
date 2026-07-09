@@ -936,6 +936,8 @@
                         <fl:FlyleafHost x:Name="BackFlyleafHost" KeyBindings="None" />
                         <fl:FlyleafHost x:Name="LeftFlyleafHost" KeyBindings="None" />
                         <fl:FlyleafHost x:Name="RightFlyleafHost" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="LeftPillarFlyleafHost" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="RightPillarFlyleafHost" KeyBindings="None" />
                     </Grid>
 
                     <!--  Video Player  -->
@@ -1074,175 +1076,64 @@
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
                                 CornerRadius="8">
-                            <UniformGrid Columns="5"
-                                         Rows="1">
-                                <RadioButton Command="{Binding SelectCameraViewCommand}"
-                                             CommandParameter="grid"
-                                             AutomationProperties.Name="Grid view"
-                                             GroupName="CameraViewMode"
-                                             IsChecked="{Binding IsGridViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}"
-                                             ToolTip="Grid view (1)">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="64" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Border Grid.Row="0"
-                                                Background="{DynamicResource SubtleFillColorSecondaryBrush}"
-                                                CornerRadius="4">
-                                            <TextBlock Text="&#xE80A;"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       FontSize="34"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                       Style="{StaticResource AppGlyph}" />
-                                        </Border>
-                                        <TextBlock Grid.Row="1"
-                                                   Text="Grid"
-                                                   Margin="0,6,0,0"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold" />
-                                    </Grid>
-                                </RadioButton>
-
-                                <RadioButton Command="{Binding SelectCameraViewCommand}"
-                                             CommandParameter="front"
-                                             AutomationProperties.Name="Front camera"
-                                             GroupName="CameraViewMode"
-                                             IsChecked="{Binding IsFrontViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}"
-                                             ToolTip="Front camera (2)">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="64" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Border Grid.Row="0"
-                                                Background="Black"
-                                                ClipToBounds="True"
-                                                CornerRadius="4">
+                            <!--  One tile per view the current clip offers: the grid plus each recorded camera (four on HW3, six on HW4/AI4).
+                                  Camera tiles carry a preview slot that registers itself with the code-behind (CameraTileSlot_Loaded), which re-parents each camera's Flyleaf host into it.  -->
+                            <ItemsControl ItemsSource="{Binding CameraViewOptions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type local:CameraViewOption}">
+                                        <RadioButton Command="{Binding DataContext.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                     CommandParameter="{Binding ViewId}"
+                                                     AutomationProperties.Name="{Binding AutomationName}"
+                                                     GroupName="CameraViewMode"
+                                                     IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                     Style="{StaticResource CameraViewTileButton}"
+                                                     ToolTip="{Binding ToolTip}">
                                             <Grid>
-                                                <ContentControl x:Name="FrontTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
-                                                <Border Margin="18"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsFrontViewSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="64" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <Border Grid.Row="0"
+                                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                        CornerRadius="4"
+                                                        Visibility="{Binding IsGrid, Converter={local:BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="&#xE80A;"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="34"
+                                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                               Style="{StaticResource AppGlyph}" />
+                                                </Border>
+                                                <Border Grid.Row="0"
+                                                        Background="Black"
+                                                        ClipToBounds="True"
+                                                        CornerRadius="4"
+                                                        Visibility="{Binding IsCamera, Converter={local:BoolToVisibilityConverter}}">
+                                                    <Grid>
+                                                        <ContentControl Loaded="CameraTileSlot_Loaded" />
+                                                        <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
+                                                        <Border Margin="18"
+                                                                Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                                                                CornerRadius="3"
+                                                                Visibility="{Binding IsSelected, Converter={local:BoolToVisibilityConverter}}" />
+                                                    </Grid>
+                                                </Border>
+                                                <TextBlock Grid.Row="1"
+                                                           Text="{Binding Label}"
+                                                           Margin="0,6,0,0"
+                                                           HorizontalAlignment="Center"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold" />
                                             </Grid>
-                                        </Border>
-                                        <TextBlock Grid.Row="1"
-                                                   Text="Front"
-                                                   Margin="0,6,0,0"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold" />
-                                    </Grid>
-                                </RadioButton>
-
-                                <RadioButton Command="{Binding SelectCameraViewCommand}"
-                                             CommandParameter="rear"
-                                             AutomationProperties.Name="Rear camera"
-                                             GroupName="CameraViewMode"
-                                             IsChecked="{Binding IsRearViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}"
-                                             ToolTip="Rear camera (3)">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="64" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Border Grid.Row="0"
-                                                Background="Black"
-                                                ClipToBounds="True"
-                                                CornerRadius="4">
-                                            <Grid>
-                                                <ContentControl x:Name="RearTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
-                                                <Border Margin="18"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsRearViewSelected, Converter={local:BoolToVisibilityConverter}}" />
-                                            </Grid>
-                                        </Border>
-                                        <TextBlock Grid.Row="1"
-                                                   Text="Rear"
-                                                   Margin="0,6,0,0"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold" />
-                                    </Grid>
-                                </RadioButton>
-
-                                <RadioButton Command="{Binding SelectCameraViewCommand}"
-                                             CommandParameter="left"
-                                             AutomationProperties.Name="Left camera"
-                                             GroupName="CameraViewMode"
-                                             IsChecked="{Binding IsLeftViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}"
-                                             ToolTip="Left camera (4)">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="64" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Border Grid.Row="0"
-                                                Background="Black"
-                                                ClipToBounds="True"
-                                                CornerRadius="4">
-                                            <Grid>
-                                                <ContentControl x:Name="LeftTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
-                                                <Border Margin="18"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsLeftViewSelected, Converter={local:BoolToVisibilityConverter}}" />
-                                            </Grid>
-                                        </Border>
-                                        <TextBlock Grid.Row="1"
-                                                   Text="Left"
-                                                   Margin="0,6,0,0"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold" />
-                                    </Grid>
-                                </RadioButton>
-
-                                <RadioButton Command="{Binding SelectCameraViewCommand}"
-                                             CommandParameter="right"
-                                             AutomationProperties.Name="Right camera"
-                                             GroupName="CameraViewMode"
-                                             IsChecked="{Binding IsRightViewSelected, Mode=OneWay}"
-                                             Style="{StaticResource CameraViewTileButton}"
-                                             ToolTip="Right camera (5)">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="64" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <Border Grid.Row="0"
-                                                Background="Black"
-                                                ClipToBounds="True"
-                                                CornerRadius="4">
-                                            <Grid>
-                                                <ContentControl x:Name="RightTileHostSlot" />
-                                                <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
-                                                <Border Margin="18"
-                                                        Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                                                        CornerRadius="3"
-                                                        Visibility="{Binding IsRightViewSelected, Converter={local:BoolToVisibilityConverter}}" />
-                                            </Grid>
-                                        </Border>
-                                        <TextBlock Grid.Row="1"
-                                                   Text="Right"
-                                                   Margin="0,6,0,0"
-                                                   HorizontalAlignment="Center"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold" />
-                                    </Grid>
-                                </RadioButton>
-                            </UniformGrid>
+                                        </RadioButton>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Border>
                     </Grid>
 
@@ -1919,9 +1810,9 @@
                                 <StackPanel Margin="0,0,0,8"
                                             Orientation="Horizontal">
                                     <Border Style="{StaticResource Keycap}">
-                                        <TextBlock Text="1 – 5" Style="{StaticResource KeycapText}" />
+                                        <TextBlock Text="1 – 7" Style="{StaticResource KeycapText}" />
                                     </Border>
-                                    <TextBlock Text="Switch camera view" Style="{StaticResource AboutShortcutLabel}" />
+                                    <TextBlock Text="Switch camera view (one key per tile)" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,8"
                                             Orientation="Horizontal">

@@ -19,6 +19,11 @@ public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
     private readonly HashSet<Window> _clickHookedSurfaces = [];
+
+    // One Flyleaf host per recognized camera, plus the tile slot each camera's mini preview currently renders into (registered by the data-generated tiles as they load).
+    private readonly Dictionary<string, FlyleafHost> _cameraHosts;
+    private readonly Dictionary<string, ContentControl> _cameraTileSlots = [];
+
     private bool _isClosing;
     private bool _isReadyToClose;
 
@@ -26,14 +31,18 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        _cameraHosts = new Dictionary<string, FlyleafHost>
+        {
+            [CameraNames.Front] = FrontFlyleafHost,
+            [CameraNames.Back] = BackFlyleafHost,
+            [CameraNames.LeftRepeater] = LeftFlyleafHost,
+            [CameraNames.RightRepeater] = RightFlyleafHost,
+            [CameraNames.LeftPillar] = LeftPillarFlyleafHost,
+            [CameraNames.RightPillar] = RightPillarFlyleafHost,
+        };
+
         _viewModel = new MainWindowViewModel(
-            () => VideoPlayerController.Create(
-            [
-                (CameraNames.Front, FrontFlyleafHost),
-                (CameraNames.Back, BackFlyleafHost),
-                (CameraNames.LeftRepeater, LeftFlyleafHost),
-                (CameraNames.RightRepeater, RightFlyleafHost),
-            ]));
+            () => VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]));
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
         _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
 
@@ -41,10 +50,10 @@ public partial class MainWindow : Window
 
         // Clicking a player (incl. the mini previews) switches to that camera. Flyleaf renders each camera
         // into its own native surface, so the click must be caught on the surface, not via a WPF overlay.
-        HookCameraClick(FrontFlyleafHost, MainWindowViewModel.FrontCameraView);
-        HookCameraClick(BackFlyleafHost, MainWindowViewModel.RearCameraView);
-        HookCameraClick(LeftFlyleafHost, MainWindowViewModel.LeftCameraView);
-        HookCameraClick(RightFlyleafHost, MainWindowViewModel.RightCameraView);
+        foreach (var (camera, host) in _cameraHosts)
+        {
+            HookCameraClick(host, camera);
+        }
 
         UpdateCameraHostLayout();
     }
@@ -184,7 +193,9 @@ public partial class MainWindow : Window
 
     private void ViewModelOnPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainWindowViewModel.SelectedCameraView))
+        // Re-parent the hosts when the enlarged view changes, and when a new clip swaps in a different camera set (the freshly generated tiles also self-register via CameraTileSlot_Loaded, which covers containers that don't exist yet at this moment).
+        if (e.PropertyName is nameof(MainWindowViewModel.SelectedCameraView)
+            or nameof(MainWindowViewModel.CameraViewOptions))
         {
             UpdateCameraHostLayout();
         }
@@ -225,14 +236,36 @@ public partial class MainWindow : Window
         };
     }
 
+    // Data-generated camera tiles register their preview slots as their containers load (and a stale registration is simply overwritten when a newer container claims the same camera).
+    private void CameraTileSlot_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContentControl slot && slot.DataContext is CameraViewOption { IsCamera: true } option)
+        {
+            _cameraTileSlots[option.ViewId] = slot;
+            UpdateCameraHostLayout();
+        }
+    }
+
     private void UpdateCameraHostLayout()
     {
         if (PrimaryCameraHostSlot is null)
             return;
 
+        var placed = new HashSet<FlyleafHost>();
+
         foreach (var (host, slot) in GetCameraHostLayout(_viewModel.SelectedCameraView))
         {
             MoveHostToSlot(host, slot);
+            placed.Add(host);
+        }
+
+        // Hosts with no slot in this view — the B-pillars while the classic 2x2 grid is up, any camera the current clip didn't record, and the enlarged camera's own (empty) tile — wait hidden in the pool so they never linger inside a stale slot.
+        foreach (var host in _cameraHosts.Values)
+        {
+            if (!placed.Contains(host))
+            {
+                MoveHostToPool(host);
+            }
         }
 
         // Force a synchronous layout pass so each moved host reaches its final bounds promptly. Note: a
@@ -241,44 +274,46 @@ public partial class MainWindow : Window
         UpdateLayout();
     }
 
-    private IReadOnlyList<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view) => view switch
+    private IEnumerable<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view)
     {
-        MainWindowViewModel.GridCameraView =>
-        [
-            (FrontFlyleafHost, GridFrontHostSlot),
-            (BackFlyleafHost, GridRearHostSlot),
-            (LeftFlyleafHost, GridLeftHostSlot),
-            (RightFlyleafHost, GridRightHostSlot),
-        ],
-        MainWindowViewModel.RearCameraView =>
-        [
-            (BackFlyleafHost, PrimaryCameraHostSlot),
-            (FrontFlyleafHost, FrontTileHostSlot),
-            (LeftFlyleafHost, LeftTileHostSlot),
-            (RightFlyleafHost, RightTileHostSlot),
-        ],
-        MainWindowViewModel.LeftCameraView =>
-        [
-            (LeftFlyleafHost, PrimaryCameraHostSlot),
-            (FrontFlyleafHost, FrontTileHostSlot),
-            (BackFlyleafHost, RearTileHostSlot),
-            (RightFlyleafHost, RightTileHostSlot),
-        ],
-        MainWindowViewModel.RightCameraView =>
-        [
-            (RightFlyleafHost, PrimaryCameraHostSlot),
-            (FrontFlyleafHost, FrontTileHostSlot),
-            (BackFlyleafHost, RearTileHostSlot),
-            (LeftFlyleafHost, LeftTileHostSlot),
-        ],
-        _ =>
-        [
-            (FrontFlyleafHost, PrimaryCameraHostSlot),
-            (BackFlyleafHost, RearTileHostSlot),
-            (LeftFlyleafHost, LeftTileHostSlot),
-            (RightFlyleafHost, RightTileHostSlot),
-        ],
-    };
+        if (view == MainWindowViewModel.GridCameraView)
+        {
+            // The grid stays the classic four-camera 2x2 for now; pillar cameras are reachable through their single-camera views.
+            yield return (FrontFlyleafHost, GridFrontHostSlot);
+            yield return (BackFlyleafHost, GridRearHostSlot);
+            yield return (LeftFlyleafHost, GridLeftHostSlot);
+            yield return (RightFlyleafHost, GridRightHostSlot);
+            yield break;
+        }
+
+        if (!_cameraHosts.TryGetValue(view, out var primaryHost))
+        {
+            yield break;
+        }
+
+        yield return (primaryHost, PrimaryCameraHostSlot);
+
+        // Every other camera of this clip previews inside its own selector tile; the enlarged camera's tile stays empty behind its "this is the main view" icon.
+        foreach (var option in _viewModel.CameraViewOptions)
+        {
+            if (option.IsCamera
+                && option.ViewId != view
+                && _cameraHosts.TryGetValue(option.ViewId, out var host)
+                && _cameraTileSlots.TryGetValue(option.ViewId, out var slot))
+            {
+                yield return (host, slot);
+            }
+        }
+    }
+
+    private void MoveHostToPool(FlyleafHost host)
+    {
+        if (ReferenceEquals(host.Parent, FlyleafHostPool))
+            return;
+
+        RemoveHostFromParent(host);
+        FlyleafHostPool.Children.Add(host);
+    }
 
     private static void MoveHostToSlot(FlyleafHost host, ContentControl slot)
     {

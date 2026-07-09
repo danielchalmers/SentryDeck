@@ -38,15 +38,33 @@ public sealed class MainWindowViewModelTests
         return new CamClip(System.IO.Path.GetTempPath(), "Chunked Clip", start, chunks, camEvent: null);
     }
 
+    // A clip whose single chunk recorded exactly these camera angles (no real files needed: the camera-view strip is derived from the chunk metadata alone).
+    private static CamClip ClipWithCameras(params string[] cameras)
+    {
+        var start = new DateTime(2025, 1, 1, 12, 0, 0);
+        var files = cameras.Select(camera => new CamFile($@"C:\clips\2025-01-01_12-00-00-{camera}.mp4", start, camera));
+        return new CamClip(@"C:\clips", "Camera Clip", start, [new CamChunk(start, files)], camEvent: null);
+    }
+
+    private static readonly string[] SixCameras =
+    [
+        CameraNames.Front,
+        CameraNames.Back,
+        CameraNames.LeftRepeater,
+        CameraNames.RightRepeater,
+        CameraNames.LeftPillar,
+        CameraNames.RightPillar,
+    ];
+
     [Fact]
     public void NewViewModel_DefaultsToFrontCamera_AndEmptyOverlay()
     {
         var vm = CreateViewModel();
 
-        vm.SelectedCameraView.ShouldBe(MainWindowViewModel.FrontCameraView);
-        vm.IsFrontViewSelected.ShouldBeTrue();
+        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
         vm.IsGridViewSelected.ShouldBeFalse();
         vm.IsSingleCameraViewSelected.ShouldBeTrue();
+        vm.CameraViewOptions.Single(option => option.ViewId == CameraNames.Front).IsSelected.ShouldBeTrue();
         vm.ShowMainContent.ShouldBeTrue();
         vm.ShowAboutPage.ShouldBeFalse();
 
@@ -59,10 +77,10 @@ public sealed class MainWindowViewModelTests
 
     [Theory]
     [InlineData("grid", "Grid")]
-    [InlineData("front", "Front")]
-    [InlineData("rear", "Rear")]
-    [InlineData("left", "Left")]
-    [InlineData("right", "Right")]
+    [InlineData(CameraNames.Front, "Front")]
+    [InlineData(CameraNames.Back, "Rear")]
+    [InlineData(CameraNames.LeftRepeater, "Left")]
+    [InlineData(CameraNames.RightRepeater, "Right")]
     [InlineData("unrecognized", "Front")] // unknown values fall back to the front camera
     public void SelectCameraView_SetsSelectedViewAndLabel(string cameraView, string expectedLabel)
     {
@@ -71,10 +89,26 @@ public sealed class MainWindowViewModelTests
         vm.SelectCameraViewCommand.Execute(cameraView);
 
         var expectedView = expectedLabel == "Front"
-            ? MainWindowViewModel.FrontCameraView
+            ? CameraNames.Front
             : cameraView;
         vm.SelectedCameraView.ShouldBe(expectedView);
         vm.ActiveCameraLabel.ShouldBe(expectedLabel);
+    }
+
+    [Fact]
+    public void NewViewModel_OffersGridPlusClassicFourCameras()
+    {
+        var vm = CreateViewModel();
+
+        vm.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+            [
+                MainWindowViewModel.GridCameraView,
+                CameraNames.Front,
+                CameraNames.Back,
+                CameraNames.LeftRepeater,
+                CameraNames.RightRepeater,
+            ]);
+        vm.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5]);
     }
 
     [Fact]
@@ -89,16 +123,132 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void SelectCameraView_Rear_SetsSingleViewFlags()
+    public void SelectCameraView_Rear_SetsSingleViewFlags_AndMarksItsTile()
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute("rear");
+        vm.SelectCameraViewCommand.Execute(CameraNames.Back);
 
-        vm.IsRearViewSelected.ShouldBeTrue();
-        vm.IsFrontViewSelected.ShouldBeFalse();
+        vm.SelectedCameraView.ShouldBe(CameraNames.Back);
         vm.IsGridViewSelected.ShouldBeFalse();
         vm.IsSingleCameraViewSelected.ShouldBeTrue();
+        vm.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Back);
+    }
+
+    [Fact]
+    public void SixCameraClip_OffersPillarTiles_InCanonicalOrder()
+    {
+        var vm = CreateViewModel();
+
+        vm.SelectedClip = ClipWithCameras(SixCameras);
+
+        vm.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+            [
+                MainWindowViewModel.GridCameraView,
+                CameraNames.Front,
+                CameraNames.Back,
+                CameraNames.LeftRepeater,
+                CameraNames.RightRepeater,
+                CameraNames.LeftPillar,
+                CameraNames.RightPillar,
+            ]);
+        vm.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5, 6, 7]);
+        vm.CameraViewOptions.Last().Label.ShouldBe("Right Pillar");
+
+        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.ActiveCameraLabel.ShouldBe("Left Pillar");
+    }
+
+    [Fact]
+    public void FourCameraClip_DoesNotOfferPillarTiles_AndPillarSelectionFallsBackToFront()
+    {
+        var vm = CreateViewModel();
+
+        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+
+        vm.CameraViewOptions.Count.ShouldBe(5);
+        vm.CameraViewOptions.ShouldAllBe(option => option.ViewId != CameraNames.LeftPillar);
+
+        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void SwitchingToClipWithoutTheWatchedCamera_FallsBackToFront()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.SelectCameraViewCommand.Execute(CameraNames.RightPillar);
+
+        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+
+        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void SwitchingClips_KeepsTheWatchedCamera_WhenTheNewClipHasIt()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+
+        vm.SelectedClip = ClipWithCameras(SixCameras);
+
+        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.LeftPillar);
+    }
+
+    [Theory]
+    [InlineData(0, CameraNames.Front)]
+    [InlineData(3, CameraNames.LeftRepeater)]
+    [InlineData(4, CameraNames.RightRepeater)]
+    [InlineData(5, CameraNames.LeftPillar)]
+    [InlineData(6, CameraNames.RightPillar)]
+    [InlineData(7, CameraNames.Back)]
+    [InlineData(8, CameraNames.Front)] // cabin camera isn't written to USB -> front
+    [InlineData(99, CameraNames.Front)] // unknown id -> front
+    public void CameraIdToView_MapsDocumentedEventCameraIds(int cameraId, string expectedView)
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithCameras(SixCameras);
+
+        vm.CameraIdToView(cameraId).ShouldBe(expectedView);
+    }
+
+    [Fact]
+    public void CameraIdToView_FallsBackToFront_WhenTheClipLacksThatCamera()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+
+        vm.CameraIdToView(5).ShouldBe(CameraNames.Front);
+        vm.CameraIdToView(7).ShouldBe(CameraNames.Back);
+    }
+
+    [Fact]
+    public async Task NumberKeys_SelectTilesByStripPosition_IncludingPillars()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedClip = ClipWithCameras(SixCameras);
+
+        (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeTrue();
+        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+
+        (await vm.HandleKeyDownAsync(Key.NumPad7, ModifierKeys.None)).ShouldBeTrue();
+        vm.SelectedCameraView.ShouldBe(CameraNames.RightPillar);
+
+        (await vm.HandleKeyDownAsync(Key.D1, ModifierKeys.None)).ShouldBeTrue();
+        vm.SelectedCameraView.ShouldBe(MainWindowViewModel.GridCameraView);
+    }
+
+    [Fact]
+    public async Task NumberKeys_BeyondTheStrip_AreNotHandled()
+    {
+        var vm = CreateViewModel(); // classic strip: 5 tiles, so 6 has no target
+
+        (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeFalse();
+        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
@@ -1120,7 +1270,7 @@ public sealed class MainWindowViewModelTests
         var exporter = new FakeClipExporter();
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
 
-        vm.SelectCameraViewCommand.Execute("rear");
+        vm.SelectCameraViewCommand.Execute(CameraNames.Back);
         vm.SeekPosition = 0.25;
         vm.MarkSelectionStartCommand.Execute(null);
         vm.SeekPosition = 0.75;
