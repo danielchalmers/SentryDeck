@@ -95,6 +95,57 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task SelectingClip_WhenAllFilesAreEncrypted_ExplainsTheEncryptionToggle()
+    {
+        // A drive written by Tesla software 2026.20+ with "Encrypt Dashcam Recordings" on: every file exists but none is a playable MP4.
+        // The real builder probes and excludes every chunk, and the error must point at the encryption toggle, not claim missing footage.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        foreach (var chunk in clipFiles.Clip.Chunks)
+        {
+            foreach (var file in chunk.Files.Values)
+            {
+                File.WriteAllBytes(file.FullPath, TestMp4.EncryptedLookingBytes);
+            }
+        }
+
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front, mediaSourceBuilder: new FfconcatMediaSourceBuilder());
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+
+        controller.ErrorMessage.ShouldBe(VideoPlayerController.EncryptedClipMessage);
+        controller.ErrorMessage.ShouldContain("Encrypt Dashcam Recordings");
+        controller.IsPlaying.ShouldBeFalse();
+        front.OpenedPaths.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenAllFilesAreGarbage_ButNotEncrypted_KeepsTheCorruptMessage()
+    {
+        // Same all-unreadable shape, but the files still carry MP4 headers (truncated writes): that's ordinary corruption and must NOT be blamed on encryption.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var truncated = TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60))[..12];
+        foreach (var file in clipFiles.Clip.Chunks[0].Files.Values)
+        {
+            File.WriteAllBytes(file.FullPath, truncated);
+        }
+
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front, mediaSourceBuilder: new FfconcatMediaSourceBuilder());
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+
+        controller.ErrorMessage.ShouldBe("No front camera footage found.");
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task PauseSeekAndStop_ControlOpenPlayers()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
