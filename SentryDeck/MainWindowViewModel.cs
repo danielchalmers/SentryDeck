@@ -22,11 +22,21 @@ namespace SentryDeck;
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
+    /// <summary>
+    /// The multi-camera grid pseudo-view. Every other view id is a canonical camera name from
+    /// <see cref="CameraNames"/>, so the selected view maps 1:1 onto the clip's camera files.
+    /// </summary>
     public const string GridCameraView = "grid";
-    public const string FrontCameraView = "front";
-    public const string RearCameraView = "rear";
-    public const string LeftCameraView = "left";
-    public const string RightCameraView = "right";
+
+    // The classic four-camera set (HW3 and earlier) shown before any clip is opened, so the
+    // selector strip doesn't start empty.
+    private static readonly string[] DefaultCameras =
+    [
+        CameraNames.Front,
+        CameraNames.Back,
+        CameraNames.LeftRepeater,
+        CameraNames.RightRepeater,
+    ];
 
     private readonly List<CamClip> _allClips = [];
     private readonly FlyleafRuntime _flyleafRuntime = new();
@@ -79,6 +89,8 @@ public partial class MainWindowViewModel : ObservableObject
             Interval = TimeSpan.FromMilliseconds(150),
         };
         _filterDebounceTimer.Tick += OnFilterDebounceTick;
+
+        SyncCameraViewSelection();
     }
 
     /// <summary>
@@ -222,21 +234,21 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool IsSingleCameraViewSelected => !IsGridViewSelected;
 
-    public bool IsFrontViewSelected => SelectedCameraView == FrontCameraView;
+    public string ActiveCameraLabel => SelectedCameraView == GridCameraView ? "Grid" : CameraLabel(SelectedCameraView);
 
-    public bool IsRearViewSelected => SelectedCameraView == RearCameraView;
-
-    public bool IsLeftViewSelected => SelectedCameraView == LeftCameraView;
-
-    public bool IsRightViewSelected => SelectedCameraView == RightCameraView;
-
-    public string ActiveCameraLabel => SelectedCameraView switch
+    /// <summary>
+    /// Friendly tile label for a camera. The classic four keep their short historical names;
+    /// the HW4/AI4 B-pillars are spelled out to distinguish them from the repeaters.
+    /// </summary>
+    private static string CameraLabel(string camera) => camera switch
     {
-        GridCameraView => "Grid",
-        RearCameraView => "Rear",
-        LeftCameraView => "Left",
-        RightCameraView => "Right",
-        _ => "Front",
+        CameraNames.Front => "Front",
+        CameraNames.Back => "Rear",
+        CameraNames.LeftRepeater => "Left",
+        CameraNames.RightRepeater => "Right",
+        CameraNames.LeftPillar => "Left Pillar",
+        CameraNames.RightPillar => "Right Pillar",
+        _ => CameraNames.DisplayName(camera),
     };
 
     public string LoadingStatusText => IsRendering
@@ -453,12 +465,51 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsGridViewSelected))]
     [NotifyPropertyChangedFor(nameof(IsSingleCameraViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsFrontViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsRearViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsLeftViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsRightViewSelected))]
     [NotifyPropertyChangedFor(nameof(ActiveCameraLabel))]
-    private string _selectedCameraView = FrontCameraView;
+    private string _selectedCameraView = CameraNames.Front;
+
+    /// <summary>
+    /// The selectable views for the current clip: the grid plus one tile per camera the clip
+    /// actually recorded, in <see cref="CameraNames.All"/> order. The view re-parents its Flyleaf
+    /// hosts into the tiles when this changes.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<CameraViewOption> _cameraViewOptions = BuildCameraViewOptions(null);
+
+    private static IReadOnlyList<CameraViewOption> BuildCameraViewOptions(CamClip clip)
+    {
+        // Only recognized cameras get a tile: each needs a dedicated Flyleaf host wired in the
+        // view, so an unknown future suffix is ingested and played in the engine but not shown.
+        var cameras = clip is null
+            ? DefaultCameras
+            : CameraNames.All.Where(camera => clip.Chunks.Any(chunk => chunk.Files.ContainsKey(camera))).ToArray();
+
+        // Metadata-only clips (no camera files at all) keep the classic strip rather than none.
+        if (cameras.Length == 0)
+        {
+            cameras = DefaultCameras;
+        }
+
+        var options = new List<CameraViewOption>(cameras.Length + 1)
+        {
+            new(GridCameraView, "Grid", shortcutNumber: 1, isGrid: true),
+        };
+        options.AddRange(cameras.Select((camera, index) => new CameraViewOption(camera, CameraLabel(camera), index + 2)));
+        return options;
+    }
+
+    private bool IsAvailableView(string view) =>
+        view is not null && CameraViewOptions.Any(option => option.ViewId == view);
+
+    partial void OnSelectedCameraViewChanged(string value) => SyncCameraViewSelection();
+
+    private void SyncCameraViewSelection()
+    {
+        foreach (var option in CameraViewOptions)
+        {
+            option.IsSelected = option.ViewId == SelectedCameraView;
+        }
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
@@ -941,13 +992,7 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     // The currently enlarged camera; grid view exports the front (primary) angle.
-    private string ActiveExportCameraName => SelectedCameraView switch
-    {
-        RearCameraView => CameraNames.Back,
-        LeftCameraView => CameraNames.LeftRepeater,
-        RightCameraView => CameraNames.RightRepeater,
-        _ => CameraNames.Front,
-    };
+    private string ActiveExportCameraName => SelectedCameraView == GridCameraView ? CameraNames.Front : SelectedCameraView;
 
     private static string PickSavePathWithDialog(string defaultFileName)
     {
@@ -1103,22 +1148,28 @@ public partial class MainWindowViewModel : ObservableObject
             return false;
         }
 
-        // Number keys 1-5 switch camera views (Grid / Front / Rear / Left / Right).
+        // Number keys switch camera views: 1 is the grid, then one key per camera tile in strip
+        // order (2 = Front, ... up to 7 on six-camera HW4 clips).
         if (modifiers == ModifierKeys.None)
         {
-            var numberedView = key switch
+            var shortcutNumber = key switch
             {
-                Key.D1 or Key.NumPad1 => GridCameraView,
-                Key.D2 or Key.NumPad2 => FrontCameraView,
-                Key.D3 or Key.NumPad3 => RearCameraView,
-                Key.D4 or Key.NumPad4 => LeftCameraView,
-                Key.D5 or Key.NumPad5 => RightCameraView,
-                _ => null,
+                Key.D1 or Key.NumPad1 => 1,
+                Key.D2 or Key.NumPad2 => 2,
+                Key.D3 or Key.NumPad3 => 3,
+                Key.D4 or Key.NumPad4 => 4,
+                Key.D5 or Key.NumPad5 => 5,
+                Key.D6 or Key.NumPad6 => 6,
+                Key.D7 or Key.NumPad7 => 7,
+                Key.D8 or Key.NumPad8 => 8,
+                Key.D9 or Key.NumPad9 => 9,
+                _ => 0,
             };
 
-            if (numberedView is not null)
+            var numberedOption = CameraViewOptions.FirstOrDefault(option => option.ShortcutNumber == shortcutNumber);
+            if (numberedOption is not null)
             {
-                SelectCameraView(numberedView);
+                SelectCameraView(numberedOption.ViewId);
                 return true;
             }
 
@@ -1528,22 +1579,29 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void SelectCameraView(string cameraView)
     {
-        SelectedCameraView = cameraView switch
-        {
-            GridCameraView => GridCameraView,
-            RearCameraView => RearCameraView,
-            LeftCameraView => LeftCameraView,
-            RightCameraView => RightCameraView,
-            _ => FrontCameraView,
-        };
+        // Unknown views and cameras the current clip didn't record fall back to the front
+        // (primary) angle, which every playable clip has.
+        SelectedCameraView = IsAvailableView(cameraView) ? cameraView : CameraNames.Front;
     }
 
-    // Maps a Tesla event.json camera id to a view. Real footage only reliably uses 0 = front;
-    // other ids are undocumented, so they fall back to the front (primary) angle.
-    private static string CameraIdToView(int cameraId) => cameraId switch
+    // Maps a Tesla event.json camera id to the camera view to auto-focus. Ids follow the
+    // community-documented map (0 front, 3/4 repeaters, 5/6 B-pillars, 7 rear; 1/2/8 are the
+    // non-recorded fisheye/narrow/cabin). Unknown ids and cameras this clip didn't record fall
+    // back to the front (primary) angle.
+    internal string CameraIdToView(int cameraId)
     {
-        _ => FrontCameraView,
-    };
+        var camera = cameraId switch
+        {
+            3 => CameraNames.LeftRepeater,
+            4 => CameraNames.RightRepeater,
+            5 => CameraNames.LeftPillar,
+            6 => CameraNames.RightPillar,
+            7 => CameraNames.Back,
+            _ => CameraNames.Front,
+        };
+
+        return IsAvailableView(camera) ? camera : CameraNames.Front;
+    }
 
     private async Task UpdateLatestReleaseAsync()
     {
@@ -1640,6 +1698,19 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedClipChanged(CamClip value)
     {
+        // Rebuild the camera tiles from what this clip actually recorded (four on HW3, six on
+        // HW4/AI4). If the previously watched camera doesn't exist here, fall back to the front.
+        CameraViewOptions = BuildCameraViewOptions(value);
+        if (IsAvailableView(SelectedCameraView))
+        {
+            // Same view id as before, but the option objects are new — re-mark the selected one.
+            SyncCameraViewSelection();
+        }
+        else
+        {
+            SelectedCameraView = CameraNames.Front;
+        }
+
         // In/out marks are fractions of the previous clip's timeline; they mean nothing on the
         // new one, and a trim panel guiding a cut of the old clip would now be lying.
         CancelTrim();
