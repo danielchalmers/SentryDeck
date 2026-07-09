@@ -44,8 +44,7 @@ public sealed class EncryptedClipDetectorTests : IDisposable
     [Fact]
     public void TruncatedButValidHeader_IsNotEncrypted()
     {
-        // A recording cut off mid-write still starts with its ftyp box; that's the corrupt
-        // path, not the encrypted one.
+        // A recording cut off mid-write still starts with its ftyp box; that's the corrupt path, not the encrypted one.
         var valid = TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60));
         var path = WriteFile("cutoff.mp4", valid[..12]);
 
@@ -82,8 +81,7 @@ public sealed class EncryptedClipDetectorTests : IDisposable
     [Fact]
     public void Clip_WithOnePlayableChunk_IsNotEncrypted()
     {
-        // One valid header among the chunks means ordinary video with some corruption —
-        // the recovery path should keep handling it.
+        // One valid header among the chunks means ordinary video with some corruption — the recovery path should keep handling it.
         var clip = ClipWithFrontFiles(
             TestMp4.EncryptedLookingBytes,
             TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));

@@ -24,13 +24,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     /// <summary>
     /// Shown when a clip's files carry Tesla's 2026.20+ dashcam encryption instead of plain MP4s.
-    /// The keys live behind the owner's Tesla account, so pointing at the in-car toggle and
-    /// Tesla's own viewer is the most useful thing the app can do.
+    /// The keys live behind the owner's Tesla account, so pointing at the in-car toggle and Tesla's own viewer is the most useful thing the app can do.
     /// </summary>
     internal const string EncryptedClipMessage =
-        "This clip appears to be encrypted by the vehicle (Tesla software 2026.20 and later encrypts " +
-        "dashcam recordings by default). To record playable clips, turn off Controls > Safety > " +
-        "Encrypt Dashcam Recordings. Already-encrypted clips can be viewed at dashcam.tesla.com.";
+        "This clip appears to be encrypted by the vehicle (Tesla software 2026.20 and later encrypts dashcam recordings by default). To record playable clips, turn off Controls > Safety > Encrypt Dashcam Recordings. Already-encrypted clips can be viewed at dashcam.tesla.com.";
 
     /// <summary>
     /// One-shot guard for the reopen/seek race after a recovery: how long to wait after issuing
@@ -625,9 +622,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 mediaSource.CameraPlaylistPaths.Keys.Order().ToArray(),
                 requestId);
 
-            // A fully encrypted clip lands here too: the builder probes every chunk's front file,
-            // finds no readable moov in any of them, and excludes them all — indistinguishable
-            // from "no footage" without sniffing the files themselves.
+            // A fully encrypted clip lands here too: the builder probes every chunk's front file, finds no readable moov in any of them, and excludes them all — indistinguishable from "no footage" without sniffing the files themselves.
             ErrorMessage = EncryptedClipDetector.LooksEncrypted(clip)
                 ? EncryptedClipMessage
                 : $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
