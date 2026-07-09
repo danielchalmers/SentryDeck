@@ -1076,10 +1076,8 @@
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
                                 CornerRadius="8">
-                            <!--  One tile per view the current clip offers: the grid plus each recorded
-                                  camera (four on HW3, six on HW4/AI4). Camera tiles carry a preview slot
-                                  that registers itself with the code-behind (CameraTileSlot_Loaded), which
-                                  re-parents each camera's Flyleaf host into it.  -->
+                            <!--  One tile per view the current clip offers: the grid plus each recorded camera (four on HW3, six on HW4/AI4).
+                                  Camera tiles carry a preview slot that registers itself with the code-behind (CameraTileSlot_Loaded), which re-parents each camera's Flyleaf host into it.  -->
                             <ItemsControl ItemsSource="{Binding CameraViewOptions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>

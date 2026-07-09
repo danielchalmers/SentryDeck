@@ -3,8 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace SentryDeck;
 
 /// <summary>
-/// One selectable tile in the camera-view strip: the grid view, or a single camera the selected
-/// clip actually recorded (HW3 vehicles write four cameras, HW4/AI4 add the two B-pillars).
+/// One selectable tile in the camera-view strip: the grid view, or a single camera the selected clip actually recorded (HW3 vehicles write four cameras, HW4/AI4 add the two B-pillars).
 /// </summary>
 public sealed partial class CameraViewOption : ObservableObject
 {

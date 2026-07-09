@@ -23,13 +23,12 @@ namespace SentryDeck;
 public partial class MainWindowViewModel : ObservableObject
 {
     /// <summary>
-    /// The multi-camera grid pseudo-view. Every other view id is a canonical camera name from
-    /// <see cref="CameraNames"/>, so the selected view maps 1:1 onto the clip's camera files.
+    /// The multi-camera grid pseudo-view.
+    /// Every other view id is a canonical camera name from <see cref="CameraNames"/>, so the selected view maps 1:1 onto the clip's camera files.
     /// </summary>
     public const string GridCameraView = "grid";
 
-    // The classic four-camera set (HW3 and earlier) shown before any clip is opened, so the
-    // selector strip doesn't start empty.
+    // The classic four-camera set (HW3 and earlier) shown before any clip is opened, so the selector strip doesn't start empty.
     private static readonly string[] DefaultCameras =
     [
         CameraNames.Front,
@@ -237,8 +236,8 @@ public partial class MainWindowViewModel : ObservableObject
     public string ActiveCameraLabel => SelectedCameraView == GridCameraView ? "Grid" : CameraLabel(SelectedCameraView);
 
     /// <summary>
-    /// Friendly tile label for a camera. The classic four keep their short historical names;
-    /// the HW4/AI4 B-pillars are spelled out to distinguish them from the repeaters.
+    /// Friendly tile label for a camera.
+    /// The classic four keep their short historical names; the HW4/AI4 B-pillars are spelled out to distinguish them from the repeaters.
     /// </summary>
     private static string CameraLabel(string camera) => camera switch
     {
@@ -469,17 +468,15 @@ public partial class MainWindowViewModel : ObservableObject
     private string _selectedCameraView = CameraNames.Front;
 
     /// <summary>
-    /// The selectable views for the current clip: the grid plus one tile per camera the clip
-    /// actually recorded, in <see cref="CameraNames.All"/> order. The view re-parents its Flyleaf
-    /// hosts into the tiles when this changes.
+    /// The selectable views for the current clip: the grid plus one tile per camera the clip actually recorded, in <see cref="CameraNames.All"/> order.
+    /// The view re-parents its Flyleaf hosts into the tiles when this changes.
     /// </summary>
     [ObservableProperty]
     private IReadOnlyList<CameraViewOption> _cameraViewOptions = BuildCameraViewOptions(null);
 
     private static IReadOnlyList<CameraViewOption> BuildCameraViewOptions(CamClip clip)
     {
-        // Only recognized cameras get a tile: each needs a dedicated Flyleaf host wired in the
-        // view, so an unknown future suffix is ingested and played in the engine but not shown.
+        // Only recognized cameras get a tile: each needs a dedicated Flyleaf host wired in the view, so an unknown future suffix is ingested and played in the engine but not shown.
         var cameras = clip is null
             ? DefaultCameras
             : CameraNames.All.Where(camera => clip.Chunks.Any(chunk => chunk.Files.ContainsKey(camera))).ToArray();
@@ -1148,8 +1145,7 @@ public partial class MainWindowViewModel : ObservableObject
             return false;
         }
 
-        // Number keys switch camera views: 1 is the grid, then one key per camera tile in strip
-        // order (2 = Front, ... up to 7 on six-camera HW4 clips).
+        // Number keys switch camera views: 1 is the grid, then one key per camera tile in strip order (2 = Front, ... up to 7 on six-camera HW4 clips).
         if (modifiers == ModifierKeys.None)
         {
             var shortcutNumber = key switch
@@ -1579,15 +1575,13 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void SelectCameraView(string cameraView)
     {
-        // Unknown views and cameras the current clip didn't record fall back to the front
-        // (primary) angle, which every playable clip has.
+        // Unknown views and cameras the current clip didn't record fall back to the front (primary) angle, which every playable clip has.
         SelectedCameraView = IsAvailableView(cameraView) ? cameraView : CameraNames.Front;
     }
 
-    // Maps a Tesla event.json camera id to the camera view to auto-focus. Ids follow the
-    // community-documented map (0 front, 3/4 repeaters, 5/6 B-pillars, 7 rear; 1/2/8 are the
-    // non-recorded fisheye/narrow/cabin). Unknown ids and cameras this clip didn't record fall
-    // back to the front (primary) angle.
+    // Maps a Tesla event.json camera id to the camera view to auto-focus.
+    // Ids follow the community-documented map (0 front, 3/4 repeaters, 5/6 B-pillars, 7 rear; 1/2/8 are the non-recorded fisheye/narrow/cabin).
+    // Unknown ids and cameras this clip didn't record fall back to the front (primary) angle.
     internal string CameraIdToView(int cameraId)
     {
         var camera = cameraId switch
@@ -1698,8 +1692,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedClipChanged(CamClip value)
     {
-        // Rebuild the camera tiles from what this clip actually recorded (four on HW3, six on
-        // HW4/AI4). If the previously watched camera doesn't exist here, fall back to the front.
+        // Rebuild the camera tiles from what this clip actually recorded (four on HW3, six on HW4/AI4).
+        // If the previously watched camera doesn't exist here, fall back to the front.
         CameraViewOptions = BuildCameraViewOptions(value);
         if (IsAvailableView(SelectedCameraView))
         {

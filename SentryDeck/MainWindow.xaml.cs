@@ -20,8 +20,7 @@ public partial class MainWindow : Window
     private readonly MainWindowViewModel _viewModel;
     private readonly HashSet<Window> _clickHookedSurfaces = [];
 
-    // One Flyleaf host per recognized camera, plus the tile slot each camera's mini preview
-    // currently renders into (registered by the data-generated tiles as they load).
+    // One Flyleaf host per recognized camera, plus the tile slot each camera's mini preview currently renders into (registered by the data-generated tiles as they load).
     private readonly Dictionary<string, FlyleafHost> _cameraHosts;
     private readonly Dictionary<string, ContentControl> _cameraTileSlots = [];
 
@@ -194,9 +193,7 @@ public partial class MainWindow : Window
 
     private void ViewModelOnPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
-        // Re-parent the hosts when the enlarged view changes, and when a new clip swaps in a
-        // different camera set (the freshly generated tiles also self-register via
-        // CameraTileSlot_Loaded, which covers containers that don't exist yet at this moment).
+        // Re-parent the hosts when the enlarged view changes, and when a new clip swaps in a different camera set (the freshly generated tiles also self-register via CameraTileSlot_Loaded, which covers containers that don't exist yet at this moment).
         if (e.PropertyName is nameof(MainWindowViewModel.SelectedCameraView)
             or nameof(MainWindowViewModel.CameraViewOptions))
         {
@@ -239,8 +236,7 @@ public partial class MainWindow : Window
         };
     }
 
-    // Data-generated camera tiles register their preview slots as their containers load (and a
-    // stale registration is simply overwritten when a newer container claims the same camera).
+    // Data-generated camera tiles register their preview slots as their containers load (and a stale registration is simply overwritten when a newer container claims the same camera).
     private void CameraTileSlot_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is ContentControl slot && slot.DataContext is CameraViewOption { IsCamera: true } option)
@@ -263,9 +259,7 @@ public partial class MainWindow : Window
             placed.Add(host);
         }
 
-        // Hosts with no slot in this view — the B-pillars while the classic 2x2 grid is up, any
-        // camera the current clip didn't record, and the enlarged camera's own (empty) tile —
-        // wait hidden in the pool so they never linger inside a stale slot.
+        // Hosts with no slot in this view — the B-pillars while the classic 2x2 grid is up, any camera the current clip didn't record, and the enlarged camera's own (empty) tile — wait hidden in the pool so they never linger inside a stale slot.
         foreach (var host in _cameraHosts.Values)
         {
             if (!placed.Contains(host))
@@ -284,8 +278,7 @@ public partial class MainWindow : Window
     {
         if (view == MainWindowViewModel.GridCameraView)
         {
-            // The grid stays the classic four-camera 2x2 for now; pillar cameras are reachable
-            // through their single-camera views.
+            // The grid stays the classic four-camera 2x2 for now; pillar cameras are reachable through their single-camera views.
             yield return (FrontFlyleafHost, GridFrontHostSlot);
             yield return (BackFlyleafHost, GridRearHostSlot);
             yield return (LeftFlyleafHost, GridLeftHostSlot);
@@ -300,8 +293,7 @@ public partial class MainWindow : Window
 
         yield return (primaryHost, PrimaryCameraHostSlot);
 
-        // Every other camera of this clip previews inside its own selector tile; the enlarged
-        // camera's tile stays empty behind its "this is the main view" icon.
+        // Every other camera of this clip previews inside its own selector tile; the enlarged camera's tile stays empty behind its "this is the main view" icon.
         foreach (var option in _viewModel.CameraViewOptions)
         {
             if (option.IsCamera

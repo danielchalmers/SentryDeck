@@ -38,8 +38,7 @@ public sealed class MainWindowViewModelTests
         return new CamClip(System.IO.Path.GetTempPath(), "Chunked Clip", start, chunks, camEvent: null);
     }
 
-    // A clip whose single chunk recorded exactly these camera angles (no real files needed:
-    // the camera-view strip is derived from the chunk metadata alone).
+    // A clip whose single chunk recorded exactly these camera angles (no real files needed: the camera-view strip is derived from the chunk metadata alone).
     private static CamClip ClipWithCameras(params string[] cameras)
     {
         var start = new DateTime(2025, 1, 1, 12, 0, 0);
