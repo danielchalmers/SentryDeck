@@ -32,6 +32,27 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task SelectingClip_WithPillarCameras_OpensAndPlaysEveryCamera()
+    {
+        // An HW4 clip carries six cameras; the camera-keyed pool must open and play all of them,
+        // not just the classic four.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1); // default fixture = all six cameras
+        var players = CameraNames.All.ToDictionary(camera => camera, _ => new FakeCameraPlayer());
+        using var controller = new VideoPlayerController(
+            players.ToDictionary(pair => pair.Key, pair => (ICameraPlayer)pair.Value),
+            CameraNames.Front,
+            new FakeClipMediaSourceBuilder());
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        await WaitUntilAsync(() => players.Values.All(player => player.PlayCount > 0));
+
+        players[CameraNames.LeftPillar].OpenedPaths.ShouldContain(path => path.Contains("-left_pillar.mp4"));
+        players[CameraNames.RightPillar].OpenedPaths.ShouldContain(path => path.Contains("-right_pillar.mp4"));
+    }
+
+    [Fact]
     public async Task SelectingClip_WhenSecondaryFileMissing_PlaysRemainingCameras()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1, omitCamerasFromChunkZero: new HashSet<string> { CameraNames.LeftRepeater });
@@ -832,11 +853,17 @@ public sealed class VideoPlayerControllerTests
         FakeCameraPlayer right = null,
         IClipMediaSourceBuilder mediaSourceBuilder = null)
     {
+        var players = new Dictionary<string, ICameraPlayer>
+        {
+            [CameraNames.Front] = front ?? new FakeCameraPlayer(),
+            [CameraNames.Back] = back ?? new FakeCameraPlayer(),
+            [CameraNames.LeftRepeater] = left ?? new FakeCameraPlayer(),
+            [CameraNames.RightRepeater] = right ?? new FakeCameraPlayer(),
+        };
+
         return new VideoPlayerController(
-            front ?? new FakeCameraPlayer(),
-            back ?? new FakeCameraPlayer(),
-            left ?? new FakeCameraPlayer(),
-            right ?? new FakeCameraPlayer(),
+            players,
+            CameraNames.Front,
             mediaSourceBuilder ?? new FakeClipMediaSourceBuilder());
     }
 

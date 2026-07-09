@@ -31,7 +31,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private static readonly TimeSpan PostRecoverySeekTolerance = TimeSpan.FromSeconds(5);
 
-    private readonly ICameraPlayer _frontPlayer;
+    private readonly string _primaryCamera;
+    private readonly ICameraPlayer _primaryPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
     private readonly IClipMediaSourceBuilder _mediaSourceBuilder;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
@@ -67,21 +68,29 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     [ObservableProperty]
     private bool _isMediaOpen;
 
+    /// <param name="players">Camera players keyed by camera name. Every present camera is played; the clip decides which are actually opened.</param>
+    /// <param name="primaryCamera">The camera that drives the shared clock, is required to open, and anchors corrupt-chunk recovery (front on a real Tesla).</param>
     public VideoPlayerController(
-        ICameraPlayer frontPlayer,
-        ICameraPlayer backPlayer,
-        ICameraPlayer leftPlayer,
-        ICameraPlayer rightPlayer,
+        IReadOnlyDictionary<string, ICameraPlayer> players,
+        string primaryCamera,
         IClipMediaSourceBuilder mediaSourceBuilder = null)
     {
-        _frontPlayer = frontPlayer ?? throw new ArgumentNullException(nameof(frontPlayer));
-        _players = new Dictionary<string, ICameraPlayer>
+        ArgumentNullException.ThrowIfNull(players);
+        ArgumentException.ThrowIfNullOrEmpty(primaryCamera);
+
+        if (players.Count == 0)
         {
-            [CameraNames.Front] = frontPlayer,
-            [CameraNames.Back] = backPlayer ?? throw new ArgumentNullException(nameof(backPlayer)),
-            [CameraNames.LeftRepeater] = leftPlayer ?? throw new ArgumentNullException(nameof(leftPlayer)),
-            [CameraNames.RightRepeater] = rightPlayer ?? throw new ArgumentNullException(nameof(rightPlayer)),
-        };
+            throw new ArgumentException("At least one camera player is required.", nameof(players));
+        }
+
+        if (!players.TryGetValue(primaryCamera, out var primaryPlayer) || primaryPlayer is null)
+        {
+            throw new ArgumentException($"The primary camera '{primaryCamera}' has no player.", nameof(primaryCamera));
+        }
+
+        _primaryCamera = primaryCamera;
+        _primaryPlayer = primaryPlayer;
+        _players = players;
         _mediaSourceBuilder = mediaSourceBuilder ?? new FfconcatMediaSourceBuilder();
 
         Playlist = new ClipPlaylist();
@@ -98,19 +107,27 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Creates the app's Flyleaf-backed playback controller.
+    /// Creates the app's Flyleaf-backed playback controller from one surface per camera. The
+    /// primary camera (front when present) drives the timeline and owns the audio track.
     /// </summary>
-    public static VideoPlayerController Create(
-        FlyleafHost frontHost,
-        FlyleafHost backHost,
-        FlyleafHost leftHost,
-        FlyleafHost rightHost)
+    public static VideoPlayerController Create(IReadOnlyList<(string Camera, FlyleafHost Host)> cameras)
     {
-        return new VideoPlayerController(
-            new FlyleafCameraPlayer(frontHost, audioEnabled: true),
-            new FlyleafCameraPlayer(backHost, audioEnabled: false),
-            new FlyleafCameraPlayer(leftHost, audioEnabled: false),
-            new FlyleafCameraPlayer(rightHost, audioEnabled: false));
+        ArgumentNullException.ThrowIfNull(cameras);
+
+        if (cameras.Count == 0)
+        {
+            throw new ArgumentException("At least one camera is required.", nameof(cameras));
+        }
+
+        var primaryCamera = cameras.Any(camera => camera.Camera == CameraNames.Front)
+            ? CameraNames.Front
+            : cameras[0].Camera;
+
+        var players = cameras.ToDictionary(
+            camera => camera.Camera,
+            camera => (ICameraPlayer)new FlyleafCameraPlayer(camera.Host, audioEnabled: camera.Camera == primaryCamera));
+
+        return new VideoPlayerController(players, primaryCamera);
     }
 
     public ClipPlaylist Playlist { get; }
@@ -272,7 +289,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     IsPlaying = false;
                 }
 
-                var positionBeforeStep = _frontPlayer.Position;
+                var positionBeforeStep = _primaryPlayer.Position;
 
                 foreach (var player in _players.Values.Where(player => player.IsOpen))
                 {
@@ -283,13 +300,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 // paused, so Position normally updates on its own via OnPositionChanged. This is a
                 // belt-and-suspenders sync from the front player in case that event doesn't fire for a
                 // given step.
-                Position = Clamp(_frontPlayer.Position, TimeSpan.Zero, Duration);
+                Position = Clamp(_primaryPlayer.Position, TimeSpan.Zero, Duration);
 
                 Log.Debug(
                     "Stepped frame. Forward={Forward}; PositionBefore={PositionBefore}; PositionAfter={PositionAfter}; ClipName={ClipName}",
                     forward,
                     positionBeforeStep,
-                    _frontPlayer.Position,
+                    _primaryPlayer.Position,
                     CurrentClip?.Name);
             });
         }
@@ -588,15 +605,16 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (clip is null || mediaSource is null)
             return;
 
-        if (!mediaSource.CameraPlaylistPaths.ContainsKey(CameraNames.Front))
+        if (!mediaSource.CameraPlaylistPaths.ContainsKey(_primaryCamera))
         {
             Log.Warning(
-                "Cannot open clip because front camera is missing. ClipName={ClipName}; ClipPath={ClipPath}; Cameras={Cameras}; RequestId={RequestId}",
+                "Cannot open clip because the primary camera is missing. PrimaryCamera={PrimaryCamera}; ClipName={ClipName}; ClipPath={ClipPath}; Cameras={Cameras}; RequestId={RequestId}",
+                _primaryCamera,
                 clip.Name,
                 clip.FullPath,
                 mediaSource.CameraPlaylistPaths.Keys.Order().ToArray(),
                 requestId);
-            ErrorMessage = "No front camera footage found.";
+            ErrorMessage = $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
             return;
         }
 
@@ -609,15 +627,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var frontOpened = await OpenCameraPlayerAsync(
-                CameraNames.Front,
-                _frontPlayer,
+            var primaryOpened = await OpenCameraPlayerAsync(
+                _primaryCamera,
+                _primaryPlayer,
                 mediaSource,
                 required: true,
                 requestId,
                 cancellationToken);
 
-            if (!frontOpened)
+            if (!primaryOpened)
             {
                 IsPlaying = false;
                 return;
@@ -642,7 +660,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 _excludedChunkIndices.UnionWith(mediaSource.AutoExcludedChunkIndices);
             }
 
-            IsMediaOpen = _frontPlayer.IsOpen;
+            IsMediaOpen = _primaryPlayer.IsOpen;
 
             ApplyPlaybackSpeed();
 
@@ -654,7 +672,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 // Get the user watching video as soon as the front camera (the authoritative,
                 // required source) is ready, rather than gating first-frame on the slowest of
                 // four opens. Side cameras join in progress once their own opens complete, below.
-                await _frontPlayer.PlayAsync();
+                await _primaryPlayer.PlayAsync();
                 IsPlaying = true;
 
                 // Position events can now flow: the front player is genuinely playing, so this is
@@ -708,7 +726,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         CancellationToken cancellationToken)
     {
         var joinTasks = _players
-            .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _frontPlayer))
+            .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _primaryPlayer))
             .Select(cameraPlayer => OpenAndJoinSecondaryCameraAsync(
                 cameraPlayer.Key,
                 cameraPlayer.Value,
@@ -739,7 +757,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return;
         }
 
-        var joinPosition = _frontPlayer.Position;
+        var joinPosition = _primaryPlayer.Position;
 
         Log.Debug(
             "Joining secondary camera to in-progress playback. Camera={Camera}; JoinPosition={JoinPosition}; RequestId={RequestId}",
@@ -757,10 +775,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         // The seek above takes some non-zero time, during which the front kept playing; do one
         // single-shot correction if the gap grew meaningfully rather than looping/polling.
-        var driftAfterJoin = _frontPlayer.Position - joinPosition;
+        var driftAfterJoin = _primaryPlayer.Position - joinPosition;
         if (driftAfterJoin > TimeSpan.FromMilliseconds(250))
         {
-            var correctedPosition = _frontPlayer.Position;
+            var correctedPosition = _primaryPlayer.Position;
 
             Log.Debug(
                 "Secondary camera join drifted; reissuing seek. Camera={Camera}; DriftAfterJoin={DriftAfterJoin}; CorrectedPosition={CorrectedPosition}; RequestId={RequestId}",
@@ -783,7 +801,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         CancellationToken cancellationToken)
     {
         var secondaryOpenTasks = _players
-            .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _frontPlayer))
+            .Where(cameraPlayer => !ReferenceEquals(cameraPlayer.Value, _primaryPlayer))
             .Select(cameraPlayer => OpenCameraPlayerAsync(
                 cameraPlayer.Key,
                 cameraPlayer.Value,
@@ -814,7 +832,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             if (required)
             {
-                ErrorMessage = "Failed to open front camera video.";
+                ErrorMessage = $"Failed to open {CameraNames.DisplayName(camera)} camera video.";
             }
 
             return false;
@@ -835,7 +853,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             if (required)
             {
-                ErrorMessage = "Failed to open front camera video.";
+                ErrorMessage = $"Failed to open {CameraNames.DisplayName(camera)} camera video.";
             }
 
             return false;
@@ -935,7 +953,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private void OnPlayerOpened(object sender, EventArgs e)
     {
-        if (ReferenceEquals(sender, _frontPlayer))
+        if (ReferenceEquals(sender, _primaryPlayer))
         {
             IsMediaOpen = true;
         }
@@ -943,7 +961,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private async void OnPlayerEnded(object sender, EventArgs e)
     {
-        if (!ReferenceEquals(sender, _frontPlayer) || _isOpeningMedia)
+        if (!ReferenceEquals(sender, _primaryPlayer) || _isOpeningMedia)
             return;
 
         var wasPlaying = IsPlaying;
@@ -1181,7 +1199,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private async void OnPlayerFailed(object sender, CameraPlaybackFailedEventArgs e)
     {
         var camera = GetCameraName(sender);
-        if (!ReferenceEquals(sender, _frontPlayer))
+        if (!ReferenceEquals(sender, _primaryPlayer))
         {
             Log.Warning(
                 e.ErrorException,
@@ -1231,7 +1249,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private void OnPositionChanged(object sender, CameraPositionChangedEventArgs e)
     {
-        if (!ReferenceEquals(sender, _frontPlayer) || _isOpeningMedia)
+        if (!ReferenceEquals(sender, _primaryPlayer) || _isOpeningMedia)
             return;
 
         Position = e.Position;

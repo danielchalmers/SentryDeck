@@ -596,7 +596,7 @@ public sealed class MainWindowViewModelTests
 
         // Sanity check that this genuinely differs from what the naive linear/estimated model
         // (ignoring the gap) would have produced, so the test would fail if gap-awareness regressed.
-        Math.Abs(vm.EventMarkerPosition - 130.0 / 180).ShouldBeGreaterThan(0.01);
+        Math.Abs(vm.EventMarkerPosition - (130.0 / 180)).ShouldBeGreaterThan(0.01);
     }
 
     [Fact]
@@ -817,13 +817,26 @@ public sealed class MainWindowViewModelTests
     // thread that ran the code before the await -- which silently breaks that invariant. Blocking
     // on the wait here (instead of awaiting it) keeps everything, including the VM construction
     // and every later test action, pinned to the single calling thread.
+    // A four-camera controller (front + three secondaries) built on the camera-keyed constructor,
+    // with front as the primary/clock anchor -- mirrors what the view wires up at runtime.
+    private static VideoPlayerController BuildFourCameraController(FakeCameraPlayer front) =>
+        new(
+            new Dictionary<string, ICameraPlayer>
+            {
+                [CameraNames.Front] = front,
+                [CameraNames.Back] = new FakeCameraPlayer(),
+                [CameraNames.LeftRepeater] = new FakeCameraPlayer(),
+                [CameraNames.RightRepeater] = new FakeCameraPlayer(),
+            },
+            CameraNames.Front);
+
     private static (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateViewModelWithOpenedClip(
         CamClip clip,
         IClipExporter clipExporter = null,
         Func<string, string> savePathPicker = null)
     {
         var front = new FakeCameraPlayer();
-        var built = new VideoPlayerController(front, new FakeCameraPlayer(), new FakeCameraPlayer(), new FakeCameraPlayer());
+        var built = BuildFourCameraController(front);
 
         built.LoadClips([clip]);
         built.Playlist.MoveTo(0);
@@ -1319,7 +1332,7 @@ public sealed class MainWindowViewModelTests
         Func<string, IReadOnlyList<CamClip>> clipLoader = null)
     {
         front = new FakeCameraPlayer();
-        var built = new VideoPlayerController(front, new FakeCameraPlayer(), new FakeCameraPlayer(), new FakeCameraPlayer());
+        var built = BuildFourCameraController(front);
         controller = built;
 
         var vm = new MainWindowViewModel(
