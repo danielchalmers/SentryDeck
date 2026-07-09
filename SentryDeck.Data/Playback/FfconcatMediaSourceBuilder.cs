@@ -63,8 +63,18 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
         // each other's playlists. Must stay deterministic per clip: rebuilds overwrite in place.
         var clipToken = $"{SanitizeForFileName(clip.Name)}-{HashForFileName(clip.FullPath)}";
 
-        foreach (var camera in CameraNames.All)
+        // Build a playlist for every camera actually present in the clip -- not a fixed known set --
+        // so HW4 B-pillar cameras (and any future camera) are surfaced instead of silently dropped.
+        // The front camera still drives the shared timeline (see ProbeFrontChunkDuration above).
+        var camerasPresent = includedIndices
+            .SelectMany(index => clip.Chunks[index].Files.Keys)
+            .Distinct()
+            .OrderBy(camera => camera, StringComparer.Ordinal);
+
+        foreach (var camera in camerasPresent)
         {
+            // A camera absent from the first included chunk is omitted entirely (the playlist must
+            // start at the shared timeline's origin); one that drops out later truncates below.
             if (includedIndices.Count == 0 || !clip.Chunks[includedIndices[0]].Files.ContainsKey(camera))
             {
                 continue;
