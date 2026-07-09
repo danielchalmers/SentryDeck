@@ -23,6 +23,16 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private const int MaxRecoveryAttemptsPerClip = 3;
 
     /// <summary>
+    /// Shown when a clip's files carry Tesla's 2026.20+ dashcam encryption instead of plain MP4s.
+    /// The keys live behind the owner's Tesla account, so pointing at the in-car toggle and
+    /// Tesla's own viewer is the most useful thing the app can do.
+    /// </summary>
+    internal const string EncryptedClipMessage =
+        "This clip appears to be encrypted by the vehicle (Tesla software 2026.20 and later encrypts " +
+        "dashcam recordings by default). To record playable clips, turn off Controls > Safety > " +
+        "Encrypt Dashcam Recordings. Already-encrypted clips can be viewed at dashcam.tesla.com.";
+
+    /// <summary>
     /// One-shot guard for the reopen/seek race after a recovery: how long to wait after issuing
     /// the resume seek before verifying the front player actually landed near the target, and how
     /// far below the target the reported position may sit before the seek is reissued once.
@@ -614,7 +624,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 clip.FullPath,
                 mediaSource.CameraPlaylistPaths.Keys.Order().ToArray(),
                 requestId);
-            ErrorMessage = $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
+
+            // A fully encrypted clip lands here too: the builder probes every chunk's front file,
+            // finds no readable moov in any of them, and excludes them all — indistinguishable
+            // from "no footage" without sniffing the files themselves.
+            ErrorMessage = EncryptedClipDetector.LooksEncrypted(clip)
+                ? EncryptedClipMessage
+                : $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
             return;
         }
 
@@ -1165,7 +1181,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             clip.FullPath,
             badChunkIndex,
             _recoveryAttempts);
-        ErrorMessage = "Playback stopped: too many unreadable video files.";
+        ErrorMessage = EncryptedClipDetector.LooksEncrypted(clip)
+            ? EncryptedClipMessage
+            : "Playback stopped: too many unreadable video files.";
         IsMediaOpen = false;
     }
 

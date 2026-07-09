@@ -16,6 +16,24 @@ internal static class TestMp4
     public static byte[] GarbageBytes => [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
 
     /// <summary>
+    /// Bytes shaped like Tesla's 2026.20 encrypted recordings: a 20-byte header (with an embedded
+    /// UUID) followed by an IV-prefixed 4 KiB ciphertext chunk — no MP4 box structure anywhere.
+    /// </summary>
+    public static byte[] EncryptedLookingBytes
+    {
+        get
+        {
+            var bytes = new byte[20 + 16 + 4096];
+            for (var i = 0; i < bytes.Length; i++)
+            {
+                bytes[i] = (byte)(i * 197 + 13); // deterministic pseudo-noise, never ASCII "ftyp"
+            }
+
+            return bytes;
+        }
+    }
+
+    /// <summary>
     /// A minimal valid mp4 whose mvhd encodes the given duration (version 0, millisecond timescale).
     /// </summary>
     public static byte[] BuildWithDuration(TimeSpan duration)
