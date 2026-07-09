@@ -27,7 +27,13 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _viewModel = new MainWindowViewModel(
-            () => VideoPlayerController.Create(FrontFlyleafHost, BackFlyleafHost, LeftFlyleafHost, RightFlyleafHost));
+            () => VideoPlayerController.Create(
+            [
+                (CameraNames.Front, FrontFlyleafHost),
+                (CameraNames.Back, BackFlyleafHost),
+                (CameraNames.LeftRepeater, LeftFlyleafHost),
+                (CameraNames.RightRepeater, RightFlyleafHost),
+            ]));
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
         _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
 
