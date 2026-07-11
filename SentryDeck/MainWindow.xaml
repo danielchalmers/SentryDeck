@@ -204,11 +204,34 @@
                                     Height="16"
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
-                                    Background="{Binding Data.SelectedClip.Event, Converter={local:ReasonBrushConverter}, Source={StaticResource VmProxy}}"
                                     CornerRadius="1.5"
                                     IsHitTestVisible="False"
                                     ToolTip="{Binding Data.EventMarkerTooltip, Source={StaticResource VmProxy}}"
                                     Visibility="{Binding Data.HasEventMarker, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                <Border.Style>
+                                    <!--  Reason color via DynamicResource (keyed by ReasonKey) so the marker re-colors on a live OS theme switch.  -->
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                         Value="sentry">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                         Value="honk">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                         Value="alert">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                         Value="saved">
+                                                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <Border.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
                                         <Binding Path="Data.EventMarkerPosition"
@@ -676,12 +699,29 @@
                                            Width="3"
                                            Margin="0,10"
                                            HorizontalAlignment="Left"
-                                           Fill="{Binding Event, Converter={local:ReasonBrushConverter}}"
                                            RadiusX="1.5"
                                            RadiusY="1.5">
                                     <Rectangle.Style>
                                         <Style TargetType="Rectangle">
+                                            <!--  Reason color via DynamicResource (keyed by ReasonKey) so the stripe re-colors on a live OS theme switch.  -->
+                                            <Setter Property="Fill" Value="{DynamicResource TextFillColorTertiaryBrush}" />
                                             <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                             Value="sentry">
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorAttentionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                             Value="honk">
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                             Value="alert">
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                             Value="saved">
+                                                    <Setter Property="Fill" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                </DataTrigger>
                                                 <!--  Hidden (not Collapsed) so the 3px column keeps its width and the thumbnail doesn't shift on select.  -->
                                                 <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}"
                                                              Value="True">

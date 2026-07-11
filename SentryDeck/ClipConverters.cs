@@ -23,25 +23,17 @@ public sealed class ReasonLabelConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Maps a <see cref="CamEvent"/> reason to its accent brush from the current theme.
+/// The stable reason category key for a <see cref="CamEvent"/> (see <see cref="ClipDisplay.ReasonKey"/>).
+/// Reason-colored overlays bind this into DataTriggers that pick a theme brush via
+/// <c>DynamicResource</c>, so the color follows a live OS light/dark switch. (Resolving the brush in
+/// the converter instead returned a one-time snapshot that stayed on the old theme.)
 /// </summary>
-public sealed class ReasonBrushConverter : MarkupExtension, IValueConverter
+public sealed class ReasonKeyConverter : MarkupExtension, IValueConverter
 {
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        var key = ClipDisplay.ReasonKey(value as CamEvent) switch
-        {
-            ClipDisplay.ReasonSentry => "SystemFillColorAttentionBrush",
-            ClipDisplay.ReasonHonk => "SystemFillColorCautionBrush",
-            ClipDisplay.ReasonAlert => "SystemFillColorCriticalBrush",
-            ClipDisplay.ReasonSaved => "AccentFillColorDefaultBrush",
-            _ => "TextFillColorTertiaryBrush",
-        };
-
-        return Application.Current?.TryFindResource(key) as Brush ?? Brushes.Gray;
-    }
+        => ClipDisplay.ReasonKey(value as CamEvent);
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
