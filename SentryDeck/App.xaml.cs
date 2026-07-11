@@ -41,6 +41,16 @@ public partial class App : Application
             .WriteTo.Debug()
             .CreateLogger();
 
+        // Last-resort safety net for exceptions raised on the UI thread by a command or event
+        // handler (e.g. Clipboard.SetText throwing COMException when a clipboard manager holds the
+        // clipboard, or Process.Start failing on a missing shell association). Without this, WPF
+        // tears the whole process down; a media reviewer should log the fault and stay open instead.
+        DispatcherUnhandledException += (_, e) =>
+        {
+            Log.Error(e.Exception, "Unhandled dispatcher exception; keeping the application alive");
+            e.Handled = true;
+        };
+
         Log.Information(
             "Application starting. Version={Version}; Runtime={Runtime}; OS={OS}; ProcessArchitecture={ProcessArchitecture}",
             GetType().Assembly.GetName().Version,
