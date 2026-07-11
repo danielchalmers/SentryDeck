@@ -270,7 +270,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
 
         if (_player.Status == Status.Ended)
         {
-            _isOpen = false;
+            // Reaching end-of-stream does NOT close the media: Flyleaf keeps the demuxer open at
+            // EOF, so playback can still be replayed, scrubbed, or frame-stepped from the parked end
+            // position. Clearing _isOpen here made every open-player-gated operation (PlayAsync's
+            // replay, SeekAsync, StepFrameAsync) a silent no-op once a clip finished, freezing it on
+            // its last frame while the controller still reported IsPlaying. Leave it open; the real
+            // close happens on StopAndClose (user Stop / clip change / dispose).
             Ended?.Invoke(this, EventArgs.Empty);
         }
     }
