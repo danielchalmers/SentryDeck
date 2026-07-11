@@ -44,6 +44,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private readonly IClipMediaSourceBuilder _mediaSourceBuilder;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly HashSet<int> _excludedChunkIndices = [];
+
+    // _excludedChunkIndices is mutated under the operation lock (a clip change clears it, recovery
+    // adds to it) but is ALSO read outside that lock on a Flyleaf callback thread (recovery maps a
+    // failure position back to an original chunk index). Guard every access with this lock so a
+    // concurrent clear can't throw "Collection was modified" out of an async void player handler.
+    private readonly Lock _excludedChunkIndicesLock = new();
     private CancellationTokenSource _playbackCts;
     private bool _isDisposed;
     private bool _isOpeningMedia;
@@ -505,7 +511,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
                 // A freshly selected clip starts with no known-bad chunks and a clean recovery budget,
                 // regardless of what happened on the previously playing clip.
-                _excludedChunkIndices.Clear();
+                lock (_excludedChunkIndicesLock)
+                {
+                    _excludedChunkIndices.Clear();
+                }
+
                 _recoveryAttempts = 0;
 
                 if (clip.Chunks.Count == 0)
@@ -668,7 +678,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     clip.Name,
                     clip.FullPath,
                     mediaSource.AutoExcludedChunkIndices);
-                _excludedChunkIndices.UnionWith(mediaSource.AutoExcludedChunkIndices);
+                lock (_excludedChunkIndicesLock)
+                {
+                    _excludedChunkIndices.UnionWith(mediaSource.AutoExcludedChunkIndices);
+                }
             }
 
             IsMediaOpen = _primaryPlayer.IsOpen;
@@ -1070,12 +1083,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 // every file, so a chunk that became unreadable since the last build shows up in
                 // AutoExcludedChunkIndices -- that's the real culprit, and the (possibly healthy)
                 // chunk under the failure position must NOT be excluded.
+                var excludedSnapshot = SnapshotExcludedChunkIndices();
                 var newMediaSource = await Task.Run(
-                    () => _mediaSourceBuilder.Build(clip, _excludedChunkIndices),
+                    () => _mediaSourceBuilder.Build(clip, excludedSnapshot),
                     ct);
 
                 var probeFoundCulprits = newMediaSource.AutoExcludedChunkIndices
-                    .Any(index => !_excludedChunkIndices.Contains(index));
+                    .Any(index => !excludedSnapshot.Contains(index));
 
                 if (probeFoundCulprits)
                 {
@@ -1089,9 +1103,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 {
                     // Probe-clean corruption (moov intact, media data bad): fall back to
                     // excluding the chunk containing the failure position and rebuild again.
-                    if (positionDerivedIndex < 0
-                        || !_excludedChunkIndices.Add(positionDerivedIndex)
-                        || _excludedChunkIndices.Count >= clip.Chunks.Count)
+                    bool excludedNewChunk;
+                    int excludedChunkCount;
+                    lock (_excludedChunkIndicesLock)
+                    {
+                        excludedNewChunk = positionDerivedIndex >= 0 && _excludedChunkIndices.Add(positionDerivedIndex);
+                        excludedChunkCount = _excludedChunkIndices.Count;
+                    }
+
+                    if (!excludedNewChunk || excludedChunkCount >= clip.Chunks.Count)
                     {
                         GiveUpOnClip(clip, positionDerivedIndex);
                         return;
@@ -1104,8 +1124,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                         positionDerivedIndex,
                         clip.Chunks[positionDerivedIndex].Timestamp);
 
+                    var rebuildSnapshot = SnapshotExcludedChunkIndices();
                     newMediaSource = await Task.Run(
-                        () => _mediaSourceBuilder.Build(clip, _excludedChunkIndices),
+                        () => _mediaSourceBuilder.Build(clip, rebuildSnapshot),
                         ct);
                 }
 
@@ -1187,13 +1208,24 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// <see cref="ClipMediaSource.ChunkStarts"/> back to the corresponding index in the original
     /// clip's <see cref="CamClip.Chunks"/>, accounting for chunks already excluded.
     /// </summary>
+    private HashSet<int> SnapshotExcludedChunkIndices()
+    {
+        lock (_excludedChunkIndicesLock)
+        {
+            return new HashSet<int>(_excludedChunkIndices);
+        }
+    }
+
     private int MapTimelineIndexToOriginalChunkIndex(CamClip clip, int timelineIndex)
     {
+        // Snapshot under the lock: this runs on a Flyleaf callback thread during recovery, outside
+        // the operation lock, while a concurrent clip change can clear the exclusion set.
+        var excluded = SnapshotExcludedChunkIndices();
         var remaining = timelineIndex;
 
         for (var originalIndex = 0; originalIndex < clip.Chunks.Count; originalIndex++)
         {
-            if (_excludedChunkIndices.Contains(originalIndex))
+            if (excluded.Contains(originalIndex))
             {
                 continue;
             }
