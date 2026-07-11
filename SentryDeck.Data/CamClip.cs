@@ -77,6 +77,15 @@ public partial record class CamClip
             return null;
         }
 
+        // Neither the folder name nor event.json supplied a timestamp (e.g. Tesla's RecentClips
+        // folder: loose files directly under it, with no date-named subfolder and no event metadata).
+        // Fall back to the earliest chunk's timestamp, parsed from the file names, so the clip sorts
+        // and dates correctly instead of collapsing to DateTime.MinValue (1/1/0001).
+        if (timestamp == default)
+        {
+            timestamp = chunks[0].Timestamp;
+        }
+
         return new(directory, title, timestamp, chunks, eventData);
     }
 

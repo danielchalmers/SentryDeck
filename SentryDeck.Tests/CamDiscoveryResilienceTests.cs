@@ -87,6 +87,29 @@ public static class CamDiscoveryResilienceTests
     }
 
     [Fact]
+    public static void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
+    {
+        // A folder like Tesla's RecentClips: loose files directly inside, no date-named subfolder and
+        // no event.json. The clip timestamp must come from the file names, not DateTime.MinValue.
+        var root = CreateTempDir();
+        try
+        {
+            var dir = CreateSubDir(root, "RecentClips");
+            Touch(dir, "2023-08-28_13-10-35-front.mp4");
+            Touch(dir, "2023-08-28_13-09-35-front.mp4"); // earlier chunk, written second
+
+            var clip = CamClip.Map(dir);
+
+            clip.ShouldNotBeNull();
+            clip.Timestamp.ShouldBe(new DateTime(2023, 8, 28, 13, 9, 35)); // earliest chunk, not MinValue
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public static void Map_CalendarInvalidFolderName_DoesNotThrowAndKeepsChunks()
     {
         var root = CreateTempDir();
