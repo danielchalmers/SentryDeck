@@ -1379,6 +1379,35 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SaveEventClip_BuilderThrows_ShowsErrorInsteadOfCrashing()
+    {
+        // Building an unopened clip's media source does real IO and can throw (drive unplugged,
+        // temp write fails). It must surface an Export Failed dialog, not escape to the dispatcher.
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        var exporter = new FakeClipExporter();
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: exporter,
+            savePathPicker: _ => @"C:\out\event.mp4",
+            exportMediaSourceBuilder: new ThrowingClipMediaSourceBuilder(new IOException("drive gone")))
+        {
+            RevealInExplorer = _ => { },
+        };
+
+        await vm.SaveEventClipCommand.ExecuteAsync(clip);
+
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.ErrorTitle.ShouldBe("Export Failed");
+        exporter.Requests.ShouldBeEmpty();
+        vm.IsExporting.ShouldBeFalse();
+    }
+
+    private sealed class ThrowingClipMediaSourceBuilder(Exception exception) : IClipMediaSourceBuilder
+    {
+        public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null) => throw exception;
+    }
+
+    [Fact]
     public void SaveEventClip_RequiresAnEventMoment()
     {
         var vm = CreateViewModel();

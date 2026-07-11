@@ -924,8 +924,23 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var mediaSource = _playerController?.CurrentClip == clip ? _playerController.OpenedMediaSource : null;
-        mediaSource ??= await Task.Run(() => _exportMediaSourceBuilder.Build(clip));
+        ClipMediaSource mediaSource;
+        try
+        {
+            mediaSource = _playerController?.CurrentClip == clip ? _playerController.OpenedMediaSource : null;
+
+            // Building an unopened clip's source does real IO (probe every chunk, write ffconcat
+            // files) and can throw (drive unplugged, temp write fails). Unlike ExportSelectionAsync,
+            // nothing downstream caught it, so the fault escaped to the dispatcher; surface a normal
+            // "Export Failed" dialog instead.
+            mediaSource ??= await Task.Run(() => _exportMediaSourceBuilder.Build(clip));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to build media source for event clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+            ShowError("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
+            return;
+        }
 
         var eventTime = mediaSource.Duration > TimeSpan.Zero ? mediaSource.ToMediaTime(clip.Event.Timestamp) : null;
         if (eventTime is null)
