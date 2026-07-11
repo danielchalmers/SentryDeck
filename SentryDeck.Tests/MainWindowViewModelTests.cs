@@ -930,6 +930,42 @@ public sealed class MainWindowViewModelTests
         front.SeekAccurateFlags[^1].ShouldBeTrue();
     }
 
+    // Synchronous for the same thread-affinity reason as DragSequence above.
+    [Fact]
+    public void StaleEndSeek_AfterANewDragStarted_DoesNotUnlockPositionSync()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1); // 60s clip
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+
+        vm.BeginSeek();
+        vm.SeekPosition = 0.5;
+
+        // While gesture #1's accurate release seek is executing, the user grabs the thumb again
+        // and starts a new drag. Gesture #1's completion is then stale: it must NOT clear the
+        // active drag's seeking state, or the position sync would yank the thumb mid-drag.
+        front.SeekCallback = () =>
+        {
+            front.SeekCallback = null;
+            vm.BeginSeek();
+            vm.SeekPosition = 0.25;
+        };
+
+#pragma warning disable xUnit1031 // completes synchronously; see DragSequence's comment
+        vm.EndSeekAsync().GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+
+        // A controller position sync arriving during drag #2 must still be ignored.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(50));
+        vm.SeekPosition.ShouldBe(0.25);
+
+        // The active gesture still ends normally and re-enables position sync.
+#pragma warning disable xUnit1031
+        vm.EndSeekAsync().GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+        front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        vm.SeekPosition.ShouldBe(0.5, 0.0001);
+    }
+
     [Fact]
     public void PositionSync_WhenNotDragging_DoesNotTriggerScrubSeeks()
     {

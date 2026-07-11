@@ -52,6 +52,12 @@ public partial class MainWindowViewModel : ObservableObject
     private CancellationTokenSource _selectionCts;
     private readonly SeekScrubCoalescer _scrubCoalescer;
     private bool _isSeeking;
+
+    // Identifies the current seek gesture. EndSeekAsync's slow tail (the accurate seek can queue
+    // behind in-flight scrubs) may complete after the user has already started a NEW drag; only
+    // the completion belonging to the latest gesture may clear _isSeeking, or the position sync
+    // would yank the thumb out from under the active drag.
+    private int _seekGeneration;
     private bool _isInitialized;
 
     // The source of dashcam roots: auto-discovery by default, or the user's last picked folders. Refresh
@@ -1288,6 +1294,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (CanSeek)
         {
+            _seekGeneration++;
             _isSeeking = true;
             _scrubCoalescer.Reset();
         }
@@ -1295,6 +1302,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public async Task EndSeekAsync()
     {
+        var generation = _seekGeneration;
+
         if (_playerController is null || !CanSeek)
         {
             _isSeeking = false;
@@ -1313,7 +1322,13 @@ public partial class MainWindowViewModel : ObservableObject
         // waits behind (and thus supersedes the effect of) any in-flight scrub seek issued by the
         // coalescer rather than racing it.
         await SeekToCurrentPositionAsync();
-        _isSeeking = false;
+
+        // Only the latest gesture's completion may end the seeking state: if the user has already
+        // grabbed the thumb again, this completion is stale and their new drag owns the flag.
+        if (generation == _seekGeneration)
+        {
+            _isSeeking = false;
+        }
     }
 
     /// <summary>

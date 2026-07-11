@@ -42,6 +42,14 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     /// </summary>
     public TaskCompletionSource<object> OpenGate { get; set; }
 
+    /// <summary>
+    /// Optional hook invoked synchronously inside <see cref="SeekAsync"/> (after recording the
+    /// call, before updating <see cref="Position"/>) -- lets tests interleave actions mid-seek
+    /// (e.g. a new drag gesture starting while the previous release's accurate seek is still
+    /// executing) without leaving the test thread.
+    /// </summary>
+    public Action SeekCallback { get; set; }
+
     public int PlayCount { get; private set; }
     public int PauseCount { get; private set; }
     public int StopCount { get; private set; }
@@ -106,6 +114,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
         SeekPositions.Add(position);
         SeekAccurateFlags.Add(accurate);
         CallLog.Add(accurate ? $"seek:{position.TotalSeconds}" : $"scrub:{position.TotalSeconds}");
+        SeekCallback?.Invoke();
         Position = position;
         PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
         return Task.CompletedTask;
