@@ -106,6 +106,35 @@ public sealed class SeekScrubCoalescerTests
     }
 
     [Fact]
+    public async Task CancelPending_DropsTheQueuedValue_SoCompletionIssuesNothing()
+    {
+        var issued = new List<TimeSpan>();
+        var gate = new TaskCompletionSource();
+        var coalescer = new SeekScrubCoalescer(async position =>
+        {
+            issued.Add(position);
+            if (issued.Count == 1)
+            {
+                await gate.Task;
+            }
+        });
+
+        // A scrub is in flight with a much later value queued behind it (mid-drag state).
+        coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1));
+        coalescer.OnDragValueChanged(TimeSpan.FromSeconds(30));
+
+        // Mouse-up: the gesture ends, so the queued value must be dropped -- re-issuing it after
+        // the release's accurate seek would land a keyframe scrub last and move the playhead.
+        coalescer.CancelPending();
+
+        gate.SetResult();
+        await WaitUntilAsync(() => !coalescer.IsSeekInFlight);
+        await Task.Delay(50); // give a (wrongly) re-issued trailing seek a chance to show up
+
+        issued.ShouldBe([TimeSpan.FromSeconds(1)]);
+    }
+
+    [Fact]
     public void Reset_ForgetsLastIssuedValue_SoNextValueAlwaysIssues()
     {
         var issued = new List<TimeSpan>();

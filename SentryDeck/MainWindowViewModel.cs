@@ -1301,6 +1301,12 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        // The gesture is over: drop any scrub value still queued in the coalescer. When the
+        // in-flight scrub completes it would otherwise re-issue that value as a keyframe seek
+        // AFTER the accurate seek below (both queue on the controller's serialized-operation
+        // lock in that order), leaving the playhead on a keyframe instead of the release point.
+        _scrubCoalescer.CancelPending();
+
         // _isSeeking stays true until after the accurate seek below completes, so a scrub seek
         // still winding down from the drag doesn't race it: SeekToCurrentPositionAsync's SeekAsync
         // shares the controller's serialized-operation lock with ScrubSeekAsync, so it naturally

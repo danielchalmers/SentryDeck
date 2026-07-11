@@ -31,7 +31,13 @@ public sealed class SeekScrubCoalescer
     /// <summary>True while a scrub seek issued by this coalescer is in flight.</summary>
     public bool IsSeekInFlight
     {
-        get { lock (_gate) { return _isSeekInFlight; } }
+        get
+        {
+            lock (_gate)
+            {
+                return _isSeekInFlight;
+            }
+        }
     }
 
     /// <summary>
@@ -56,6 +62,20 @@ public sealed class SeekScrubCoalescer
             }
 
             BeginSeekLocked(value);
+        }
+    }
+
+    /// <summary>
+    /// Drops any value queued behind the in-flight seek without disturbing that seek. Called when
+    /// the drag gesture ends: the release is followed by an ACCURATE seek to the final position,
+    /// and a queued keyframe scrub re-issued after it would land last and yank the playhead off
+    /// the frame-accurate release point (up to a full GOP away).
+    /// </summary>
+    public void CancelPending()
+    {
+        lock (_gate)
+        {
+            _pendingValue = null;
         }
     }
 
