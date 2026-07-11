@@ -119,6 +119,9 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
             playlistPaths[camera] = playlistPath;
         }
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations);
+        // Mirror the real builder: the clip's original start, even when leading chunks are excluded.
+        DateTime? clipStartTimestamp = clip.Chunks.Count > 0 ? clip.Chunks[0].Timestamp : null;
+
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp);
     }
 }

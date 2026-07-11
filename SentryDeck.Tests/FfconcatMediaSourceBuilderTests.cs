@@ -424,6 +424,35 @@ public sealed class FfconcatMediaSourceBuilderTests
     }
 
     [Fact]
+    public void ToMediaTime_InstantInsideExcludedLeadingChunk_SnapsForwardToMediaTimeZero()
+    {
+        // Chunk 0 is excluded (e.g. corrupt), so the surviving footage begins at chunk 1. An event
+        // that fired during chunk 0's window sits in a LEADING gap and must snap forward to where
+        // footage resumes -- media time zero -- just like an instant inside a mid-clip gap.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clipFiles.Clip, new HashSet<int> { 0 });
+
+        var instantInsideExcludedChunk = clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(30);
+
+        mediaSource.ToMediaTime(instantInsideExcludedChunk).ShouldBe(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantBeforeClipStart_StaysNullEvenWithExcludedLeadingChunk()
+    {
+        // Clock skew: earlier than the clip ever recorded stays unmapped -- the leading-gap snap
+        // only covers instants at or after the clip's original start.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var builder = new FfconcatMediaSourceBuilder();
+        var mediaSource = builder.Build(clipFiles.Clip, new HashSet<int> { 0 });
+
+        var instant = clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(-1);
+
+        mediaSource.ToMediaTime(instant).ShouldBeNull();
+    }
+
+    [Fact]
     public void ToMediaTime_InstantAfterClipEnd_ReturnsNull()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);

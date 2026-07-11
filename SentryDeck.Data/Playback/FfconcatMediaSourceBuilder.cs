@@ -114,7 +114,11 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
         var chunkTimestamps = includedIndices.Select(index => clip.Chunks[index].Timestamp).ToList();
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations);
+        // The clip's ORIGINAL start (even if that chunk was excluded), so ToMediaTime can tell an
+        // event inside excluded leading footage (snap to media time zero) from pre-clip clock skew.
+        DateTime? clipStartTimestamp = clip.Chunks.Count > 0 ? clip.Chunks[0].Timestamp : null;
+
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp);
     }
 
     private static TimeSpan? ProbeFrontChunkDuration(CamChunk chunk)

@@ -21,7 +21,8 @@ public sealed record class ClipMediaSource(
     IReadOnlyDictionary<string, string> CameraPlaylistPaths,
     IReadOnlyList<int> AutoExcludedChunkIndices,
     IReadOnlyList<DateTime> ChunkTimestamps = null,
-    IReadOnlyList<TimeSpan> ChunkDurations = null)
+    IReadOnlyList<TimeSpan> ChunkDurations = null,
+    DateTime? ClipStartTimestamp = null)
 {
     /// <summary>
     /// How large a wall-clock gap between consecutive included chunks must be before it counts
@@ -68,13 +69,16 @@ public sealed record class ClipMediaSource(
 
     /// <summary>
     /// Maps a wall-clock instant to the corresponding media-time position, or null when it falls
-    /// outside the clip entirely (before the first chunk's timestamp or after the last chunk's
+    /// outside the clip entirely (before the clip's original start or after the last chunk's
     /// probed end). An instant that falls inside a gap between chunks (deleted/corrupt/excluded
     /// footage, or a Sentry idle period) has no media time of its own -- since playback skips
     /// straight over the gap, this returns the position of the chunk that resumes right after it,
     /// which is the first media time where footage anywhere near that moment is visible. This
     /// mirrors the existing "jump to event" behavior of landing on the nearest available frame
-    /// rather than refusing to show a marker at all.
+    /// rather than refusing to show a marker at all. A leading gap gets the same treatment: an
+    /// instant inside excluded leading footage (at or after <see cref="ClipStartTimestamp"/> but
+    /// before the first included chunk) snaps forward to media time zero. Without a
+    /// <see cref="ClipStartTimestamp"/>, anything before the first included chunk maps to null.
     /// </summary>
     public TimeSpan? ToMediaTime(DateTime wallClock)
     {
@@ -85,7 +89,11 @@ public sealed record class ClipMediaSource(
 
         if (wallClock < ChunkTimestamps[0])
         {
-            return null;
+            // Before the first INCLUDED chunk. If the instant still lies within the clip's original
+            // span (its leading chunks were excluded as corrupt/unreadable), it sits in a leading
+            // gap: snap forward to where the surviving footage begins, exactly like a mid-clip gap.
+            // Earlier than the clip ever recorded is clock skew and stays unmapped.
+            return ClipStartTimestamp is { } clipStart && wallClock >= clipStart ? ChunkStarts[0] : null;
         }
 
         for (var i = 0; i < ChunkTimestamps.Count; i++)
