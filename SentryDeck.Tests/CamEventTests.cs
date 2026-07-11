@@ -53,9 +53,11 @@ public static class CamEventTests
     }
 
     [Fact]
-    public static void Deserialization_DoesNotThrowOnMalformedJson()
+    public static void Deserialization_RecoversValidFieldsFromMalformedJson()
     {
-        // Arrange
+        // Every field here is well-formed JSON but several are semantically bad (bad date, non-numeric
+        // lat/lon, non-integer camera). Strict deserialization throws; the lenient fallback keeps the
+        // fields that DO parse (city, reason) instead of discarding all metadata.
         var json = """
         {
             "timestamp":"2023T15:54:27",
@@ -71,7 +73,47 @@ public static class CamEventTests
         var camEvent = CamEvent.Deserialize(json);
 
         // Assert
-        camEvent.ShouldBeNull();
+        camEvent.ShouldNotBeNull();
+        camEvent.City.ShouldBe("Taylor");
+        camEvent.Reason.ShouldBe("user_interaction!");
+        camEvent.Timestamp.ShouldBe(default);
+        camEvent.EstLat.ShouldBe(0m);
+        camEvent.EstLon.ShouldBe(0m);
+        camEvent.Camera.ShouldBe(0);
+    }
+
+    [Fact]
+    public static void Deserialization_BlankCoordinateKeepsCityAndTimestamp()
+    {
+        // Tesla occasionally writes an incomplete est_lat; a single blank field must not discard the
+        // city and the event timestamp the clip name falls back to.
+        var json = """
+        {
+            "timestamp":"2023-06-03T15:54:27",
+            "city":"Taylor",
+            "est_lat":"",
+            "est_lon":"",
+            "reason":"sentry_aware_object_detection",
+            "camera":"3"
+        }
+        """;
+
+        var camEvent = CamEvent.Deserialize(json);
+
+        camEvent.ShouldNotBeNull();
+        camEvent.Timestamp.ShouldBe(new DateTime(2023, 6, 3, 15, 54, 27));
+        camEvent.City.ShouldBe("Taylor");
+        camEvent.Reason.ShouldBe("sentry_aware_object_detection");
+        camEvent.EstLat.ShouldBe(0m);
+        camEvent.EstLon.ShouldBe(0m);
+        camEvent.Camera.ShouldBe(3);
+    }
+
+    [Fact]
+    public static void Deserialization_ReturnsNullForNonObjectJson()
+    {
+        CamEvent.Deserialize("\"just a string\"").ShouldBeNull();
+        CamEvent.Deserialize("not json at all {").ShouldBeNull();
     }
 
     [Fact]

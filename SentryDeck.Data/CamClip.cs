@@ -144,9 +144,42 @@ public partial record class CamClip
             IgnoreInaccessible = true,
         };
 
-        foreach (var directory in Directory.EnumerateDirectories(rootDirectory, "*", options))
+        IEnumerator<string> directories;
+        try
         {
-            yield return directory;
+            directories = Directory.EnumerateDirectories(rootDirectory, "*", options).GetEnumerator();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not enumerate clip folders. Root={Root}", rootDirectory);
+            yield break;
+        }
+
+        using (directories)
+        {
+            while (true)
+            {
+                string directory;
+                try
+                {
+                    if (!directories.MoveNext())
+                    {
+                        break;
+                    }
+
+                    directory = directories.Current;
+                }
+                catch (Exception ex)
+                {
+                    // A transient IO error partway through recursion (bad sector, a drive yanked
+                    // mid-scan, a junction loop) would otherwise abort the whole root and discard
+                    // every clip found so far. Stop here and keep what we already enumerated.
+                    Log.Warning(ex, "Clip-folder enumeration stopped early; keeping folders found so far. Root={Root}", rootDirectory);
+                    break;
+                }
+
+                yield return directory;
+            }
         }
     }
 
