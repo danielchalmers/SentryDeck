@@ -635,6 +635,19 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void EventMarker_AtTheVeryStart_ShowsAtFractionZero()
+    {
+        var vm = CreateViewModel();
+
+        // Event fired on the first recorded frame (timestamp == first chunk's timestamp):
+        // fraction is exactly 0, which is a real position, not clock skew.
+        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.Zero);
+
+        vm.HasEventMarker.ShouldBeTrue();
+        vm.EventMarkerPosition.ShouldBe(0);
+    }
+
+    [Fact]
     public void EventMarker_AbsentWhenEventBeforeClipStart()
     {
         var vm = CreateViewModel();

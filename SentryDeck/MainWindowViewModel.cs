@@ -1405,9 +1405,11 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        // Fraction 0 is a real position: an event that fired on the first recorded frame (or one
+        // snapped forward to the start of the footage) still deserves its marker.
         var mediaTime = mediaSource.ToMediaTime(camEvent.Timestamp);
         var fraction = mediaTime?.TotalSeconds / durationSeconds;
-        _eventPosition = fraction is > 0 and <= 1 ? fraction : null;
+        _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
     }
 
     // Fallback used before the selected clip's media has actually been opened (or when it never
@@ -1428,10 +1430,11 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        // The event landing strictly after the start and no later than the modeled end is markable;
-        // clock skew (fraction <= 0) or an event past the estimate (> 1) yields no marker.
+        // The event landing at or after the start and no later than the modeled end is markable
+        // (exactly 0 = the event fired on the first recorded frame); clock skew (fraction < 0) or
+        // an event past the estimate (> 1) yields no marker.
         var fraction = (camEvent.Timestamp - clip.Chunks[0].Timestamp).TotalSeconds / timeline.Duration.TotalSeconds;
-        _eventPosition = fraction is > 0 and <= 1 ? fraction : null;
+        _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
     }
 
     private void UpdateSeekPositionFromController()
