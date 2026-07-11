@@ -189,7 +189,28 @@ public sealed class MapAvailabilityConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Played-track width for the seek bar: [0] slider value (0..1), [1] rail ActualWidth.
+/// Shared geometry for the seek-bar overlays. WPF's <c>Track</c> insets the thumb's travel by the
+/// thumb's own width, so the thumb CENTER spans <c>[ThumbWidth/2, width − ThumbWidth/2]</c> — not
+/// <c>[0, width]</c>. Every overlay (played fill, event marker, chunk/gap ticks, selection band)
+/// maps its fraction into that same span so it lines up with the thumb at the extremes instead of
+/// diverging by half a thumb.
+/// </summary>
+public static class SeekBarMetrics
+{
+    /// <summary>Must match the Thumb template's width in the <c>SeekSlider</c> style.</summary>
+    public const double ThumbWidth = 20.0;
+
+    /// <summary>The pixel position of the thumb center for a 0..1 fraction on a rail of the given width.</summary>
+    public static double ThumbCenterFor(double fraction, double railWidth) =>
+        (ThumbWidth / 2) + (Math.Clamp(fraction, 0, 1) * TravelWidth(railWidth));
+
+    /// <summary>The width the thumb center actually travels: the rail minus one thumb width.</summary>
+    public static double TravelWidth(double railWidth) => Math.Max(0, railWidth - ThumbWidth);
+}
+
+/// <summary>
+/// Played-track width for the seek bar: from the rail's left edge to the thumb center.
+/// [0] slider value (0..1), [1] rail ActualWidth.
 /// </summary>
 public sealed class SeekFillWidthConverter : MarkupExtension, IMultiValueConverter
 {
@@ -199,7 +220,7 @@ public sealed class SeekFillWidthConverter : MarkupExtension, IMultiValueConvert
     {
         if (values.Length == 2 && values[0] is double value && values[1] is double width && width > 0)
         {
-            return Math.Clamp(value, 0, 1) * width;
+            return SeekBarMetrics.ThumbCenterFor(value, width);
         }
 
         return 0d;
@@ -211,8 +232,9 @@ public sealed class SeekFillWidthConverter : MarkupExtension, IMultiValueConvert
 
 /// <summary>
 /// Left offset for a seek-bar overlay (event marker or chunk tick): a left <see cref="Thickness"/>
-/// of position × rail width. [0] fraction (0..1), [1] rail ActualWidth. Mirrors
-/// <see cref="SeekFillWidthConverter"/> so overlays track the played fill and reflow on resize.
+/// at the thumb-center position for the fraction. [0] fraction (0..1), [1] rail ActualWidth.
+/// Mirrors <see cref="SeekFillWidthConverter"/> so overlays track the played fill and the thumb,
+/// and reflow on resize.
 /// </summary>
 public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
 {
@@ -222,7 +244,7 @@ public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
     {
         if (values.Length == 2 && values[0] is double fraction && values[1] is double width && width > 0)
         {
-            return new Thickness(Math.Clamp(fraction, 0, 1) * width, 0, 0, 0);
+            return new Thickness(SeekBarMetrics.ThumbCenterFor(fraction, width), 0, 0, 0);
         }
 
         return new Thickness(0);
@@ -233,10 +255,10 @@ public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
 }
 
 /// <summary>
-/// Width of the selection-range highlight on the seek bar: (end − start) × rail width.
-/// [0] start fraction (0..1), [1] end fraction (0..1), [2] rail ActualWidth. Pairs with
-/// <see cref="SeekOffsetConverter"/> (which places the highlight's left edge) so the band spans
-/// exactly the marked range and reflows on resize.
+/// Width of the selection-range highlight on the seek bar: (end − start) × the thumb's travel
+/// width. [0] start fraction (0..1), [1] end fraction (0..1), [2] rail ActualWidth. Pairs with
+/// <see cref="SeekOffsetConverter"/> (which places the highlight's left edge at the start
+/// fraction's thumb center) so the band ends exactly at the end fraction's thumb center.
 /// </summary>
 public sealed class SelectionWidthConverter : MarkupExtension, IMultiValueConverter
 {
@@ -250,7 +272,7 @@ public sealed class SelectionWidthConverter : MarkupExtension, IMultiValueConver
             && values[2] is double width
             && width > 0)
         {
-            return Math.Clamp(end - start, 0, 1) * width;
+            return Math.Clamp(end - start, 0, 1) * SeekBarMetrics.TravelWidth(width);
         }
 
         return 0d;
