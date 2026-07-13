@@ -442,6 +442,7 @@ public partial class MainWindowViewModel : ObservableObject
     // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RefreshClipsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(OpenFolderCommand))]
     private bool _isLoadingClips;
 
     [ObservableProperty]
@@ -703,7 +704,9 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanGoPrevious));
     }
 
-    [RelayCommand]
+    // Gated like Refresh: LoadClipsAsync has no re-entrancy protection, so picking a folder while a
+    // scan is still running would interleave two loads and merge both roots into one clip list.
+    [RelayCommand(CanExecute = nameof(CanRefreshClips))]
     private async Task OpenFolderAsync()
     {
         Log.Debug("Opening folder picker");

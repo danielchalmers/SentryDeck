@@ -1576,6 +1576,22 @@ public sealed class MainWindowViewModelTests
         vm.ShowStatusOverlay.ShouldBeTrue(); // the idle empty state, not a permanent spinner
     }
 
+    [Fact]
+    public void OpenFolderAndRefresh_AreDisabledWhileClipsAreScanning()
+    {
+        // Both commands funnel into LoadClipsAsync, which has no re-entrancy protection: a second
+        // load started mid-scan would interleave with the first and merge both roots' clips.
+        var vm = CreateViewModel();
+
+        vm.OpenFolderCommand.CanExecute(null).ShouldBeTrue();
+        vm.RefreshClipsCommand.CanExecute(null).ShouldBeTrue();
+
+        vm.IsLoadingClips = true;
+
+        vm.OpenFolderCommand.CanExecute(null).ShouldBeFalse();
+        vm.RefreshClipsCommand.CanExecute(null).ShouldBeFalse();
+    }
+
     // Controller-backed tests deliberately keep every controller property change on the test thread.
     // The VM captures Dispatcher.CurrentDispatcher in its constructor and there is no pumped dispatcher
     // here, so RunOnUiThread stays deadlock-free only while CheckAccess() is true (same thread). Don't add
