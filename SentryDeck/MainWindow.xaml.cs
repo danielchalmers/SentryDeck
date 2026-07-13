@@ -18,7 +18,7 @@ namespace SentryDeck;
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
-    private readonly HashSet<Window> _clickHookedSurfaces = [];
+    private readonly CameraZoomController _zoomController;
 
     // One Flyleaf host per recognized camera, plus the tile slot each camera's mini preview currently renders into (registered by the data-generated tiles as they load).
     private readonly Dictionary<string, FlyleafHost> _cameraHosts;
@@ -43,16 +43,23 @@ public partial class MainWindow : Window
 
         _viewModel = new MainWindowViewModel(
             () => VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]));
+
+        // Zoom/pan lives on each camera's native surface (wheel = zoom, drag = pan, double-click =
+        // reset). The controller also disambiguates click-vs-drag, calling back to switch cameras on a
+        // plain click — Flyleaf renders each camera into its own native surface, so the click must be
+        // caught on the surface, not via a WPF overlay. Constructed before wiring PropertyChanged so
+        // an early SelectedClip change can't reset a not-yet-built controller.
+        _zoomController = new CameraZoomController(OnCameraSurfaceClicked, OnZoomViewChanged);
+
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
+        _viewModel.ZoomResetRequested += OnZoomResetRequested;
         _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
 
         DataContext = _viewModel;
 
-        // Clicking a player (incl. the mini previews) switches to that camera. Flyleaf renders each camera
-        // into its own native surface, so the click must be caught on the surface, not via a WPF overlay.
-        foreach (var (camera, host) in _cameraHosts)
+        foreach (var host in _cameraHosts.Values)
         {
-            HookCameraClick(host, camera);
+            HookCameraSurface(host);
         }
 
         UpdateCameraHostLayout();
@@ -199,6 +206,13 @@ public partial class MainWindow : Window
         {
             UpdateCameraHostLayout();
         }
+
+        // A new incident starts fresh at fit: pixel pan offsets from the previous clip mean nothing on
+        // different footage, and dropping into a new clip already zoomed is jarring.
+        if (e.PropertyName is nameof(MainWindowViewModel.SelectedClip))
+        {
+            _zoomController.ResetAll();
+        }
     }
 
     private void OnSearchBoxFocusRequested(object sender, EventArgs e)
@@ -207,33 +221,40 @@ public partial class MainWindow : Window
         SearchBox.SelectAll();
     }
 
-    // The FlyleafHost creates its native Surface window when it loads (and reuses it across reparenting),
-    // so subscribe once it exists. handledEventsToo ensures we still see the click if Flyleaf marks it
-    // handled, and the HashSet guards against re-subscribing when Loaded fires again on a reparent.
-    private void HookCameraClick(FlyleafHost host, string cameraView)
+    // The FlyleafHost creates its native Surface window when it loads (and reuses it across
+    // reparenting), so register once it exists; the controller ignores surfaces it already hooked.
+    private void HookCameraSurface(FlyleafHost host)
     {
-        host.Loaded += (_, _) =>
+        host.Loaded += (_, _) => _zoomController.Register(host);
+    }
+
+    // A plain click on a camera surface (not a pan drag) switches to that camera, as before.
+    private void OnCameraSurfaceClicked(FlyleafHost host)
+    {
+        var cameraView = _cameraHosts.FirstOrDefault(pair => ReferenceEquals(pair.Value, host)).Key;
+        if (cameraView is null)
         {
-            if (host.Surface is { } surface && _clickHookedSurfaces.Add(surface))
-            {
-                surface.AddHandler(
-                    MouseLeftButtonUpEvent,
-                    new MouseButtonEventHandler((_, e) =>
-                    {
-                        _viewModel.SelectCameraViewCommand.Execute(cameraView);
+            return;
+        }
 
-                        // The click moved Win32 focus to the native Flyleaf surface, which would
-                        // swallow every keyboard shortcut (they're handled in Window_KeyDown).
-                        // Pull it back onto the video container — a neutral focusable element
-                        // that consumes no shortcut keys (see its remarks in the XAML).
-                        Activate();
-                        Keyboard.Focus(VideoContainer);
+        _viewModel.SelectCameraViewCommand.Execute(cameraView);
 
-                        e.Handled = true;
-                    }),
-                    handledEventsToo: true);
-            }
-        };
+        // The click moved Win32 focus to the native Flyleaf surface, which would swallow every
+        // keyboard shortcut (they're handled in Window_KeyDown). Pull it back onto the video
+        // container — a neutral focusable element that consumes no shortcut keys (see its XAML remarks).
+        Activate();
+        Keyboard.Focus(VideoContainer);
+    }
+
+    // The view owns zoom/pan state; mirror the active camera's zoom into the view-model for the readout.
+    private void OnZoomViewChanged()
+    {
+        _viewModel.ActiveZoomPercent = _zoomController.ActiveZoomPercent;
+    }
+
+    private void OnZoomResetRequested(object sender, EventArgs e)
+    {
+        _zoomController.ResetAll();
     }
 
     // Data-generated camera tiles register their preview slots as their containers load (and a stale registration is simply overwritten when a newer container claims the same camera).

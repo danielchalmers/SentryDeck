@@ -103,6 +103,13 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public event EventHandler SearchBoxFocusRequested;
 
+    /// <summary>
+    /// Raised when the user asks — via the control-bar button or a shortcut — to reset zoom/pan back
+    /// to the whole frame. Zoom/pan is a per-surface rendering concern the view owns, so the view
+    /// handles this by resetting its Flyleaf hosts; the view-model only relays the request.
+    /// </summary>
+    public event EventHandler ZoomResetRequested;
+
     public bool ShowMainContent => !ShowAboutPage;
 
     public Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
@@ -240,6 +247,12 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSingleCameraViewSelected => !IsGridViewSelected;
 
     public string ActiveCameraLabel => SelectedCameraView == GridCameraView ? "Grid" : CameraLabel(SelectedCameraView);
+
+    /// <summary>True when the camera the user last interacted with is magnified past its fit size.</summary>
+    public bool IsActiveViewZoomed => ActiveZoomPercent > 100;
+
+    /// <summary>The active view's magnification as a short readout, e.g. "250%".</summary>
+    public string ActiveZoomText => $"{ActiveZoomPercent}%";
 
     /// <summary>
     /// Friendly tile label for a camera.
@@ -472,6 +485,15 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsSingleCameraViewSelected))]
     [NotifyPropertyChangedFor(nameof(ActiveCameraLabel))]
     private string _selectedCameraView = CameraNames.Front;
+
+    // The magnification (100 = fit) of the camera the user is currently zooming/panning. The view is
+    // the source of truth — zoom/pan lives on each Flyleaf surface — and pushes the value here so the
+    // control bar can show a readout and a reset button. The indicator has to live in the WPF chrome
+    // below the video: the native video surface sits above WPF, so nothing can be drawn over it.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActiveViewZoomed))]
+    [NotifyPropertyChangedFor(nameof(ActiveZoomText))]
+    private int _activeZoomPercent = 100;
 
     /// <summary>
     /// The selectable views for the current clip: the grid plus one tile per camera the clip actually recorded, in <see cref="CameraNames.All"/> order.
@@ -1622,6 +1644,9 @@ public partial class MainWindowViewModel : ObservableObject
     {
         ShowAboutPage = !ShowAboutPage;
     }
+
+    [RelayCommand]
+    private void ResetZoom() => ZoomResetRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
     private void ClearFilter()

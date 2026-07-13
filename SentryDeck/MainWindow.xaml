@@ -1444,6 +1444,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
                         <!--  Transport cluster  -->
@@ -1594,7 +1595,25 @@
 
                         <!--  Playback speed stepper: walks a fixed ladder (0.25x to 16x, Flyleaf's ceiling)
                               instead of listing every speed in a dropdown. Click the readout to reset to 1x.  -->
-                        <StackPanel Grid.Column="4"
+                        <!--  Zoom readout + reset — shown only while a camera is magnified. Lives in the chrome
+                              because the native video surface sits above WPF, so nothing can draw over the video.  -->
+                        <Button Grid.Column="4"
+                                Command="{Binding ResetZoomCommand}"
+                                Margin="16,0,0,0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Reset zoom"
+                                Style="{StaticResource SubtleIconButton}"
+                                ToolTip="Reset zoom — or double-click the video (scroll to zoom, drag to pan)"
+                                Visibility="{Binding IsActiveViewZoomed, Converter={local:BoolToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE71E;"
+                                           Style="{StaticResource AppGlyphInButton}" />
+                                <TextBlock Text="{Binding ActiveZoomText}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <StackPanel Grid.Column="5"
                                     Margin="16,0,0,0"
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal">
@@ -1890,7 +1909,11 @@
                             <!--  Playback notes  -->
                             <TextBlock Text="Playback notes"
                                        Style="{StaticResource AboutSectionHeader}" />
+                            <TextBlock Text="Zoom any camera — including the grid — to read a plate: scroll or pinch to zoom toward the pointer, drag to pan, and double-click (or the zoom button) to reset. Each angle zooms independently."
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap" />
                             <TextBlock Text="FFmpeg 8.1 shared binaries are required for playback. Use the Download FFmpeg button when prompted."
+                                       Margin="0,8,0,0"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap" />
                             <TextBlock Text="If clips do not appear, confirm the folder contains a TeslaCam directory."
