@@ -25,7 +25,7 @@ internal static class TestMp4
             var bytes = new byte[20 + 16 + 4096];
             for (var i = 0; i < bytes.Length; i++)
             {
-                bytes[i] = (byte)(i * 197 + 13); // deterministic pseudo-noise, never ASCII "ftyp"
+                bytes[i] = (byte)((i * 197) + 13); // deterministic pseudo-noise, never ASCII "ftyp"
             }
 
             return bytes;
