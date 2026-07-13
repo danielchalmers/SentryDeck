@@ -636,6 +636,42 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task FrontFailure_WhileSecondaryCamerasStillJoining_StillTriggersRecovery()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer { OpenGate = new TaskCompletionSource<object>() };
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        using var controller = CreateController(front, back: back, mediaSourceBuilder: mediaSourceBuilder);
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+
+        // The front is open and playing but the back camera's open is held, so the clip-open
+        // operation is still in flight and IsLoading is still true -- the join window. Waiting for
+        // the back's OpenAsync call guarantees the front's opening phase has fully completed.
+        await WaitUntilAsync(() => back.OpenedPaths.Count > 0);
+        controller.IsLoading.ShouldBeTrue();
+
+        // The front dies far short of Duration (180s) -- a corrupt/truncated early chunk. This
+        // must route into corrupt-chunk recovery, not freeze silently or show the error UI.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
+
+        // Let the held secondary open (and with it the original open operation) finish; recovery
+        // queues behind it on the serialized operation lock.
+        back.OpenGate.SetResult(null);
+
+        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
+        await WaitUntilAsync(() => !controller.IsLoading);
+
+        // Recovery took over cleanly: no spurious "Playback failed", the media is open again, and
+        // the loading state (owned by the superseded open) was settled by the recovery pass.
+        controller.ErrorMessage.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task FrontMediaFailed_MidClip_ProbeFindsRealBadChunk_KeepsHealthyChunk()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 4);

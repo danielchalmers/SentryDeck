@@ -991,8 +991,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         var wasPlaying = IsPlaying;
         IsPlaying = false;
 
+        // Deliberately NOT gated on IsLoading: the front plays (and can end or die on a corrupt
+        // first chunk) while the secondary-camera joins are still in flight, and IsLoading stays
+        // true until that whole open completes. The request-id check above already filters the
+        // transitions IsLoading used to guard (clip changes zero _currentMediaRequestId first).
         var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
-        if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId) || IsLoading)
+        if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId))
         {
             return;
         }
@@ -1187,6 +1191,16 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 requestId);
             ErrorMessage = $"Playback error: {ex.Message}";
         }
+        finally
+        {
+            // The failure may have arrived while the original open was still joining secondary
+            // cameras (IsLoading true). Recovery bumped the request id above, so that open's
+            // finally no longer owns the flag; settle it here or the loading state sticks forever.
+            if (IsRequestActive(requestId))
+            {
+                IsLoading = false;
+            }
+        }
     }
 
     private void GiveUpOnClip(CamClip clip, int badChunkIndex)
@@ -1262,8 +1276,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!_isDisposed && !_isOpeningMedia && IsMediaOpen && _openedMediaSource is not null
             && Duration - Position > PrematureEndTolerance)
         {
+            // Same as OnPlayerEnded: not gated on IsLoading, so a front failure during the
+            // secondary-camera join window still reaches recovery instead of the error UI below.
             var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
-            if (mediaRequestId != 0 && mediaRequestId == Volatile.Read(ref _activeRequestId) && !IsLoading)
+            if (mediaRequestId != 0 && mediaRequestId == Volatile.Read(ref _activeRequestId))
             {
                 Log.Warning(
                     e.ErrorException,
