@@ -18,8 +18,17 @@ public static class PackageManager
 
     private static async Task<long> DownloadFile(string url, string savePath)
     {
-        using var client = new HttpClient();
-        var response = await client.GetAsync(url);
+        // This download is the hard first-run gate (no clips play without FFmpeg), so it must not
+        // fail just because the connection is slow: the default 100s HttpClient.Timeout caps the
+        // WHOLE transfer, and the default ResponseContentRead buffers the entire archive in memory
+        // before a byte hits disk. Stream to the file instead, with a generous overall ceiling that
+        // only a dead transfer should ever hit.
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(30),
+        };
+
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
 
         using var fileStream = File.Create(savePath);
