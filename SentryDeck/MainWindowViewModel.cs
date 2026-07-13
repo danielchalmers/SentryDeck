@@ -1105,7 +1105,17 @@ public partial class MainWindowViewModel : ObservableObject
         // A newer selection superseded this one while we yielded — drop it so the latest wins and the
         // selection doesn't rubber-band backwards as earlier, slower loads complete.
         if (cancellationToken.IsCancellationRequested || !ReferenceEquals(clip, SelectedClip))
+        {
+            // A newer selection's own load owns IsLoading now — but if the selection was cleared
+            // outright (deselect, or a filter dropping the clip), no load is in flight and nothing
+            // else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
+            if (SelectedClip is null)
+            {
+                IsLoading = false;
+            }
+
             return;
+        }
 
         try
         {
@@ -1123,7 +1133,15 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
+                // Same stuck-overlay guard as the pre-load early-return above.
+                if (SelectedClip is null)
+                {
+                    IsLoading = false;
+                }
+
                 return;
+            }
 
             IsLoading = false;
             Log.Error(

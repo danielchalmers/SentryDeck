@@ -1550,6 +1550,32 @@ public sealed class MainWindowViewModelTests
         controller.PlaybackSpeed.ShouldBe(4.0);
     }
 
+    [Fact]
+    public async Task DeselectingWhileSelectionLoadIsYielding_ClearsTheLoadingOverlay()
+    {
+        var front = new FakeCameraPlayer();
+        var built = BuildFourCameraController(front);
+
+        // Hold the selection load at its pre-open background yield so the deselect lands first.
+        var yieldGate = new TaskCompletionSource();
+        var vm = new MainWindowViewModel(
+            () => built,
+            backgroundYield: () => yieldGate.Task);
+        vm.InitializePlayer();
+
+        vm.SelectedClip = ClipWithChunks(1);
+        vm.IsLoading.ShouldBeTrue();
+
+        // Clear the selection before the yield resumes (Ctrl+click deselect, or a search filter
+        // dropping the clip). The superseded load must not leave IsLoading stuck true forever.
+        vm.SelectedClip = null;
+        yieldGate.SetResult();
+
+        await WaitUntilAsync(() => !vm.IsLoading);
+        vm.HasNoClipSelected.ShouldBeTrue();
+        vm.ShowStatusOverlay.ShouldBeTrue(); // the idle empty state, not a permanent spinner
+    }
+
     // Controller-backed tests deliberately keep every controller property change on the test thread.
     // The VM captures Dispatcher.CurrentDispatcher in its constructor and there is no pumped dispatcher
     // here, so RunOnUiThread stays deadlock-free only while CheckAccess() is true (same thread). Don't add
