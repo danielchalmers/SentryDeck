@@ -38,6 +38,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private static readonly TimeSpan PostRecoverySeekTolerance = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How far before a clip's event moment a freshly opened clip starts playing, so the approach to the incident is visible instead of dropping the viewer straight onto the trigger frame.
+    /// Mirrors the in-car player, which since Tesla's 2024 Holiday Update opens each recording at the event rather than at the top of the buffer.
+    /// A clip with no locatable event opens at the start as before.
+    /// </summary>
+    private static readonly TimeSpan EventLeadIn = TimeSpan.FromSeconds(10);
+
     private readonly string _primaryCamera;
     private readonly ICameraPlayer _primaryPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
@@ -705,6 +712,18 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 // protections indirectly -- those handlers only special-case the front player.
                 _isOpeningMedia = false;
 
+                // Jump to just before the event moment on open, matching the in-car player.
+                // Seek AFTER Play (never before): a seek issued while paused right after open can be
+                // swallowed by the player, whereas seeks during active playback are reliable -- the
+                // same ordering the recovery resume relies on. The secondary cameras join at this
+                // position below, since they read _primaryPlayer.Position after the seek lands.
+                var eventStartPosition = ResolveEventStartPosition(clip, mediaSource);
+                if (eventStartPosition > TimeSpan.Zero)
+                {
+                    await _primaryPlayer.SeekAsync(eventStartPosition);
+                    Position = eventStartPosition;
+                }
+
                 await OpenAndJoinSecondaryCamerasAsync(mediaSource, requestId, cancellationToken);
             }
             else
@@ -736,6 +755,27 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             _isOpeningMedia = false;
         }
+    }
+
+    /// <summary>
+    /// The media-time position a freshly opened clip should start playing at: <see cref="EventLeadIn"/> before its event moment when one is locatable within the built media, or <see cref="TimeSpan.Zero"/> otherwise (no event metadata, or an event that falls outside the recorded footage).
+    /// Uses the same wall-clock-to-media-time mapping as the seek-bar event marker (<see cref="ClipMediaSource.ToMediaTime"/>), so the auto-jump lands consistently with the marker the user sees.
+    /// </summary>
+    private static TimeSpan ResolveEventStartPosition(CamClip clip, ClipMediaSource mediaSource)
+    {
+        var camEvent = clip.Event;
+        if (camEvent is null || camEvent.Timestamp == default)
+        {
+            return TimeSpan.Zero;
+        }
+
+        if (mediaSource.ToMediaTime(camEvent.Timestamp) is not { } eventMediaTime)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var start = eventMediaTime - EventLeadIn;
+        return start < TimeSpan.Zero ? TimeSpan.Zero : start;
     }
 
     /// <summary>
