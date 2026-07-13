@@ -583,6 +583,123 @@ public sealed class MainWindowViewModelTests
         vm.ShowOnMapCommand.CanExecute(withLocation).ShouldBeTrue();
     }
 
+    // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
+
+    private static List<CamClip> ClipsWithDistinctPaths(int count) =>
+        Enumerable.Range(0, count)
+            .Select(index => new CamClip(
+                $@"C:\clips\clip{index}",
+                $"Clip {index}",
+                new DateTime(2025, 1, 1, 12, 0, 0).AddMinutes(index),
+                [],
+                camEvent: null))
+            .ToList();
+
+    private static async Task<MainWindowViewModel> LoadedViewModelAsync(IReadOnlyList<CamClip> clips)
+    {
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        await vm.LoadClipsAsync(new[] { "root" });
+        return vm;
+    }
+
+    [Fact]
+    public void DeleteClipCommand_CanExecute_RequiresAClip()
+    {
+        var vm = CreateViewModel();
+
+        vm.DeleteClipCommand.CanExecute(null).ShouldBeFalse();
+        vm.DeleteClipCommand.CanExecute(TestClips.Create(1)[0]).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteClip_Confirmed_RecyclesFolder_AndRemovesFromList()
+    {
+        var clips = ClipsWithDistinctPaths(3);
+        var vm = await LoadedViewModelAsync(clips);
+        string recycledPath = null;
+        vm.ConfirmDeleteClip = _ => true;
+        vm.RecycleClipFolder = path => recycledPath = path;
+
+        var target = vm.FilteredClips.Single(clip => clip.Name == "Clip 1");
+        await vm.DeleteClipCommand.ExecuteAsync(target);
+
+        recycledPath.ShouldBe(target.FullPath);
+        vm.FilteredClips.ShouldNotContain(target);
+        vm.ClipCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task DeleteClip_Cancelled_KeepsClip_AndDoesNotRecycle()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        var recycleCalls = 0;
+        vm.ConfirmDeleteClip = _ => false;
+        vm.RecycleClipFolder = _ => recycleCalls++;
+
+        var target = vm.FilteredClips[0];
+        await vm.DeleteClipCommand.ExecuteAsync(target);
+
+        recycleCalls.ShouldBe(0);
+        vm.ClipCount.ShouldBe(2);
+        vm.FilteredClips.ShouldContain(target);
+    }
+
+    [Fact]
+    public async Task DeleteClip_TheSelectedClip_ClearsSelectionAndNowPlaying()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.ConfirmDeleteClip = _ => true;
+        vm.RecycleClipFolder = _ => { };
+
+        var target = vm.FilteredClips[0];
+        vm.SelectedClip = target; // sets NowPlayingClip too (see OnSelectedClipChanged)
+        vm.NowPlayingClip.ShouldBe(target);
+
+        await vm.DeleteClipCommand.ExecuteAsync(target);
+
+        vm.SelectedClip.ShouldBeNull();
+        vm.NowPlayingClip.ShouldBeNull();
+        vm.FilteredClips.ShouldNotContain(target);
+    }
+
+    [Fact]
+    public async Task DeleteClip_NotTheSelectedClip_LeavesSelectionIntact()
+    {
+        var clips = ClipsWithDistinctPaths(3);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.ConfirmDeleteClip = _ => true;
+        vm.RecycleClipFolder = _ => { };
+
+        var selected = vm.FilteredClips.Single(clip => clip.Name == "Clip 2");
+        var victim = vm.FilteredClips.Single(clip => clip.Name == "Clip 0");
+        vm.SelectedClip = selected;
+
+        await vm.DeleteClipCommand.ExecuteAsync(victim);
+
+        vm.SelectedClip.ShouldBe(selected);
+        vm.FilteredClips.ShouldNotContain(victim);
+        vm.ClipCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task DeleteClip_WhenRecycleFails_ShowsError_AndKeepsClip()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.ConfirmDeleteClip = _ => true;
+        vm.RecycleClipFolder = _ => throw new IOException("The file is in use.");
+
+        var target = vm.FilteredClips[0];
+        await vm.DeleteClipCommand.ExecuteAsync(target);
+
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.ErrorTitle.ShouldBe("Delete Failed");
+        vm.ClipCount.ShouldBe(2);
+        vm.FilteredClips.ShouldContain(target);
+    }
+
     [Fact]
     public async Task FilteredClips_NoMatch_IsEmpty()
     {

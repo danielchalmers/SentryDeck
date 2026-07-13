@@ -95,4 +95,80 @@ public sealed class ClipPlaylistTests
         playlistChanged.ShouldBe(1);
         currentChanged.ShouldBe(1);
     }
+
+    [Fact]
+    public void RemoveClip_BeforeCurrent_KeepsCurrentClip_AndShiftsIndex()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+
+        var removed = playlist.RemoveClip(clips[0]);
+
+        removed.ShouldBeTrue();
+        playlist.Clips.ShouldBe(new[] { clips[1], clips[2] });
+        playlist.CurrentIndex.ShouldBe(1);
+        playlist.CurrentClip.ShouldBe(clips[2]); // same clip, index slid down by one
+    }
+
+    [Fact]
+    public void RemoveClip_AfterCurrent_LeavesCurrentAndIndexUntouched()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(0);
+
+        playlist.RemoveClip(clips[2]);
+
+        playlist.CurrentIndex.ShouldBe(0);
+        playlist.CurrentClip.ShouldBe(clips[0]);
+        playlist.HasNext.ShouldBeTrue(); // clips[1] still follows
+    }
+
+    [Fact]
+    public void RemoveClip_TheCurrentClip_ClearsSelection()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(1);
+
+        playlist.RemoveClip(clips[1]);
+
+        playlist.CurrentIndex.ShouldBe(-1);
+        playlist.CurrentClip.ShouldBeNull();
+        playlist.Clips.ShouldBe(new[] { clips[0], clips[2] });
+    }
+
+    [Fact]
+    public void RemoveClip_NotInPlaylist_ReturnsFalse_AndChangesNothing()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(2);
+        playlist.SetClips(clips);
+        playlist.MoveTo(1);
+        var stranger = TestClips.Create(1)[0];
+
+        var removed = playlist.RemoveClip(stranger);
+
+        removed.ShouldBeFalse();
+        playlist.Clips.ShouldBe(clips);
+        playlist.CurrentIndex.ShouldBe(1);
+    }
+
+    [Fact]
+    public void RemoveClip_RaisesPlaylistChanged()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(2);
+        playlist.SetClips(clips);
+        var playlistChanged = 0;
+        playlist.PlaylistChanged += (_, _) => playlistChanged++;
+
+        playlist.RemoveClip(clips[0]);
+
+        playlistChanged.ShouldBe(1);
+    }
 }

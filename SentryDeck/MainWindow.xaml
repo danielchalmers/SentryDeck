@@ -537,6 +537,15 @@
                     <TextBlock Text="&#xE8C8;" Style="{StaticResource AppGlyph}" />
                 </MenuItem.Icon>
             </MenuItem>
+            <Separator />
+            <!--  Moves the whole clip folder to the Windows Recycle Bin (recoverable) so the timeline can be tidied in place.  -->
+            <MenuItem Header="Delete to Recycle Bin"
+                      Command="{Binding PlacementTarget.Tag.DeleteClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
+                <MenuItem.Icon>
+                    <TextBlock Text="&#xE74D;" Style="{StaticResource AppGlyph}" />
+                </MenuItem.Icon>
+            </MenuItem>
         </ContextMenu>
     </Window.Resources>
 
