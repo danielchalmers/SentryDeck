@@ -34,6 +34,11 @@
             <Setter Property="Maximum" Value="1" />
             <Setter Property="Height" Value="24" />
             <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <!--  Not focusable: a keyboard-focused Slider consumes Left/Right/Home/End itself, moving
+                  only the thumb (SeekPosition has no seek side effect outside a mouse gesture) and
+                  desyncing it from the video. Unfocusable, the keys bubble to Window_KeyDown, whose
+                  arrow shortcuts issue real 5-second seeks. Mouse seeking is unaffected.  -->
+            <Setter Property="Focusable" Value="False" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
