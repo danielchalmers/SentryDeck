@@ -804,6 +804,108 @@ public sealed class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task SelectingClip_WithEvent_AutoJumpsToShortlyBeforeTheEventMoment()
+    {
+        // A 3-chunk clip spans 0-180s of media time; an event 30s into the second chunk maps to
+        // media time 90s. Opening it must land the front player EventLeadIn (10s) before that -- 80s
+        // -- rather than at the top of the buffer, matching the in-car player since the 2024 Holiday Update.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEvent(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front, mediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        controller.LoadClips([clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(80)));
+
+        // The auto-jump plays first, then seeks: a seek issued while paused right after open can be
+        // swallowed, so (like recovery) it must land during active playback. "seek:" is the accurate seek.
+        front.CallLog.IndexOf("play").ShouldBeLessThan(front.CallLog.IndexOf("seek:80"));
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(80));
+        controller.IsPlaying.ShouldBeTrue();
+        controller.IsMediaOpen.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WithEventInsideTheLeadIn_OpensAtTopOfBuffer()
+    {
+        // The event fired 5s into the clip, inside the 10s lead-in window, so there is nothing to
+        // jump back to: the clip opens at the start with no seek rather than clamping to a redundant 0.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var clip = WithEvent(clipFiles.Clip, clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(5));
+
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front, mediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        controller.LoadClips([clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        front.SeekPositions.ShouldBeEmpty();
+        controller.Position.ShouldBe(TimeSpan.Zero);
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WithEventOutsideTheFootage_OpensAtTopOfBuffer()
+    {
+        // An event timestamped before the clip ever recorded (clock skew) has no media time, so the
+        // clip opens at the start rather than jumping to a bogus position.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var clip = WithEvent(clipFiles.Clip, clipFiles.Clip.Chunks[0].Timestamp.AddMinutes(-1));
+
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front, mediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        controller.LoadClips([clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        front.SeekPositions.ShouldBeEmpty();
+        controller.Position.ShouldBe(TimeSpan.Zero);
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WithoutEvent_OpensAtTopOfBuffer()
+    {
+        // No event metadata (e.g. a clip the car saved without a trigger): nothing to jump to, so
+        // the clip opens at 0:00.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2); // TestClipFiles builds clips with camEvent: null
+        var front = new FakeCameraPlayer();
+        using var controller = CreateController(front, mediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        front.SeekPositions.ShouldBeEmpty();
+        controller.Position.ShouldBe(TimeSpan.Zero);
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WithEvent_SecondaryCamerasJoinAtTheJumpedToPosition()
+    {
+        // The auto-jump seeks the front BEFORE the side cameras join, so they join at the jumped-to
+        // position (80s) and stay in sync with the front rather than starting at 0.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEvent(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+
+        var front = new FakeCameraPlayer();
+        var back = new FakeCameraPlayer();
+        using var controller = CreateController(front, back, mediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        controller.LoadClips([clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilAsync(() => back.PlayCount > 0);
+
+        back.SeekPositions.ShouldContain(TimeSpan.FromSeconds(80));
+    }
+
+    [Fact]
     public async Task RecoverFromPrematureEnd_OpenDoesNotPlayOrSeekBeforeCallerPositions()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
@@ -932,6 +1034,11 @@ public sealed class VideoPlayerControllerTests
         front.StepLog.ShouldBeEmpty();
         controller.IsPlaying.ShouldBeFalse();
     }
+
+    // Clones a clip with an event at the given wall-clock instant (TestClipFiles builds event-less
+    // clips), preserving its real chunk files so the media source builds from the same footage.
+    private static CamClip WithEvent(CamClip clip, DateTime eventTimestamp) =>
+        new(clip.FullPath, clip.Name, clip.Timestamp, clip.Chunks, new CamEvent { Timestamp = eventTimestamp });
 
     private static VideoPlayerController CreateController(
         FakeCameraPlayer front = null,

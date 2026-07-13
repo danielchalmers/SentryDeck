@@ -10,7 +10,7 @@ Review Tesla dashcam and Sentry Mode footage on Windows.
 ## Features
 
 - **One timeline** — clips grouped by day with thumbnails, event reason, and location. Search across clips, places, and events.
-- **Event markers** — a marker on the seek bar at the exact moment each Sentry/Honk/braking event fired.
+- **Jumps to the event** — opens each clip at the action instead of the top of the buffer, like the car does, landing a few seconds before the Sentry/Honk/braking moment so you catch the lead-up. A marker on the seek bar pins the exact instant; press **E** to snap to it.
 - **Every angle** — watch a 2×2 grid or any single camera, with live previews of all four. Click a preview to switch.
 - **Finds your footage** — auto-detects the `TeslaCam` folder on a connected USB drive, or point it at any folder.
 - **Smooth playback** — variable speed (0.25×–16×), scrubbing, and previous/next clip navigation.
