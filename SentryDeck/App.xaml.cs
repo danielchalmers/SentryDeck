@@ -31,6 +31,16 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // A packaged WinExe has no console and no debugger attached, so without a file sink every
+        // log line — including the Log.Fatal from the unhandled-exception hooks above — is discarded
+        // in the field, making a shipped crash undiagnosable. Rolling daily with a small retention
+        // keeps the folder bounded.
+        var logPath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SentryDeck",
+            "logs",
+            "log-.txt");
+
         Log.Logger = new LoggerConfiguration()
 #if DEBUG
             .MinimumLevel.Debug()
@@ -39,6 +49,7 @@ public partial class App : Application
 #endif
             .WriteTo.Console()
             .WriteTo.Debug()
+            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
             .CreateLogger();
 
         // Last-resort safety net for exceptions raised on the UI thread by a command or event
