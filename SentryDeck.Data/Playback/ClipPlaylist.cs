@@ -61,6 +61,36 @@ public sealed class ClipPlaylist
         return true;
     }
 
+    /// <summary>
+    /// Removes a clip from the playlist while keeping the current selection pointed at the same
+    /// clip. Removing the current clip itself clears the selection (the caller owns stopping
+    /// playback); a clip before the current one shifts the index down to compensate. Returns false
+    /// when the clip isn't in the playlist.
+    /// </summary>
+    public bool RemoveClip(CamClip clip)
+    {
+        var index = clip is null ? -1 : _clips.IndexOf(clip);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _clips.RemoveAt(index);
+
+        if (index < _currentIndex)
+        {
+            _currentIndex--;
+        }
+        else if (index == _currentIndex)
+        {
+            _currentIndex = -1;
+        }
+
+        Log.Debug("Removed clip from playlist. ClipName={ClipName}; ClipCount={ClipCount}", clip.Name, _clips.Count);
+        PlaylistChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
     public void Clear()
     {
         SetClips([]);

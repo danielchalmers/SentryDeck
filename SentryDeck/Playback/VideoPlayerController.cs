@@ -392,6 +392,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         Playlist.SetClips(clips);
     }
 
+    /// <summary>
+    /// Drops a single clip from the playlist so Next/Previous navigation stays aligned with a
+    /// trimmed clip list (e.g. after the user deletes a clip). Does not touch what's playing;
+    /// when the removed clip is the current one the caller is responsible for having stopped it.
+    /// </summary>
+    public void RemoveClip(CamClip clip) => Playlist.RemoveClip(clip);
+
     public void Dispose()
     {
         if (_isDisposed)

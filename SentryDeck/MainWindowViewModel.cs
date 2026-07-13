@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Serilog;
 
@@ -1032,6 +1033,24 @@ public partial class MainWindowViewModel : ObservableObject
     internal Action<string> RevealInExplorer { get; set; } = path =>
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
 
+    /// <summary>
+    /// Asks the user to confirm sending a clip to the Recycle Bin. Returns true to proceed.
+    /// Overridable for tests; defaults to a yes/no message box.
+    /// </summary>
+    internal Func<CamClip, bool> ConfirmDeleteClip { get; set; } = clip =>
+        MessageBox.Show(
+            $"Move this clip to the Recycle Bin?\n\n{clip.Name}\n{clip.FullPath}",
+            "Delete clip",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning) == MessageBoxResult.Yes;
+
+    /// <summary>
+    /// Sends a clip folder to the Windows Recycle Bin (recoverable). Overridable for tests; defaults
+    /// to the shell recycle operation, which surfaces its own error dialog if a file is in use.
+    /// </summary>
+    internal Action<string> RecycleClipFolder { get; set; } = path =>
+        FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+
     private static string FormatTimeSpanForFileName(TimeSpan ts) => FormatTimeSpan(ts).Replace(':', '.');
 
     private static string SanitizeFileName(string name)
@@ -1722,6 +1741,61 @@ public partial class MainWindowViewModel : ObservableObject
             // paste-searchable, unlike the ambiguous AM/PM current-culture rendering.
             Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.InvariantCulture));
         }
+    }
+
+    /// <summary>
+    /// Sends the clip's folder to the Recycle Bin so the timeline can be tidied without leaving the
+    /// app. Confirms first, then — if the clip is the one currently open — stops playback so Flyleaf
+    /// releases its file handles before the shell tries to recycle the (otherwise locked) folder.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanUseClip))]
+    private async Task DeleteClipAsync(CamClip clip)
+    {
+        if (clip is null || !ConfirmDeleteClip(clip))
+        {
+            return;
+        }
+
+        // Flyleaf keeps the current clip's camera files open; Windows can't recycle a folder whose
+        // files are still locked, so stop and close the players before deleting it.
+        var isCurrent = ReferenceEquals(SelectedClip, clip)
+            || ReferenceEquals(NowPlayingClip, clip)
+            || _playerController?.CurrentClip == clip;
+        if (isCurrent && _playerController is not null)
+        {
+            await _playerController.StopAsync();
+            SeekPosition = 0;
+        }
+
+        try
+        {
+            Log.Information("Deleting clip to Recycle Bin. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+            await Task.Run(() => RecycleClipFolder(clip.FullPath));
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to delete clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+            ShowError("Delete Failed", $"Could not delete clip: {clip.Name}\n\nError: {ex.Message}");
+            return;
+        }
+
+        // Drop it from the sidebar list and keep the player's Next/Previous playlist in sync.
+        _allClips.Remove(clip);
+        _playerController?.RemoveClip(clip);
+
+        if (ReferenceEquals(NowPlayingClip, clip))
+        {
+            NowPlayingClip = null;
+        }
+
+        if (ReferenceEquals(SelectedClip, clip))
+        {
+            SelectedClip = null;
+        }
+
+        OnPropertyChanged(nameof(FilteredClips));
+        OnPropertyChanged(nameof(ClipCount));
+        RefreshClipState();
     }
 
     [RelayCommand(CanExecute = nameof(CanShowOnMap))]
