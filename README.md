@@ -5,7 +5,7 @@
 
 Review Tesla dashcam and Sentry Mode footage on Windows.
 
-![Sentry Deck](https://github.com/user-attachments/assets/5b2efe25-bac3-4902-8e0e-e006c92c5ddf)
+![Sentry Deck](https://github.com/user-attachments/assets/270b6923-7f15-4337-b1d4-99a4c3f362b5)
 
 ## Features
 
