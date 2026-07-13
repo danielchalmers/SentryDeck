@@ -67,10 +67,41 @@ public sealed class ClipExporterTests
         var fixture = CreateClip(omitCamera: CameraNames.Back, omitFromChunkIndex: 1);
 
         var entries = ClipExporter.ResolveEntries(
-            Request(fixture, CameraNames.Back, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(150)));
+            Request(fixture, CameraNames.Back, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(150)),
+            isSideFileReadable: _ => true);
 
         var entry = entries.ShouldHaveSingleItem();
         entry.FilePath.ShouldEndWith("12-00-00-back.mp4");
+    }
+
+    [Fact]
+    public void ResolveEntries_TruncatesAtTheFirstUnreadableSideCameraFile()
+    {
+        // The back camera's middle chunk is present but corrupt (no readable duration): playback
+        // truncates that camera's playlist there, so the export must stop there too instead of
+        // feeding the unreadable file to FFmpeg's concat demuxer.
+        var fixture = CreateClip();
+
+        var entries = ClipExporter.ResolveEntries(
+            Request(fixture, CameraNames.Back, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(150)),
+            isSideFileReadable: path => !path.EndsWith("12-01-00-back.mp4"));
+
+        var entry = entries.ShouldHaveSingleItem();
+        entry.FilePath.ShouldEndWith("12-00-00-back.mp4");
+    }
+
+    [Fact]
+    public void ResolveEntries_DoesNotProbeTheFrontCamera()
+    {
+        // Front chunks were probe-verified when the media source was built, so the export must not
+        // second-guess them (a probe failing everything would otherwise truncate the cut to nothing).
+        var fixture = CreateClip();
+
+        var entries = ClipExporter.ResolveEntries(
+            Request(fixture, CameraNames.Front, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(150)),
+            isSideFileReadable: _ => false);
+
+        entries.Count.ShouldBe(3);
     }
 
     [Fact]
@@ -79,7 +110,8 @@ public sealed class ClipExporterTests
         var fixture = CreateClip(omitCamera: CameraNames.LeftRepeater, omitFromChunkIndex: 0);
 
         Should.Throw<InvalidOperationException>(() => ClipExporter.ResolveEntries(
-                Request(fixture, CameraNames.LeftRepeater, TimeSpan.Zero, TimeSpan.FromSeconds(90))))
+                Request(fixture, CameraNames.LeftRepeater, TimeSpan.Zero, TimeSpan.FromSeconds(90)),
+                isSideFileReadable: _ => true))
             .Message.ShouldContain("left repeater");
     }
 

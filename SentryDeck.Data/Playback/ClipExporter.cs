@@ -81,12 +81,20 @@ public sealed class ClipExporter(Func<string> ffmpegDirectoryResolver) : IClipEx
     }
 
     /// <summary>
-    /// Resolves the trim segments to this camera's files. A chunk past the first missing/absent
-    /// camera file truncates the export there, mirroring how playback truncates that camera's
-    /// playlist; no footage at all for the range is an error.
+    /// Resolves the trim segments to this camera's files. A chunk past the first missing or
+    /// present-but-unreadable camera file truncates the export there, mirroring how playback
+    /// truncates that camera's playlist; no footage at all for the range is an error.
     /// </summary>
-    internal static IReadOnlyList<(string FilePath, TimeSpan? InPoint, TimeSpan? OutPoint)> ResolveEntries(ClipExportRequest request)
+    /// <param name="isSideFileReadable">
+    /// Whether a non-front camera file has a readable duration. Defaults to the same mp4 probe the
+    /// media-source builder uses; overridable for tests, which work on model-only file paths.
+    /// </param>
+    internal static IReadOnlyList<(string FilePath, TimeSpan? InPoint, TimeSpan? OutPoint)> ResolveEntries(
+        ClipExportRequest request,
+        Func<string, bool> isSideFileReadable = null)
     {
+        isSideFileReadable ??= path => Mp4DurationReader.TryReadDuration(path) is { } duration && duration > TimeSpan.Zero;
+
         var segments = request.MediaSource.GetTrimSegments(request.Start, request.End);
         if (segments.Count == 0)
         {
@@ -101,6 +109,19 @@ public sealed class ClipExporter(Func<string> ffmpegDirectoryResolver) : IClipEx
             if (!chunksByTimestamp.TryGetValue(segment.ChunkTimestamp, out var chunk)
                 || !chunk.Files.TryGetValue(request.Camera, out var file))
             {
+                break;
+            }
+
+            // A present-but-unreadable side file would make FFmpeg's concat demuxer abort the whole
+            // export, so stop here exactly like the media-source builder truncates that camera's
+            // playback playlist. Front files need no probe: the timeline's segments only cover
+            // chunks whose front file was already probe-verified when the media source was built.
+            if (request.Camera != CameraNames.Front && !isSideFileReadable(file.FullPath))
+            {
+                Log.Warning(
+                    "Export truncated at an unreadable camera file. Camera={Camera}; File={File}",
+                    request.Camera,
+                    file.FullPath);
                 break;
             }
 
