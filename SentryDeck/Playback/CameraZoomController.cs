@@ -71,6 +71,16 @@ internal sealed class CameraZoomController
             return;
         }
 
+        // Turn off FlyleafHost's own surface gestures, which otherwise fight ours: a plain drag would
+        // drag-MOVE the whole window (AttachedDragMove) instead of panning, a double-click would toggle
+        // full-screen instead of resetting, and Ctrl/Shift+wheel would zoom/rotate a second, unclamped
+        // way. With them off, our wheel/drag/double-click below are the only zoom/pan on the surface.
+        host.AttachedDragMove = AttachedDragMoveOptions.None;
+        host.ToggleFullScreenOnDoubleClick = AvailableWindows.None;
+        host.PanMoveOnCtrl = AvailableWindows.None;
+        host.PanZoomOnCtrlWheel = AvailableWindows.None;
+        host.PanRotateOnShiftWheel = AvailableWindows.None;
+
         // handledEventsToo so Flyleaf marking an event handled doesn't hide it from us (mirrors the
         // existing camera-click hook). Touch pinch is best-effort — many laptop touchpads deliver a
         // pinch as a wheel event, which the wheel handler already zooms on with no modifier needed.
@@ -102,8 +112,7 @@ internal sealed class CameraZoomController
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // Leave Ctrl/Shift+wheel to Flyleaf's own zoom/rotate bindings; plain wheel is ours.
-        if (Keyboard.Modifiers != ModifierKeys.None || !TryResolve(sender, out var host, out var surface))
+        if (!TryResolve(sender, out var host, out var surface))
         {
             return;
         }
@@ -167,12 +176,6 @@ internal sealed class CameraZoomController
     {
         if (!TryResolve(sender, out var host, out var surface) ||
             !_drags.TryGetValue(host, out var drag))
-        {
-            return;
-        }
-
-        // Ctrl+drag is Flyleaf's own pan; ours is unmodified.
-        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             return;
         }
