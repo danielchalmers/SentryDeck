@@ -5,7 +5,7 @@ namespace SentryDeck.Tests;
 
 public sealed class FfconcatMediaSourceBuilderTests : IDisposable
 {
-    private readonly List<string> _writtenPlaylists = [];
+    private readonly TestPlaylistDirectory _playlists = new();
 
     [Fact]
     public void Build_WritesPlaylistWithProbedDurations()
@@ -536,23 +536,8 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
         mediaSource.ToMediaTime(instant).ShouldBeNull();
     }
 
-    /// <summary>
-    /// Builds through the real builder while recording the playlists it wrote, so <see cref="Dispose"/> can remove them.
-    /// The builder keys playlists by a hash of the clip folder, and every fixture clip lives under a fresh GUID folder, so each test would otherwise leave a permanent, never-reused file in the shared %TEMP% playlist directory.
-    /// </summary>
-    private ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excluded = null)
-    {
-        var mediaSource = new FfconcatMediaSourceBuilder().Build(clip, excluded);
-        _writtenPlaylists.AddRange(mediaSource.CameraPlaylistPaths.Values);
-        return mediaSource;
-    }
+    private ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excluded = null) =>
+        _playlists.CreateBuilder().Build(clip, excluded);
 
-    public void Dispose()
-    {
-        // Only the paths this fixture produced: the playlist directory is shared with the running app, so wiping it would delete playlists a live player is reading from.
-        foreach (var path in _writtenPlaylists)
-        {
-            File.Delete(path);
-        }
-    }
+    public void Dispose() => _playlists.Dispose();
 }

@@ -9,17 +9,9 @@ namespace SentryDeck.Tests;
 /// </summary>
 public sealed class CultureInvarianceTests : IDisposable
 {
-    // The playlist directory is shared with the running app, so only the files this class wrote get deleted.
-    // Without this every run leaves a permanent, never-reused playlist behind: the file name hashes the clip's root path, and every fixture clip lives under a fresh GUID folder.
-    private readonly List<string> _writtenPlaylists = [];
+    private readonly TestPlaylistDirectory _playlists = new();
 
-    public void Dispose()
-    {
-        foreach (var path in _writtenPlaylists)
-        {
-            File.Delete(path);
-        }
-    }
+    public void Dispose() => _playlists.Dispose();
 
     [Theory]
     [InlineData("de-DE")]
@@ -43,8 +35,7 @@ public sealed class CultureInvarianceTests : IDisposable
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         using var cultureSwap = new CultureSwap("de-DE");
 
-        var mediaSource = new FfconcatMediaSourceBuilder().Build(clipFiles.Clip);
-        _writtenPlaylists.AddRange(mediaSource.CameraPlaylistPaths.Values);
+        var mediaSource = _playlists.CreateBuilder().Build(clipFiles.Clip);
 
         File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.Front])
             .ShouldContain("duration 60.000000");

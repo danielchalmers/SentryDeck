@@ -110,7 +110,8 @@ public sealed class VideoPlayerControllerTests
         }
 
         var front = new FakeCameraPlayer();
-        using var controller = CreateController(front, mediaSourceBuilder: new FfconcatMediaSourceBuilder());
+        using var playlists = new TestPlaylistDirectory();
+        using var controller = CreateController(front, mediaSourceBuilder: playlists.CreateBuilder());
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
@@ -135,7 +136,8 @@ public sealed class VideoPlayerControllerTests
         }
 
         var front = new FakeCameraPlayer();
-        using var controller = CreateController(front, mediaSourceBuilder: new FfconcatMediaSourceBuilder());
+        using var playlists = new TestPlaylistDirectory();
+        using var controller = CreateController(front, mediaSourceBuilder: playlists.CreateBuilder());
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);

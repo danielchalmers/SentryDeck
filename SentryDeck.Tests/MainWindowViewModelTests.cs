@@ -4,8 +4,14 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace SentryDeck.Tests;
 
-public sealed class MainWindowViewModelTests
+public sealed class MainWindowViewModelTests : IDisposable
 {
+    // The controller defaults to the real ffconcat builder, which writes into a directory shared with the running app and names each playlist after a hash of the clip folder.
+    // Fixture clips live under a fresh GUID root every run, so without a directory of our own every test that opens a clip would leave a permanent, never-reused file behind.
+    private readonly TestPlaylistDirectory _playlists = new();
+
+    public void Dispose() => _playlists.Dispose();
+
     // The view-model never invokes the controller factory in these tests; playback paths
     // require FFmpeg/Flyleaf and are covered separately via VideoPlayerController.
     private static MainWindowViewModel CreateViewModel() => new(() => null!);
@@ -1263,7 +1269,7 @@ public sealed class MainWindowViewModelTests
     /// <summary>
     /// A four-camera controller (front + three secondaries) built on the camera-keyed constructor, with front as the primary/clock anchor -- mirrors what the view wires up at runtime.
     /// </summary>
-    private static VideoPlayerController BuildFourCameraController(FakeCameraPlayer front) =>
+    private VideoPlayerController BuildFourCameraController(FakeCameraPlayer front) =>
         new(
             new Dictionary<string, ICameraPlayer>
             {
@@ -1272,7 +1278,8 @@ public sealed class MainWindowViewModelTests
                 [CameraNames.LeftRepeater] = new FakeCameraPlayer(),
                 [CameraNames.RightRepeater] = new FakeCameraPlayer(),
             },
-            CameraNames.Front);
+            CameraNames.Front,
+            _playlists.CreateBuilder());
 
     /// <summary>
     /// Opens the clip on the controller to completion BEFORE the view-model subscribes to it, then attaches the view-model.
@@ -1282,7 +1289,7 @@ public sealed class MainWindowViewModelTests
     /// </summary>
     /// <param name="uiInvoker">Replaces the view-model's dispatcher hop.
     /// Pass <c>action => action()</c> for flows whose continuations genuinely land off the test thread (e.g. delete, which recycles behind a Task.Run).</param>
-    private static (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateViewModelWithOpenedClip(
+    private (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateViewModelWithOpenedClip(
         CamClip clip,
         IClipExporter clipExporter = null,
         Func<string, string> savePathPicker = null,
@@ -1948,7 +1955,7 @@ public sealed class MainWindowViewModelTests
     /// <summary>
     /// A view-model wired to a real controller, subscribed from the calling thread: every controller property change must then arrive on that same thread (see <see cref="RunPinnedToTestThread"/>), so don't add awaits that suspend onto the thread pool (e.g. driving GoToClipAsync to completion).
     /// </summary>
-    private static MainWindowViewModel CreateViewModelWithController(
+    private MainWindowViewModel CreateViewModelWithController(
         out VideoPlayerController controller,
         out FakeCameraPlayer front,
         Func<string, IReadOnlyList<CamClip>> clipLoader = null)

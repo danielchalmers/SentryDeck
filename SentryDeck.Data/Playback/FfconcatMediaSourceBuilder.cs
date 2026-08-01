@@ -12,8 +12,14 @@ namespace SentryDeck;
 /// </summary>
 public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 {
-    private static readonly string PlaylistDirectory =
+    private static readonly string DefaultPlaylistDirectory =
         Path.Combine(Path.GetTempPath(), "SentryDeck", "playlists");
+
+    /// <summary>
+    /// Where the generated .ffconcat playlists are written.
+    /// The app shares one directory and reuses each clip's file name across sessions, so the folder stays bounded; tests override it with a directory of their own because their fixture clips live under a fresh GUID root every run and would otherwise leave a permanent file behind for each one.
+    /// </summary>
+    internal string PlaylistDirectory { get; init; } = DefaultPlaylistDirectory;
 
     public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
