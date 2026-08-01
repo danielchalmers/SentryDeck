@@ -1,9 +1,9 @@
 namespace SentryDeck.Tests;
 
-public static class CamEventTests
+public sealed class CamEventTests
 {
     [Fact]
-    public static void Deserializes_Correctly()
+    public void Deserialize_FullEventJson_PopulatesEveryField()
     {
         // Arrange
         var json = """
@@ -31,7 +31,7 @@ public static class CamEventTests
     }
 
     [Fact]
-    public static void Deserialization_OptionalProperties()
+    public void Deserialization_OptionalProperties()
     {
         // Arrange
         var json = """
@@ -53,7 +53,7 @@ public static class CamEventTests
     }
 
     [Fact]
-    public static void Deserialization_RecoversValidFieldsFromMalformedJson()
+    public void Deserialization_RecoversValidFieldsFromMalformedJson()
     {
         // Every field here is well-formed JSON but several are semantically bad (bad date, non-numeric
         // lat/lon, non-integer camera). Strict deserialization throws; the lenient fallback keeps the
@@ -83,7 +83,7 @@ public static class CamEventTests
     }
 
     [Fact]
-    public static void Deserialization_BlankCoordinateKeepsCityAndTimestamp()
+    public void Deserialization_BlankCoordinateKeepsCityAndTimestamp()
     {
         // Tesla occasionally writes an incomplete est_lat; a single blank field must not discard the
         // city and the event timestamp the clip name falls back to.
@@ -110,17 +110,21 @@ public static class CamEventTests
     }
 
     [Fact]
-    public static void Deserialization_ReturnsNullForNonObjectJson()
+    public void Deserialization_ReturnsNullForNonObjectJson()
     {
         CamEvent.Deserialize("\"just a string\"").ShouldBeNull();
         CamEvent.Deserialize("not json at all {").ShouldBeNull();
     }
 
     [Fact]
-    public static void FromFile()
+    public void FromFile_ReadsEventJsonFromDisk()
     {
         var camEvent = CamEvent.FromFile("Mocks/2023-02-23_14-16-15/event.json");
 
+        // Assert the parsed values, not just non-null: every field could silently fall back to its default and still leave a CamEvent behind -- exactly what the sibling Deserialize tests exist to catch, and this is the only one that goes through the file-reading path.
         camEvent.ShouldNotBeNull();
+        camEvent.Timestamp.ShouldBe(new DateTime(2023, 2, 23, 14, 16, 7));
+        camEvent.City.ShouldBe("Austin");
+        camEvent.Reason.ShouldBe("user_interaction_honk");
     }
 }

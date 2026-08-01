@@ -1,8 +1,14 @@
+using System.IO;
+
 namespace SentryDeck.Tests;
 
 public sealed class ClipExporterTests
 {
     private static readonly DateTime FirstTimestamp = new(2025, 1, 1, 12, 0, 0);
+
+    // ExportAsync writes its scripts to a fixed folder shared with the real app, so the cleanup tests compare snapshots of it rather than asserting it is empty.
+    private static readonly string ExportScriptDirectory =
+        Path.Combine(Path.GetTempPath(), "SentryDeck", "exports");
 
     // A clip of three 60s chunks plus the matching opened media source. Files never touch disk:
     // ResolveEntries/BuildConcatScript work purely on the model. omitCameraFromChunk removes one
@@ -39,8 +45,19 @@ public sealed class ClipExporterTests
         (CamClip Clip, ClipMediaSource Source) fixture,
         string camera,
         TimeSpan start,
-        TimeSpan end)
-        => new(fixture.Clip, fixture.Source, camera, start, end, @"C:\out\export.mp4");
+        TimeSpan end,
+        string outputPath = @"C:\out\export.mp4")
+        => new(fixture.Clip, fixture.Source, camera, start, end, outputPath);
+
+    // A path under the temp folder that nothing has created yet, so a test can prove the exporter deleted a file it wrote there.
+    private static string TempOutputPath()
+        => Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}.mp4");
+
+    // BuildArguments wraps the script path in the first pair of quotes it emits.
+    private static string ScriptPathFromArguments(string arguments) => arguments.Split('"')[1];
+
+    private static string[] ExportScriptFiles()
+        => Directory.Exists(ExportScriptDirectory) ? Directory.GetFiles(ExportScriptDirectory) : [];
 
     [Fact]
     public void ResolveEntries_MapsSegmentsToTheCameraFiles()
@@ -121,7 +138,8 @@ public sealed class ClipExporterTests
         var fixture = CreateClip();
 
         Should.Throw<InvalidOperationException>(() => ClipExporter.ResolveEntries(
-            Request(fixture, CameraNames.Front, TimeSpan.FromSeconds(200), TimeSpan.FromSeconds(300))));
+                Request(fixture, CameraNames.Front, TimeSpan.FromSeconds(200), TimeSpan.FromSeconds(300))))
+            .Message.ShouldContain("contains no footage");
     }
 
     [Fact]
@@ -155,5 +173,53 @@ public sealed class ClipExporterTests
         arguments.ShouldContain("-c copy");
         arguments.ShouldContain("\"C:\\tmp\\job.ffconcat\"");
         arguments.ShouldContain("\"C:\\out\\clip.mp4\"");
+    }
+
+    [Fact]
+    public async Task ExportAsync_FfmpegNotInstalled_ThrowsWithInstallMessage()
+    {
+        // FFmpeg is downloaded in the background at startup, so an export attempted before it lands must tell the user to restart instead of surfacing a raw file-not-found.
+        // Nothing may be written to disk before that check either.
+        var fixture = CreateClip();
+        var scriptsBefore = ExportScriptFiles();
+        var exporter = new ClipExporter(() => null, (_, _, _) => Task.CompletedTask);
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>(() => exporter.ExportAsync(
+            Request(fixture, CameraNames.Front, TimeSpan.Zero, TimeSpan.FromSeconds(60))));
+
+        exception.Message.ShouldContain("FFmpeg");
+        ExportScriptFiles().ShouldBe(scriptsBefore, ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task ExportAsync_WhenFfmpegFails_DeletesPartialOutputAndScript()
+    {
+        // FFmpeg had already begun writing when it failed, so without cleanup the user is left with a truncated file at the path they chose that looks like a finished export.
+        var fixture = CreateClip();
+        var outputPath = TempOutputPath();
+        string scriptPath = null;
+
+        var exporter = new ClipExporter(
+            () => @"C:\ffmpeg",
+            (_, arguments, _) =>
+            {
+                scriptPath = ScriptPathFromArguments(arguments);
+                File.WriteAllText(outputPath, "half-written");
+                throw new InvalidOperationException("FFmpeg exited with code 1.");
+            });
+
+        try
+        {
+            await Should.ThrowAsync<InvalidOperationException>(() => exporter.ExportAsync(
+                Request(fixture, CameraNames.Front, TimeSpan.Zero, TimeSpan.FromSeconds(60), outputPath)));
+
+            scriptPath.ShouldNotBeNull();
+            File.Exists(outputPath).ShouldBeFalse();
+            File.Exists(scriptPath).ShouldBeFalse();
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
     }
 }

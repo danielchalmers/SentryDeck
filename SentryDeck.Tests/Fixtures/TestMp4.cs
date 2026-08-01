@@ -50,6 +50,45 @@ internal static class TestMp4
         return [.. ftypBox, .. moovBox];
     }
 
+    /// <summary>
+    /// The first <paramref name="keepBytes"/> bytes of an otherwise valid 60s mp4, so box headers promise more data than the file holds -- the shape a recording cut off mid-write leaves.
+    /// </summary>
+    public static byte[] BuildTruncated(int keepBytes)
+    {
+        return BuildWithDuration(TimeSpan.FromSeconds(60))[..keepBytes];
+    }
+
+    /// <summary>
+    /// One box of the given type wrapping a valid 60s mvhd, with a hand-picked size field that need not describe the body.
+    /// <see cref="Build"/> can only emit well-formed sizes, so this is the only way to reach the "size 0 means to end of file" and undersized-header branches.
+    /// </summary>
+    public static byte[] BuildWithBoxSize(string type, uint sizeField)
+    {
+        using var stream = new MemoryStream();
+        WriteUInt32BigEndian(stream, sizeField);
+        stream.Write(System.Text.Encoding.ASCII.GetBytes(type));
+        stream.Write(BuildMvhdBox());
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// One box of the given type wrapping a valid 60s mvhd, using the 64-bit "largesize" form (a size field of 1 followed by an 8-byte length covering the whole box, header included).
+    /// </summary>
+    public static byte[] BuildWithLargeSize(string type, ulong largeSize)
+    {
+        using var stream = new MemoryStream();
+        WriteUInt32BigEndian(stream, 1);
+        stream.Write(System.Text.Encoding.ASCII.GetBytes(type));
+        WriteUInt64BigEndian(stream, largeSize);
+        stream.Write(BuildMvhdBox());
+        return stream.ToArray();
+    }
+
+    private static byte[] BuildMvhdBox()
+    {
+        return BuildBox("mvhd", BuildMvhdBody(version: 0, timescale: 1000, duration: 60_000));
+    }
+
     private static byte[] BuildMvhdBody(int version, uint timescale, ulong duration)
     {
         using var stream = new MemoryStream();

@@ -7,7 +7,12 @@ public sealed class ClipPlaylistTests
     {
         var playlist = new ClipPlaylist();
         var clips = TestClips.Create(3);
-        playlist.MoveTo(0);
+
+        // Seed a real selection first.
+        // On a fresh playlist the index is already -1, so without this the "clears selection" assertions below hold no matter what SetClips does.
+        playlist.SetClips(TestClips.Create(2));
+        playlist.MoveTo(1);
+        playlist.CurrentIndex.ShouldBe(1);
 
         playlist.SetClips(clips);
 
@@ -149,7 +154,7 @@ public sealed class ClipPlaylistTests
         var clips = TestClips.Create(2);
         playlist.SetClips(clips);
         playlist.MoveTo(1);
-        var stranger = TestClips.Create(1)[0];
+        var stranger = new CamClip(@"C:\somewhere-else", "Not In Playlist", new DateTime(2024, 1, 1), [], camEvent: null);
 
         var removed = playlist.RemoveClip(stranger);
 
@@ -170,5 +175,51 @@ public sealed class ClipPlaylistTests
         playlist.RemoveClip(clips[0]);
 
         playlistChanged.ShouldBe(1);
+    }
+
+    [Fact]
+    public void MoveTo_SameIndex_ReturnsFalseAndRaisesNoEvent()
+    {
+        var playlist = new ClipPlaylist();
+        playlist.SetClips(TestClips.Create(2));
+        playlist.MoveTo(1);
+        var currentChanged = 0;
+        playlist.CurrentClipChanged += (_, _) => currentChanged++;
+
+        // Re-selecting the clip already playing must be a no-op; a spurious event would restart it.
+        playlist.MoveTo(1).ShouldBeFalse();
+
+        currentChanged.ShouldBe(0);
+        playlist.CurrentIndex.ShouldBe(1);
+    }
+
+    [Fact]
+    public void RemoveClip_WhenNothingIsSelected_LeavesIndexAtMinusOne()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+
+        playlist.RemoveClip(clips[0]).ShouldBeTrue();
+
+        playlist.CurrentIndex.ShouldBe(-1);
+        playlist.Clips.ShouldBe(new[] { clips[1], clips[2] });
+    }
+
+    [Fact]
+    public void MoveTo_FieldIdenticalButDistinctClip_DoesNotMatch()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(2);
+        playlist.SetClips(clips);
+        playlist.MoveTo(1);
+        var twin = new CamClip(clips[0].FullPath, clips[0].Name, clips[0].Timestamp, [], camEvent: null);
+
+        // Pins CURRENT behavior, not a designed contract.
+        // CamClip is a record, but its Chunks list compares by reference, so two clips describing the same folder never match.
+        // A maintainer who wants structural matching on FullPath should change this test with the behavior.
+        playlist.MoveTo(twin).ShouldBeFalse();
+
+        playlist.CurrentIndex.ShouldBe(1);
     }
 }

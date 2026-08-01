@@ -37,7 +37,7 @@ public static class PackageManager
         return fileStream.Length;
     }
 
-    private static int ExtractFFmpegBin(string zipFilePath, string destinationBinPath, string archiveRoot)
+    internal static int ExtractFFmpegBin(string zipFilePath, string destinationBinPath, string archiveRoot)
     {
         if (Directory.Exists(destinationBinPath))
         {
