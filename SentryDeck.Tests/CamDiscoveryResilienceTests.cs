@@ -7,13 +7,6 @@ namespace SentryDeck.Tests;
 /// </summary>
 public sealed class CamDiscoveryResilienceTests
 {
-    private static string CreateTempDir()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "SentryDeckTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(path);
-        return path;
-    }
-
     private static string CreateSubDir(string parent, string name)
         => Directory.CreateDirectory(Path.Combine(parent, name)).FullName;
 
@@ -23,66 +16,48 @@ public sealed class CamDiscoveryResilienceTests
     [Fact]
     public void FindFiles_SkipsCalendarInvalidFileName()
     {
-        var dir = CreateTempDir();
-        try
-        {
-            Touch(dir, "2023-02-23_14-14-48-front.mp4");
-            Touch(dir, "2099-13-45_25-99-99-front.mp4"); // matches the name pattern but isn't a real date
+        using var temp = new TempDirectory();
 
-            var files = CamFile.FindFiles(dir).ToList();
+        Touch(temp.Path, "2023-02-23_14-14-48-front.mp4");
+        Touch(temp.Path, "2099-13-45_25-99-99-front.mp4"); // matches the name pattern but isn't a real date
 
-            files.Count.ShouldBe(1);
-            files[0].Camera.ShouldBe("front");
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        var files = CamFile.FindFiles(temp.Path).ToList();
+
+        files.Count.ShouldBe(1);
+        files[0].Camera.ShouldBe("front");
     }
 
     [Fact]
     public void FindFiles_CanonicalizesLegacyRearViewSuffixToBack()
     {
-        var dir = CreateTempDir();
-        try
-        {
-            Touch(dir, "2023-02-23_14-14-48-rear_view.mp4"); // old-firmware rear-camera token
+        using var temp = new TempDirectory();
 
-            var files = CamFile.FindFiles(dir).ToList();
+        Touch(temp.Path, "2023-02-23_14-14-48-rear_view.mp4"); // old-firmware rear-camera token
 
-            files.ShouldHaveSingleItem();
-            files[0].Camera.ShouldBe(CameraNames.Back);
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        var files = CamFile.FindFiles(temp.Path).ToList();
+
+        files.ShouldHaveSingleItem();
+        files[0].Camera.ShouldBe(CameraNames.Back);
     }
 
     [Fact]
     public void FindClips_OneCalendarInvalidFileDoesNotDiscardOtherClips()
     {
-        var root = CreateTempDir();
-        try
-        {
-            var a = CreateSubDir(root, "2023-01-01_10-00-00");
-            Touch(a, "2023-01-01_10-00-00-front.mp4");
+        using var temp = new TempDirectory();
 
-            var b = CreateSubDir(root, "2023-01-02_10-00-00");
-            Touch(b, "2023-01-02_10-00-00-front.mp4");
+        var a = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(a, "2023-01-01_10-00-00-front.mp4");
 
-            var c = CreateSubDir(root, "2023-01-03_10-00-00");
-            Touch(c, "2023-01-03_10-00-00-front.mp4");
-            Touch(c, "2099-13-45_25-99-99-front.mp4"); // a bad file next to a good one
+        var b = CreateSubDir(temp.Path, "2023-01-02_10-00-00");
+        Touch(b, "2023-01-02_10-00-00-front.mp4");
 
-            var clips = CamClip.FindClips(root).ToList();
+        var c = CreateSubDir(temp.Path, "2023-01-03_10-00-00");
+        Touch(c, "2023-01-03_10-00-00-front.mp4");
+        Touch(c, "2099-13-45_25-99-99-front.mp4"); // a bad file next to a good one
 
-            clips.Count.ShouldBe(3); // the bad file is skipped; every real clip still loads
-        }
-        finally
-        {
-            Directory.Delete(root, true);
-        }
+        var clips = CamClip.FindClips(temp.Path).ToList();
+
+        clips.Count.ShouldBe(3); // the bad file is skipped; every real clip still loads
     }
 
     [Fact]
@@ -90,42 +65,30 @@ public sealed class CamDiscoveryResilienceTests
     {
         // A folder like Tesla's RecentClips: loose files directly inside, no date-named subfolder and no event.json.
         // The clip timestamp must come from the file names, not DateTime.MinValue.
-        var root = CreateTempDir();
-        try
-        {
-            var dir = CreateSubDir(root, "RecentClips");
-            Touch(dir, "2023-08-28_13-10-35-front.mp4");
-            Touch(dir, "2023-08-28_13-09-35-front.mp4"); // earlier chunk, written second
+        using var temp = new TempDirectory();
 
-            var clip = CamClip.Map(dir);
+        var dir = CreateSubDir(temp.Path, "RecentClips");
+        Touch(dir, "2023-08-28_13-10-35-front.mp4");
+        Touch(dir, "2023-08-28_13-09-35-front.mp4"); // earlier chunk, written second
 
-            clip.ShouldNotBeNull();
-            clip.Timestamp.ShouldBe(new DateTime(2023, 8, 28, 13, 9, 35)); // earliest chunk, not MinValue
-        }
-        finally
-        {
-            Directory.Delete(root, true);
-        }
+        var clip = CamClip.Map(dir);
+
+        clip.ShouldNotBeNull();
+        clip.Timestamp.ShouldBe(new DateTime(2023, 8, 28, 13, 9, 35)); // earliest chunk, not MinValue
     }
 
     [Fact]
     public void Map_CalendarInvalidFolderName_DoesNotThrowAndKeepsChunks()
     {
-        var root = CreateTempDir();
-        try
-        {
-            var dir = CreateSubDir(root, "2099-13-45_25-99-99"); // pattern-valid, not a real date
-            Touch(dir, "2023-02-23_14-14-48-front.mp4");
+        using var temp = new TempDirectory();
 
-            var clip = CamClip.Map(dir);
+        var dir = CreateSubDir(temp.Path, "2099-13-45_25-99-99"); // pattern-valid, not a real date
+        Touch(dir, "2023-02-23_14-14-48-front.mp4");
 
-            clip.ShouldNotBeNull();
-            clip.Chunks.Count.ShouldBe(1);
-        }
-        finally
-        {
-            Directory.Delete(root, true);
-        }
+        var clip = CamClip.Map(dir);
+
+        clip.ShouldNotBeNull();
+        clip.Chunks.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -133,25 +96,19 @@ public sealed class CamDiscoveryResilienceTests
     {
         // What a drive spanning a firmware transition (or two drives merged by hand) actually holds: both rear-camera suffixes at the same timestamp.
         // CamFile canonicalizes rear_view to back, so the two files collide on one camera key -- and an unguarded ToDictionary would throw there, with CamClip.TryMap swallowing it and the whole clip folder vanishing from the library.
-        var dir = CreateTempDir();
-        try
-        {
-            Touch(dir, "2023-02-23_14-14-48-front.mp4");
-            Touch(dir, "2023-02-23_14-14-48-back.mp4");
-            Touch(dir, "2023-02-23_14-14-48-rear_view.mp4");
+        using var temp = new TempDirectory();
 
-            var chunks = CamChunk.Map(dir);
+        Touch(temp.Path, "2023-02-23_14-14-48-front.mp4");
+        Touch(temp.Path, "2023-02-23_14-14-48-back.mp4");
+        Touch(temp.Path, "2023-02-23_14-14-48-rear_view.mp4");
 
-            chunks.Count.ShouldBe(1);
+        var chunks = CamChunk.Map(temp.Path);
 
-            // Exactly one of the two rear files survives; which one follows enumeration order, so the winner is deliberately not pinned here.
-            chunks[0].Files.Keys.ShouldBe([CameraNames.Front, CameraNames.Back], ignoreOrder: true);
+        chunks.Count.ShouldBe(1);
 
-            CamClip.Map(dir).ShouldNotBeNull();
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        // Exactly one of the two rear files survives; which one follows enumeration order, so the winner is deliberately not pinned here.
+        chunks[0].Files.Keys.ShouldBe([CameraNames.Front, CameraNames.Back], ignoreOrder: true);
+
+        CamClip.Map(temp.Path).ShouldNotBeNull();
     }
 }

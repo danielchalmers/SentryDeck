@@ -25,45 +25,31 @@ public sealed class CamChunkTests
     [Fact]
     public void Map_KeepsPillarCameras()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "SentryDeckTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            foreach (var camera in CameraNames.All)
-            {
-                File.WriteAllBytes(Path.Combine(dir, $"2025-01-01_12-00-00-{camera}.mp4"), []);
-            }
+        using var temp = new TempDirectory();
 
-            var chunks = CamChunk.Map(dir);
-
-            chunks.Count.ShouldBe(1);
-            chunks[0].Files.Keys.ShouldContain(CameraNames.LeftPillar);
-            chunks[0].Files.Keys.ShouldContain(CameraNames.RightPillar);
-        }
-        finally
+        foreach (var camera in CameraNames.All)
         {
-            Directory.Delete(dir, true);
+            File.WriteAllBytes(Path.Combine(temp.Path, $"2025-01-01_12-00-00-{camera}.mp4"), []);
         }
+
+        var chunks = CamChunk.Map(temp.Path);
+
+        chunks.Count.ShouldBe(1);
+        chunks[0].Files.Keys.ShouldContain(CameraNames.LeftPillar);
+        chunks[0].Files.Keys.ShouldContain(CameraNames.RightPillar);
     }
 
     [Fact]
     public void Map_KeepsUnknownCameraSuffix()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "SentryDeckTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            File.WriteAllBytes(Path.Combine(dir, "2025-01-01_12-00-00-front.mp4"), []);
-            File.WriteAllBytes(Path.Combine(dir, "2025-01-01_12-00-00-front_bumper.mp4"), []);
+        using var temp = new TempDirectory();
 
-            var chunks = CamChunk.Map(dir);
+        File.WriteAllBytes(Path.Combine(temp.Path, "2025-01-01_12-00-00-front.mp4"), []);
+        File.WriteAllBytes(Path.Combine(temp.Path, "2025-01-01_12-00-00-front_bumper.mp4"), []);
 
-            chunks.ShouldHaveSingleItem();
-            chunks[0].Files.Keys.ShouldContain("front_bumper");
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        var chunks = CamChunk.Map(temp.Path);
+
+        chunks.ShouldHaveSingleItem();
+        chunks[0].Files.Keys.ShouldContain("front_bumper");
     }
 }

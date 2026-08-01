@@ -201,8 +201,9 @@ public sealed class ConverterTests
     {
         // Tesla writes thumb.png as it records, so a half-written or truncated one is normal.
         // It has to land on the same "no thumbnail" path as a missing file instead of throwing out of a binding while the list scrolls.
-        WithTempFile(path =>
-            new ThumbnailConverter().Convert(path, typeof(ImageSource), null, null).ShouldBeNull());
+        using var thumbnail = new TempFile("not a png"u8.ToArray(), ".png");
+
+        new ThumbnailConverter().Convert(thumbnail.Path, typeof(ImageSource), null, null).ShouldBeNull();
     }
 
     [Fact]
@@ -213,8 +214,9 @@ public sealed class ConverterTests
 
         converter.Convert(MissingThumbnailPath(), typeof(Visibility), "fallback", null).ShouldBe(Visibility.Visible);
         converter.Convert(null, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Visible);
-        WithTempFile(path =>
-            converter.Convert(path, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Collapsed));
+
+        using var thumbnail = new TempFile("not a png"u8.ToArray(), ".png");
+        converter.Convert(thumbnail.Path, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Collapsed);
     }
 
     [Fact]
@@ -236,20 +238,4 @@ public sealed class ConverterTests
 
     private static string MissingThumbnailPath() =>
         Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}.png");
-
-    // ThumbnailConverter is the only converter here that reads from disk; give it a throwaway file that is deleted even when the assertion fails.
-    private static void WithTempFile(Action<string> assert)
-    {
-        var path = MissingThumbnailPath();
-        File.WriteAllText(path, "not a png");
-
-        try
-        {
-            assert(path);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
 }

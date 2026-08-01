@@ -191,7 +191,8 @@ public sealed class ClipExporterTests
     {
         // FFmpeg had already begun writing when it failed, so without cleanup the user is left with a truncated file at the path they chose that looks like a finished export.
         var fixture = CreateClip();
-        var outputPath = TempOutputPath();
+        using var output = new TempFile();
+        var outputPath = output.Path;
         string scriptPath = null;
 
         var exporter = new ClipExporter(
@@ -203,18 +204,11 @@ public sealed class ClipExporterTests
                 throw new InvalidOperationException("FFmpeg exited with code 1.");
             });
 
-        try
-        {
-            await Should.ThrowAsync<InvalidOperationException>(() => exporter.ExportAsync(
-                Request(fixture, CameraNames.Front, TimeSpan.Zero, TimeSpan.FromSeconds(60), outputPath)));
+        await Should.ThrowAsync<InvalidOperationException>(() => exporter.ExportAsync(
+            Request(fixture, CameraNames.Front, TimeSpan.Zero, TimeSpan.FromSeconds(60), outputPath)));
 
-            scriptPath.ShouldNotBeNull();
-            File.Exists(outputPath).ShouldBeFalse();
-            File.Exists(scriptPath).ShouldBeFalse();
-        }
-        finally
-        {
-            File.Delete(outputPath);
-        }
+        scriptPath.ShouldNotBeNull();
+        File.Exists(outputPath).ShouldBeFalse();
+        File.Exists(scriptPath).ShouldBeFalse();
     }
 }

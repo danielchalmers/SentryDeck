@@ -123,29 +123,20 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     [Fact]
     public void Build_EscapesSingleQuoteInPath()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}-with'quote");
-        Directory.CreateDirectory(root);
+        using var temp = new TempDirectory(suffix: "-with'quote");
 
-        try
-        {
-            var timestamp = new DateTime(2023, 2, 23, 14, 14, 48);
-            var frontPath = Path.Combine(root, $"{timestamp:yyyy-MM-dd_HH-mm-ss}-front.mp4");
-            File.WriteAllBytes(frontPath, TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
-            var frontFile = new CamFile(frontPath, timestamp, CameraNames.Front);
-            var chunk = new CamChunk(timestamp, [frontFile]);
-            var clip = new CamClip(root, "Test Clip", timestamp, [chunk], camEvent: null);
+        var timestamp = new DateTime(2023, 2, 23, 14, 14, 48);
+        var frontPath = temp.Write($"{timestamp:yyyy-MM-dd_HH-mm-ss}-front.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+        var frontFile = new CamFile(frontPath, timestamp, CameraNames.Front);
+        var chunk = new CamChunk(timestamp, [frontFile]);
+        var clip = new CamClip(temp.Path, "Test Clip", timestamp, [chunk], camEvent: null);
 
-            var mediaSource = Build(clip);
+        var mediaSource = Build(clip);
 
-            var content = File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.Front]);
-            var expectedEscapedPath = frontFile.FullPath.Replace('\\', '/').Replace("'", "'\\''");
+        var content = File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.Front]);
+        var expectedEscapedPath = frontFile.FullPath.Replace('\\', '/').Replace("'", "'\\''");
 
-            content.ShouldContain($"file '{expectedEscapedPath}'");
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        content.ShouldContain($"file '{expectedEscapedPath}'");
     }
 
     [Fact]

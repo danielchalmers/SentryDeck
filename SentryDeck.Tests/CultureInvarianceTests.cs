@@ -48,26 +48,15 @@ public sealed class CultureInvarianceTests : IDisposable
     {
         // TeslaCam names files with a Gregorian date regardless of who owns the car.
         // Parsed against the current culture instead, ar-SA (UmAlQura) rejects the name outright -- the scan finds zero clips -- and th-TH (Buddhist) dates every clip 543 years off.
-        var root = Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(root);
+        using var temp = new TempDirectory();
+        temp.Write("2023-02-23_14-14-48-front.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
 
-        try
-        {
-            File.WriteAllBytes(
-                Path.Combine(root, "2023-02-23_14-14-48-front.mp4"),
-                TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+        using var cultureSwap = new CultureSwap(culture);
 
-            using var cultureSwap = new CultureSwap(culture);
+        var file = CamFile.FindFiles(temp.Path).ShouldHaveSingleItem();
 
-            var file = CamFile.FindFiles(root).ShouldHaveSingleItem();
-
-            file.Timestamp.Year.ShouldBe(2023);
-            file.Camera.ShouldBe(CameraNames.Front);
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        file.Timestamp.Year.ShouldBe(2023);
+        file.Camera.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
