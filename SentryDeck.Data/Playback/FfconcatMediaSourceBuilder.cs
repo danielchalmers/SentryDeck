@@ -103,6 +103,13 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
                 entries.Add((file.FullPath, chunkDurations[i]));
             }
 
+            // A camera whose first included file is unreadable ends up with nothing to play, so it is omitted entirely just like one missing from that chunk (the guard above).
+            // Registering a header-only playlist would advertise a camera that cannot be opened, hiding the actionable "no footage" message behind an FFmpeg failure at play time.
+            if (entries.Count == 0)
+            {
+                continue;
+            }
+
             var playlistPath = Path.Combine(PlaylistDirectory, $"{clipToken}-{camera}.ffconcat");
             WritePlaylist(playlistPath, entries);
             playlistPaths[camera] = playlistPath;

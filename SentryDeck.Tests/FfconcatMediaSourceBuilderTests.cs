@@ -103,6 +103,25 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     }
 
     [Fact]
+    public void Build_SideCameraUnreadableInFirstChunk_OmitsCameraEntirely()
+    {
+        // A camera whose first file is corrupt has nothing to sit at the timeline's origin, so it is dropped exactly like one missing from chunk zero.
+        // Registering it with an entry-less playlist would advertise a camera that fails at play time instead of reporting no footage.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        File.WriteAllBytes(clipFiles.GetPath(0, CameraNames.Back), TestMp4.GarbageBytes);
+
+        var mediaSource = Build(clipFiles.Clip);
+
+        mediaSource.CameraPlaylistPaths.ContainsKey(CameraNames.Back).ShouldBeFalse();
+        mediaSource.CameraPlaylistPaths.ContainsKey(CameraNames.Front).ShouldBeTrue();
+
+        // The shared timeline is front-driven, so the back camera's loss leaves it untouched.
+        mediaSource.ChunkStarts.Count.ShouldBe(2);
+        mediaSource.Duration.ShouldBe(TimeSpan.FromSeconds(120));
+        mediaSource.AutoExcludedChunkIndices.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Build_EscapesSingleQuoteInPath()
     {
         var root = Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}-with'quote");
