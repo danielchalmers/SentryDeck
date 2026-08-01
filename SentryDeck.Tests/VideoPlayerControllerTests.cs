@@ -17,7 +17,8 @@ public sealed partial class VideoPlayerControllerTests
         FakeCameraPlayer back = null,
         FakeCameraPlayer left = null,
         FakeCameraPlayer right = null,
-        IClipMediaSourceBuilder mediaSourceBuilder = null)
+        IClipMediaSourceBuilder mediaSourceBuilder = null,
+        Func<CancellationToken, Task> postRecoverySeekVerifyDelay = null)
     {
         var players = new Dictionary<string, ICameraPlayer>
         {
@@ -30,7 +31,9 @@ public sealed partial class VideoPlayerControllerTests
         return new VideoPlayerController(
             players,
             CameraNames.Front,
-            mediaSourceBuilder ?? new FakeClipMediaSourceBuilder());
+            mediaSourceBuilder ?? new FakeClipMediaSourceBuilder(),
+            // FakeCameraPlayer reports its position the moment a seek is applied, so the real verify wait buys nothing here and every recovery test would otherwise pay it in wall-clock time.
+            postRecoverySeekVerifyDelay ?? (_ => Task.CompletedTask));
     }
 
     /// <summary>

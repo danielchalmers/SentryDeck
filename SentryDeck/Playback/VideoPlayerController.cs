@@ -28,7 +28,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// <summary>
     /// One-shot guard for the reopen/seek race after a recovery: how long to wait after issuing the resume seek before verifying the front player actually landed near the target, and how far below the target the reported position may sit before the seek is reissued once.
     /// </summary>
-    private static readonly TimeSpan PostRecoverySeekVerifyDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan DefaultPostRecoverySeekVerifyDelay = TimeSpan.FromMilliseconds(500);
+
+    private readonly Func<CancellationToken, Task> _postRecoverySeekVerifyDelay;
 
     private static readonly TimeSpan PostRecoverySeekTolerance = TimeSpan.FromSeconds(5);
 
@@ -82,10 +84,13 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     /// <param name="players">Camera players keyed by camera name.
     /// Every present camera is played; the clip decides which are actually opened.</param> <param name="primaryCamera">The camera that drives the shared clock, is required to open, and anchors corrupt-chunk recovery (front on a real Tesla).</param>
+    /// <param name="postRecoverySeekVerifyDelay">Waits before the post-recovery seek is verified.
+    /// Defaults to a real delay; overridable for tests, which would otherwise pay it in wall-clock time on every recovery test and could not control when the verification runs.</param>
     public VideoPlayerController(
         IReadOnlyDictionary<string, ICameraPlayer> players,
         string primaryCamera,
-        IClipMediaSourceBuilder mediaSourceBuilder = null)
+        IClipMediaSourceBuilder mediaSourceBuilder = null,
+        Func<CancellationToken, Task> postRecoverySeekVerifyDelay = null)
     {
         ArgumentNullException.ThrowIfNull(players);
         ArgumentException.ThrowIfNullOrEmpty(primaryCamera);
@@ -104,6 +109,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         _primaryPlayer = primaryPlayer;
         _players = players;
         _mediaSourceBuilder = mediaSourceBuilder ?? new FfconcatMediaSourceBuilder();
+        _postRecoverySeekVerifyDelay = postRecoverySeekVerifyDelay ?? (token => Task.Delay(DefaultPostRecoverySeekVerifyDelay, token));
 
         Playlist = new ClipPlaylist();
         Playlist.CurrentClipChanged += OnCurrentClipChanged;
@@ -1166,7 +1172,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 Position = clampedResumePosition;
 
                 // One-shot guard against the reopen/seek race: give the player a moment and, if its reported position is still far below the resume target, reissue the seek.
-                await Task.Delay(PostRecoverySeekVerifyDelay, ct);
+                await _postRecoverySeekVerifyDelay(ct);
 
                 if (IsRequestActive(requestId)
                     && clampedResumePosition - Position > PostRecoverySeekTolerance)

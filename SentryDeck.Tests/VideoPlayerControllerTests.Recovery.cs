@@ -521,4 +521,80 @@ public sealed partial class VideoPlayerControllerTests
         front.StepLog.ShouldBeEmpty();
         controller.IsPlaying.ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task PostRecoverySeek_ThatDidNotStick_IsReissuedOnce()
+    {
+        // A seek issued right after a reopen can be swallowed by the player, leaving the viewer back at the top of the clip after a recovery instead of where they were watching.
+        // The controller waits, re-reads the player's own reported position, and reissues once if it is still far short.
+        // Gating that wait is what makes the check observable: it holds the controller inside the window while the test reports a position the seek never reached.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        var verifyReached = new TaskCompletionSource();
+        var releaseVerify = new TaskCompletionSource();
+
+        using var controller = CreateController(
+            front,
+            mediaSourceBuilder: mediaSourceBuilder,
+            postRecoverySeekVerifyDelay: _ =>
+            {
+                verifyReached.TrySetResult();
+                return releaseVerify.Task;
+            });
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        // Same premature end as the recovery tests above: playback dies inside chunk 1, so recovery resumes at that chunk's start (60s).
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+
+        await verifyReached.Task;
+        var seeksBeforeVerify = front.SeekPositions.Count(position => position == TimeSpan.FromSeconds(60));
+
+        // The player reports it is still near the top of the clip: the resume seek did not take.
+        front.RaisePositionChanged(TimeSpan.Zero);
+        releaseVerify.SetResult();
+
+        await Wait.UntilAsync(() => front.SeekPositions.Count(position => position == TimeSpan.FromSeconds(60)) > seeksBeforeVerify);
+
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public async Task PostRecoverySeek_ThatStuck_IsNotReissued()
+    {
+        // The counterpart: when the player does land on the resume target, reissuing would be a second visible jump for no reason.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var front = new FakeCameraPlayer();
+        var mediaSourceBuilder = new FakeClipMediaSourceBuilder();
+        var verifyReached = new TaskCompletionSource();
+        var releaseVerify = new TaskCompletionSource();
+
+        using var controller = CreateController(
+            front,
+            mediaSourceBuilder: mediaSourceBuilder,
+            postRecoverySeekVerifyDelay: _ =>
+            {
+                verifyReached.TrySetResult();
+                return releaseVerify.Task;
+            });
+
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        await WaitUntilClipOpenedAsync(controller, front);
+
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+
+        await verifyReached.Task;
+        var seeksBeforeVerify = front.SeekPositions.Count(position => position == TimeSpan.FromSeconds(60));
+
+        releaseVerify.SetResult();
+        await Wait.UntilAsync(() => !controller.IsLoading);
+
+        front.SeekPositions.Count(position => position == TimeSpan.FromSeconds(60)).ShouldBe(seeksBeforeVerify);
+    }
 }
