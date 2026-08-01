@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
 using Serilog;
 
@@ -118,24 +117,6 @@ public partial record class CamClip
         {
             Log.Warning(ex, "Skipping unreadable clip folder. Folder={Folder}", directory);
             return null;
-        }
-    }
-
-    public string Summary
-    {
-        get
-        {
-            var builder = new StringBuilder();
-
-            builder.Append(Name);
-
-            if (Event?.City is not null)
-            {
-                builder.AppendLine();
-                builder.Append(Event.City);
-            }
-
-            return builder.ToString();
         }
     }
 
