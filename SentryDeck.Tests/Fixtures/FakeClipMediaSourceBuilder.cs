@@ -10,31 +10,51 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 {
     public static readonly TimeSpan ChunkDuration = TimeSpan.FromSeconds(60);
 
-    // Build() runs on Task.Run threads while tests poll the bookkeeping below from the test
-    // thread, so it needs its own lock rather than relying on single-threaded access.
+    // Build() runs on Task.Run threads while tests poll the bookkeeping below from the test thread, so every piece of it stays private behind this lock: a test indexing a live List while a background Build() appends to it is a race that only shows up as a rare CI failure.
     private readonly Lock _recordingLock = new();
+    private readonly List<IReadOnlySet<int>> _exclusionsPerBuild = [];
+    private readonly List<CamClip> _clipsPerBuild = [];
+    private readonly HashSet<int> _autoExcludeChunkIndices = [];
 
-    public int BuildCount { get; private set; }
+    public int BuildCount
+    {
+        get
+        {
+            lock (_recordingLock)
+            {
+                return _clipsPerBuild.Count;
+            }
+        }
+    }
 
     /// <summary>
-    /// The exclusion set passed to each <see cref="Build"/> call, in call order, so tests can
-    /// assert on which chunks were excluded and how that changed over successive rebuilds.
+    /// A snapshot of the exclusion set passed to each <see cref="Build"/> call, in call order, so tests can assert on which chunks were excluded and how that changed over successive rebuilds.
+    /// Snapshot once and assert against that copy rather than calling this per assertion, so a build that lands mid-assertion can't make the claims disagree.
     /// </summary>
-    public List<IReadOnlySet<int>> ExclusionsPerBuild { get; } = [];
+    public IReadOnlyList<IReadOnlySet<int>> Exclusions()
+    {
+        lock (_recordingLock)
+        {
+            return [.. _exclusionsPerBuild];
+        }
+    }
 
     /// <summary>
-    /// Every clip passed to <see cref="Build"/>, in call order (parallel to
-    /// <see cref="ExclusionsPerBuild"/>), so tests can assert how many times a specific clip was
-    /// built without caring about the total build count across other clips, and can look up that
-    /// clip's most recent exclusion set.
+    /// A snapshot of every clip passed to <see cref="Build"/>, in call order and parallel to <see cref="Exclusions"/>.
     /// </summary>
-    public List<CamClip> ClipsPerBuild { get; } = [];
+    public IReadOnlyList<CamClip> Clips()
+    {
+        lock (_recordingLock)
+        {
+            return [.. _clipsPerBuild];
+        }
+    }
 
     public int BuildCountFor(CamClip clip)
     {
         lock (_recordingLock)
         {
-            return ClipsPerBuild.Count(builtClip => builtClip == clip);
+            return _clipsPerBuild.Count(builtClip => builtClip == clip);
         }
     }
 
@@ -46,17 +66,23 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
     {
         lock (_recordingLock)
         {
-            var index = ClipsPerBuild.LastIndexOf(clip);
-            return index < 0 ? null : ExclusionsPerBuild[index];
+            var index = _clipsPerBuild.LastIndexOf(clip);
+            return index < 0 ? null : _exclusionsPerBuild[index];
         }
     }
 
     /// <summary>
-    /// Original chunk indices this fake drops on its own, mirroring the real builder's
-    /// auto-exclusion of chunks whose front file is unreadable. Reported via
-    /// <see cref="ClipMediaSource.AutoExcludedChunkIndices"/> unless already caller-excluded.
+    /// Marks an original chunk index this fake drops on its own, mirroring the real builder's auto-exclusion of chunks whose front file is unreadable.
+    /// Reported via <see cref="ClipMediaSource.AutoExcludedChunkIndices"/> unless already caller-excluded.
+    /// Tests call this from the test thread mid-clip (a file going bad during playback), so it goes through the same lock as the rest of the bookkeeping.
     /// </summary>
-    public HashSet<int> AutoExcludeChunkIndices { get; } = [];
+    public void AutoExcludeChunk(int chunkIndex)
+    {
+        lock (_recordingLock)
+        {
+            _autoExcludeChunkIndices.Add(chunkIndex);
+        }
+    }
 
     public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
@@ -64,21 +90,22 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
         // exclusion set, so recording the reference would retroactively rewrite earlier entries.
         var exclusionsSnapshot = excludedChunkIndices is null ? new HashSet<int>() : new HashSet<int>(excludedChunkIndices);
 
+        HashSet<int> autoExcluded;
         lock (_recordingLock)
         {
-            BuildCount++;
-            ClipsPerBuild.Add(clip);
-            ExclusionsPerBuild.Add(exclusionsSnapshot);
+            _clipsPerBuild.Add(clip);
+            _exclusionsPerBuild.Add(exclusionsSnapshot);
+            autoExcluded = [.. _autoExcludeChunkIndices];
         }
 
         var autoExcludedIndices = Enumerable.Range(0, clip.Chunks.Count)
-            .Where(index => AutoExcludeChunkIndices.Contains(index)
+            .Where(index => autoExcluded.Contains(index)
                 && (excludedChunkIndices is null || !excludedChunkIndices.Contains(index)))
             .ToList();
 
         var includedIndices = Enumerable.Range(0, clip.Chunks.Count)
             .Where(index => (excludedChunkIndices is null || !excludedChunkIndices.Contains(index))
-                && !AutoExcludeChunkIndices.Contains(index))
+                && !autoExcluded.Contains(index))
             .ToList();
 
         var chunkStarts = Enumerable.Range(0, includedIndices.Count)

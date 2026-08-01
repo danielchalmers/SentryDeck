@@ -46,6 +46,15 @@ public sealed class MainWindowViewModelTests
         return new CamClip(@"C:\clips", "Camera Clip", start, [new CamChunk(start, files)], camEvent: null);
     }
 
+    // Like ClipWithCameras, plus event metadata naming the Tesla camera id that triggered the recording.
+    private static CamClip ClipWithCamerasAndEventCamera(int eventCamera, params string[] cameras)
+    {
+        var start = new DateTime(2025, 1, 1, 12, 0, 0);
+        var files = cameras.Select(camera => new CamFile($@"C:\clips\2025-01-01_12-00-00-{camera}.mp4", start, camera));
+        var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = start, Camera = eventCamera };
+        return new CamClip(@"C:\clips", "Event Camera Clip", start, [new CamChunk(start, files)], camEvent);
+    }
+
     private static readonly string[] SixCameras =
     [
         CameraNames.Front,
@@ -573,6 +582,29 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task TypingInSearch_DoesNotRebindTheListPerKeystroke()
+    {
+        var clips = TestClips.Create(3);
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        await vm.LoadClipsAsync(["root"]);
+
+        var changed = new List<string>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        vm.FilterText = "C";
+        vm.FilterText = "Cl";
+        vm.FilterText = "Cli";
+
+        // The list rebind is deferred to a debounce timer (which never ticks in tests) so the ListBox doesn't rebuild and replay its fade on every keystroke.
+        // Wiring FilteredClips/ClipCount straight onto FilterText would look harmless and quietly undo that.
+        changed.ShouldNotContain(nameof(MainWindowViewModel.FilteredClips));
+        changed.ShouldNotContain(nameof(MainWindowViewModel.ClipCount));
+
+        // The clear affordance is the one part that stays immediate.
+        changed.ShouldContain(nameof(MainWindowViewModel.HasFilterText));
+    }
+
+    [Fact]
     public void ShowOnMap_DisabledWithoutCoordinates()
     {
         var vm = CreateViewModel();
@@ -581,6 +613,76 @@ public sealed class MainWindowViewModelTests
 
         vm.ShowOnMapCommand.CanExecute(noLocation).ShouldBeFalse();
         vm.ShowOnMapCommand.CanExecute(withLocation).ShouldBeTrue();
+    }
+
+    // --- Scanning: what the sidebar and the overlay show when there is nothing to scan, or a root can't be read.
+    // The overlay is the whole UI in these states, so its wording and its dismissibility are the behavior. ---
+
+    [Fact]
+    public async Task LoadClips_WithNoRoots_ShowsDismissibleEmptyState()
+    {
+        var vm = CreateViewModel();
+
+        await vm.LoadClipsAsync([]);
+
+        // First run with no USB drive attached: a friendly prompt the user can dismiss to reach the rest of the app, not a scary error they're stuck behind.
+        vm.ErrorTitle.ShouldBe("No dashcam footage yet");
+        vm.IsEmptyState.ShouldBeTrue();
+        vm.CanDismissError.ShouldBeTrue();
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.ShowStatusOverlay.ShouldBeTrue();
+        vm.ClipCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task LoadClips_AccessDenied_ShowsAccessDeniedError()
+    {
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => throw new UnauthorizedAccessException("denied"));
+
+        await vm.LoadClipsAsync([@"D:\TeslaCam"]);
+
+        // A permissions problem gets its own title and remedy; it isn't the empty state.
+        vm.ErrorTitle.ShouldBe("Access Denied");
+        vm.ErrorDetails.ShouldContain(@"D:\TeslaCam");
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.IsEmptyState.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task LoadClips_LoaderThrows_ShowsGenericLoadError()
+    {
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => throw new IOException("the drive was removed"));
+
+        await vm.LoadClipsAsync([@"E:\TeslaCam"]);
+
+        // Both halves matter for a bug report: which folder failed, and what the failure was.
+        vm.ErrorTitle.ShouldBe("Error Loading Clips");
+        vm.ErrorDetails.ShouldContain(@"E:\TeslaCam");
+        vm.ErrorDetails.ShouldContain("the drive was removed");
+    }
+
+    [Fact]
+    public async Task LoadClips_OneRootFails_KeepsClipsFromTheHealthyRoot()
+    {
+        var clips = TestClips.Create(2);
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipLoader: root =>
+            {
+                if (root == "bad")
+                {
+                    throw new IOException("the drive was removed");
+                }
+
+                return clips;
+            });
+
+        await vm.LoadClipsAsync(["bad", "good"]);
+
+        // Scanning is per-root: one unreadable drive reports itself but must not cost the user the library on the drive that is still plugged in.
+        vm.ClipCount.ShouldBe(2);
+        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.ErrorTitle.ShouldBe("Error Loading Clips");
     }
 
     // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
@@ -698,6 +800,45 @@ public sealed class MainWindowViewModelTests
         vm.ErrorTitle.ShouldBe("Delete Failed");
         vm.ClipCount.ShouldBe(2);
         vm.FilteredClips.ShouldContain(target);
+    }
+
+    // --- Deleting the clip that is actually open: the point of the feature, and the only path that touches the player.
+    // These drive a real controller, and the recycle runs behind a Task.Run whose continuation lands off the test thread -- hence the uiInvoker seam instead of the dispatcher hop. ---
+
+    [Fact]
+    public async Task DeleteClip_TheOpenClip_StopsPlaybackBeforeRecycling()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
+        var stopsBeforeDelete = front.StopCount;
+        var stopsWhenRecycled = -1;
+        vm.ConfirmDeleteClip = _ => true;
+        vm.RecycleClipFolder = _ => stopsWhenRecycled = front.StopCount;
+        vm.SeekPosition = 0.5;
+
+        await vm.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
+
+        // Windows can't recycle a folder whose files are still locked, so playback must already be stopped when the shell operation runs -- not merely by the time delete returns.
+        stopsWhenRecycled.ShouldBeGreaterThan(stopsBeforeDelete);
+        vm.SeekPosition.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task DeleteClip_TheOpenClip_RemovesItFromThePlayerPlaylist()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var clip = clipFiles.Clip;
+        var (vm, controller, _) = CreateViewModelWithOpenedClip(clip, uiInvoker: action => action());
+        vm.ConfirmDeleteClip = _ => true;
+        vm.RecycleClipFolder = _ => { };
+        vm.SelectedClip = clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
+
+        await vm.DeleteClipCommand.ExecuteAsync(clip);
+
+        // Next/Previous walk the controller's playlist, so a deleted clip left behind in it would navigate straight back to a folder that no longer exists.
+        controller.Playlist.Clips.ShouldNotContain(clip);
+        vm.NowPlayingClip.ShouldBeNull();
+        vm.SelectedClip.ShouldBeNull();
     }
 
     [Fact]
@@ -1007,10 +1148,7 @@ public sealed class MainWindowViewModelTests
         vm.SeekPosition.ShouldBe(0.25, 0.0001);
     }
 
-    // Synchronous (no async/await in the test body itself -- see CreateViewModelWithOpenedClip's
-    // comment on why thread affinity matters here). FakeCameraPlayer's SeekAsync/OpenAsync and an
-    // uncontended SemaphoreSlim all complete synchronously, so blocking on the resulting tasks
-    // never suspends the thread and keeps every controller property change on it.
+    // Synchronous (no async/await in the test body itself -- see RunPinnedToTestThread).
     [Fact]
     public void DragSequence_IssuesFastSeeks_ReleaseIssuesAccurateSeekAtReleasePosition()
     {
@@ -1035,19 +1173,13 @@ public sealed class MainWindowViewModelTests
         // Release at 0.75 (45s): EndSeekAsync must issue exactly one ACCURATE seek at the release position.
         vm.SeekPosition = 0.75;
 
-        // Blocking rather than awaiting is deliberate here, not an oversight: this whole test must stay
-        // pinned to one thread (see CreateViewModelWithOpenedClip's comment), and EndSeekAsync only ever
-        // awaits FakeCameraPlayer calls and an uncontended SemaphoreSlim, both of which complete
-        // synchronously -- so this never actually blocks.
-#pragma warning disable xUnit1031
-        vm.EndSeekAsync().GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        RunPinnedToTestThread(vm.EndSeekAsync);
 
         front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(45));
         front.SeekAccurateFlags[^1].ShouldBeTrue();
     }
 
-    // Synchronous for the same thread-affinity reason as DragSequence above.
+    // Synchronous for the same thread-affinity reason as DragSequence above (see RunPinnedToTestThread).
     [Fact]
     public void StaleEndSeek_AfterANewDragStarted_DoesNotUnlockPositionSync()
     {
@@ -1067,18 +1199,14 @@ public sealed class MainWindowViewModelTests
             vm.SeekPosition = 0.25;
         };
 
-#pragma warning disable xUnit1031 // completes synchronously; see DragSequence's comment
-        vm.EndSeekAsync().GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        RunPinnedToTestThread(vm.EndSeekAsync);
 
         // A controller position sync arriving during drag #2 must still be ignored.
         front.RaisePositionChanged(TimeSpan.FromSeconds(50));
         vm.SeekPosition.ShouldBe(0.25);
 
         // The active gesture still ends normally and re-enables position sync.
-#pragma warning disable xUnit1031
-        vm.EndSeekAsync().GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        RunPinnedToTestThread(vm.EndSeekAsync);
         front.RaisePositionChanged(TimeSpan.FromSeconds(30));
         vm.SeekPosition.ShouldBe(0.5, 0.0001);
     }
@@ -1118,23 +1246,23 @@ public sealed class MainWindowViewModelTests
         }
     }
 
-    // Opens the clip on the controller to completion BEFORE the view-model subscribes to it, then
-    // attaches the view-model. Doing it in this order (rather than via CreateViewModelWithController,
-    // which subscribes up front) avoids the deadlock described on that helper: the real open flow's
-    // ObservableProperty writes happen on background-thread continuations, and if the view-model were
-    // already subscribed, its PropertyChanged handler would call Dispatcher.Invoke from that background
-    // thread with no pumped message loop to service it, hanging the open forever. Once the clip is
-    // fully open and idle, driving the view-model's own seek APIs from the test thread afterward is safe.
-    // Synchronous by design (no async/await): the view-model's constructor captures
-    // Dispatcher.CurrentDispatcher for whatever thread calls it, and RunOnUiThread only stays
-    // deadlock-free while every later controller property change happens on that exact same
-    // thread (see the comment on CreateViewModelWithController above). An async method resumes
-    // its continuation after an await on a thread-pool thread with no guarantee it matches the
-    // thread that ran the code before the await -- which silently breaks that invariant. Blocking
-    // on the wait here (instead of awaiting it) keeps everything, including the VM construction
-    // and every later test action, pinned to the single calling thread.
-    // A four-camera controller (front + three secondaries) built on the camera-keyed constructor,
-    // with front as the primary/clock anchor -- mirrors what the view wires up at runtime.
+    /// <summary>
+    /// Runs a view-model async API to completion without ever leaving the calling thread.
+    /// The view-model captures Dispatcher.CurrentDispatcher in its constructor, and these tests have no pumped message loop, so its dispatcher hop only stays deadlock-free while every later controller property change arrives on that exact same thread.
+    /// An await inside a test can resume its continuation on a thread-pool thread with no guarantee it matches the thread that ran the code before it -- silently breaking that invariant -- whereas blocking cannot.
+    /// And nothing here actually blocks: FakeCameraPlayer's calls and an uncontended SemaphoreSlim all complete synchronously.
+    /// Flows that genuinely go async (anything behind a Task.Run) must instead take the uiInvoker seam, as the delete-the-open-clip tests do.
+    /// </summary>
+    internal static void RunPinnedToTestThread(Func<Task> action)
+    {
+#pragma warning disable xUnit1031
+        action().GetAwaiter().GetResult();
+#pragma warning restore xUnit1031
+    }
+
+    /// <summary>
+    /// A four-camera controller (front + three secondaries) built on the camera-keyed constructor, with front as the primary/clock anchor -- mirrors what the view wires up at runtime.
+    /// </summary>
     private static VideoPlayerController BuildFourCameraController(FakeCameraPlayer front) =>
         new(
             new Dictionary<string, ICameraPlayer>
@@ -1146,10 +1274,19 @@ public sealed class MainWindowViewModelTests
             },
             CameraNames.Front);
 
+    /// <summary>
+    /// Opens the clip on the controller to completion BEFORE the view-model subscribes to it, then attaches the view-model.
+    /// Doing it in this order (rather than via CreateViewModelWithController, which subscribes up front) avoids the deadlock described on that helper: the real open flow's ObservableProperty writes happen on background-thread continuations, and if the view-model were already subscribed, its PropertyChanged handler would call Dispatcher.Invoke from that background thread with no pumped message loop to service it, hanging the open forever.
+    /// Once the clip is fully open and idle, driving the view-model's own seek APIs from the test thread afterward is safe.
+    /// Synchronous by design (no async/await) for the reason spelled out on <see cref="RunPinnedToTestThread"/>: blocking on the wait keeps everything, including the view-model construction and every later test action, pinned to the single calling thread.
+    /// </summary>
+    /// <param name="uiInvoker">Replaces the view-model's dispatcher hop.
+    /// Pass <c>action => action()</c> for flows whose continuations genuinely land off the test thread (e.g. delete, which recycles behind a Task.Run).</param>
     private static (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateViewModelWithOpenedClip(
         CamClip clip,
         IClipExporter clipExporter = null,
-        Func<string, string> savePathPicker = null)
+        Func<string, string> savePathPicker = null,
+        Action<Action> uiInvoker = null)
     {
         var front = new FakeCameraPlayer();
         var built = BuildFourCameraController(front);
@@ -1162,7 +1299,8 @@ public sealed class MainWindowViewModelTests
             () => built,
             backgroundYield: () => Task.CompletedTask,
             clipExporter: clipExporter,
-            savePathPicker: savePathPicker)
+            savePathPicker: savePathPicker,
+            uiInvoker: uiInvoker)
         {
             RevealInExplorer = _ => { },
         };
@@ -1221,6 +1359,19 @@ public sealed class MainWindowViewModelTests
         // selection triggers the auto-play loading state. Opening media is VideoPlayerController's own job.
         vm.IsLoading.ShouldBeTrue();
         vm.ShowErrorOverlay.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SelectingAnEventClip_AutoFocusesTheTriggeringCamera()
+    {
+        var vm = CreateViewModelWithController(out _, out _);
+
+        // Camera id 7 is the rear camera.
+        // As in SelectingClip_TriggersPlaybackLoading, the clip is deliberately not in the controller's playlist, so GoToClipAsync early-returns and the rest of the selection load runs inline on this thread.
+        vm.SelectedClip = ClipWithCamerasAndEventCamera(eventCamera: 7, SixCameras);
+
+        // Opening an incident on the angle that triggered it is the whole point of the metadata.
+        vm.SelectedCameraView.ShouldBe(CameraNames.Back);
     }
 
     // --- Export selection: in/out marks and the FFmpeg-free export path (FakeClipExporter) ---
@@ -1427,8 +1578,7 @@ public sealed class MainWindowViewModelTests
         vm.ExportSelectionCommand.CanExecute(null).ShouldBeFalse();
     }
 
-    // Synchronous/blocking for the same thread-affinity reasons as the drag-sequence test above:
-    // the fake exporter and save picker complete synchronously, so the export never suspends.
+    // Synchronous/blocking for the same thread-affinity reason as the drag-sequence test above (see RunPinnedToTestThread): the fake exporter and save picker complete synchronously.
     [Fact]
     public void ExportSelection_SendsMediaTimeRangeAndActiveCameraToTheExporter()
     {
@@ -1442,9 +1592,7 @@ public sealed class MainWindowViewModelTests
         vm.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
-#pragma warning disable xUnit1031
-        vm.ExportSelectionCommand.ExecuteAsync(null).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
 
         var request = exporter.Requests.ShouldHaveSingleItem();
         request.Clip.ShouldBe(clipFiles.Clip);
@@ -1467,9 +1615,7 @@ public sealed class MainWindowViewModelTests
         vm.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
-#pragma warning disable xUnit1031
-        vm.ExportSelectionCommand.ExecuteAsync(null).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
 
         exporter.Requests.ShouldBeEmpty();
         vm.ShowErrorOverlay.ShouldBeFalse();
@@ -1487,9 +1633,7 @@ public sealed class MainWindowViewModelTests
         vm.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
-#pragma warning disable xUnit1031
-        vm.ExportSelectionCommand.ExecuteAsync(null).GetAwaiter().GetResult();
-#pragma warning restore xUnit1031
+        RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
 
         vm.ShowErrorOverlay.ShouldBeTrue();
         vm.ErrorTitle.ShouldBe("Export Failed");
@@ -1667,6 +1811,72 @@ public sealed class MainWindowViewModelTests
         controller.PlaybackSpeed.ShouldBe(4.0);
     }
 
+    // --- Keyboard transport: the shortcuts that drive the player itself.
+    // Each one reaches a real controller, so they run pinned to the test thread (see RunPinnedToTestThread). ---
+
+    [Fact]
+    public void ArrowKeys_SeekFiveSecondsAndClampAtTheEnds()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1); // one 60s chunk
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Right, ModifierKeys.None));
+        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(5));
+
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Left, ModifierKeys.None));
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Left, ModifierKeys.None));
+
+        // Nudging back past the start parks on the first frame instead of seeking to a negative time.
+        front.SeekPositions[^1].ShouldBe(TimeSpan.Zero);
+
+        controller.Position = TimeSpan.FromSeconds(60); // parked at the very end
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Right, ModifierKeys.None));
+
+        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public void Space_TogglesPlayPause()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+        var playsAfterOpen = front.PlayCount;
+        var pausesAfterOpen = front.PauseCount;
+
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Space, ModifierKeys.None));
+        front.PauseCount.ShouldBe(pausesAfterOpen + 1); // the clip was playing after the open
+
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Space, ModifierKeys.None));
+        front.PlayCount.ShouldBe(playsAfterOpen + 1);
+    }
+
+    [Fact]
+    public void CommaAndPeriod_StepFrames_OnlyWhenSeekable()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.OemPeriod, ModifierKeys.None));
+        RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.OemComma, ModifierKeys.None));
+
+        front.StepLog.ShouldBe(["forward", "backward"]);
+    }
+
+    [Fact]
+    public void StopCommand_ClearsNowPlayingClip()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+        var stopsAfterOpen = front.StopCount;
+        vm.SelectedClip = clipFiles.Clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
+
+        RunPinnedToTestThread(() => vm.StopCommand.ExecuteAsync(null));
+
+        // Stop is the only thing that takes the now-playing badge off the clip list; leaving it set would mark a clip as playing with nothing loaded.
+        vm.NowPlayingClip.ShouldBeNull();
+        front.StopCount.ShouldBeGreaterThan(stopsAfterOpen);
+    }
+
     [Fact]
     public async Task DeselectingWhileSelectionLoadIsYielding_ClearsTheLoadingOverlay()
     {
@@ -1694,6 +1904,32 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SupersededSelection_DoesNotClearTheNewerLoadsLoadingState()
+    {
+        var front = new FakeCameraPlayer();
+        var built = BuildFourCameraController(front);
+
+        // Hold both selection loads at their pre-open background yield, so the second one lands while the first is still suspended and supersedes it.
+        var yieldGate = new TaskCompletionSource();
+        var vm = new MainWindowViewModel(() => built, backgroundYield: () => yieldGate.Task);
+        vm.InitializePlayer();
+
+        var superseded = ClipWithCameras(SixCameras);
+        var winner = ClipWithCamerasAndEventCamera(eventCamera: 7, SixCameras);
+        vm.SelectedClip = superseded;
+        vm.SelectedClip = winner;
+
+        yieldGate.SetResult();
+
+        // The winner's load resumes and auto-focuses the rear camera.
+        // The superseded load is dropped on its way out, and the loading state it finds is no longer its own to clear -- doing so would strand the newer clip's open with no progress indication at all.
+        await WaitUntilAsync(() => vm.SelectedCameraView == CameraNames.Back);
+        vm.IsLoading.ShouldBeTrue();
+        vm.NowPlayingClip.ShouldBe(winner);
+        vm.SelectedClip.ShouldBe(winner);
+    }
+
+    [Fact]
     public void OpenFolderAndRefresh_AreDisabledWhileClipsAreScanning()
     {
         // Both commands funnel into LoadClipsAsync, which has no re-entrancy protection: a second
@@ -1709,10 +1945,9 @@ public sealed class MainWindowViewModelTests
         vm.RefreshClipsCommand.CanExecute(null).ShouldBeFalse();
     }
 
-    // Controller-backed tests deliberately keep every controller property change on the test thread.
-    // The VM captures Dispatcher.CurrentDispatcher in its constructor and there is no pumped dispatcher
-    // here, so RunOnUiThread stays deadlock-free only while CheckAccess() is true (same thread). Don't add
-    // awaits that suspend onto the thread pool (e.g. driving GoToClipAsync to completion) — they'd hang.
+    /// <summary>
+    /// A view-model wired to a real controller, subscribed from the calling thread: every controller property change must then arrive on that same thread (see <see cref="RunPinnedToTestThread"/>), so don't add awaits that suspend onto the thread pool (e.g. driving GoToClipAsync to completion).
+    /// </summary>
     private static MainWindowViewModel CreateViewModelWithController(
         out VideoPlayerController controller,
         out FakeCameraPlayer front,

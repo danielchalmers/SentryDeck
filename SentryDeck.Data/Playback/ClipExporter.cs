@@ -32,7 +32,13 @@ public interface IClipExporter
 /// are fast and lossless. Stream copy cuts at keyframes, so the actual bounds can land up to a
 /// GOP (~1s in Tesla footage) before the requested ones.
 /// </summary>
-public sealed class ClipExporter(Func<string> ffmpegDirectoryResolver) : IClipExporter
+/// <param name="runFfmpeg">
+/// Runs FFmpeg with an executable path and an argument string. Defaults to launching the real
+/// process; overridable for tests, which must not spawn ffmpeg.
+/// </param>
+public sealed class ClipExporter(
+    Func<string> ffmpegDirectoryResolver,
+    Func<string, string, CancellationToken, Task> runFfmpeg = null) : IClipExporter
 {
     private static readonly string ExportScriptDirectory =
         Path.Combine(Path.GetTempPath(), "SentryDeck", "exports");
@@ -40,6 +46,8 @@ public sealed class ClipExporter(Func<string> ffmpegDirectoryResolver) : IClipEx
     public async Task ExportAsync(ClipExportRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        runFfmpeg ??= RunFfmpegAsync;
 
         var ffmpegDirectory = ffmpegDirectoryResolver()
             ?? throw new InvalidOperationException("FFmpeg is not installed. Restart the app to download it.");
@@ -58,7 +66,7 @@ public sealed class ClipExporter(Func<string> ffmpegDirectoryResolver) : IClipEx
 
         try
         {
-            await RunFfmpegAsync(ffmpegPath, BuildArguments(scriptPath, request.OutputPath), cancellationToken);
+            await runFfmpeg(ffmpegPath, BuildArguments(scriptPath, request.OutputPath), cancellationToken);
             Log.Information(
                 "Exported clip range. Clip={ClipName}; Camera={Camera}; Start={Start}; End={End}; Output={Output}; ElapsedMs={ElapsedMs}",
                 request.Clip.Name,

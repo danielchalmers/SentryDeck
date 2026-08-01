@@ -154,6 +154,30 @@ public sealed class SeekScrubCoalescerTests
         issued.ShouldBe([TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(10050)]);
     }
 
+    [Fact]
+    public async Task FaultingSeek_DoesNotWedgeTheCoalescer()
+    {
+        var issued = new List<TimeSpan>();
+        var coalescer = new SeekScrubCoalescer(position =>
+        {
+            issued.Add(position);
+
+            // The seek this delegates to can genuinely fail -- it routes into the player controller, which throws ObjectDisposedException if the window closes mid-drag -- and nothing between here and the coalescer catches it.
+            return issued.Count == 1
+                ? Task.FromException(new InvalidOperationException("seek failed"))
+                : Task.CompletedTask;
+        });
+
+        coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1));
+
+        // A fault has to release the in-flight flag too, or every later value is queued forever behind a seek that already finished and scrubbing is dead for the rest of the session.
+        await WaitUntilAsync(() => !coalescer.IsSeekInFlight);
+
+        coalescer.OnDragValueChanged(TimeSpan.FromSeconds(5));
+
+        issued.ShouldBe([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)]);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);

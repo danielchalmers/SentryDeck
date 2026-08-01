@@ -45,6 +45,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
     private readonly Func<Task> _backgroundYield;
     private readonly Dispatcher _dispatcher;
+    private readonly Action<Action> _uiInvoker;
     private readonly DispatcherTimer _filterDebounceTimer;
     private readonly IClipExporter _clipExporter;
     private readonly Func<string, string> _savePathPicker;
@@ -71,13 +72,15 @@ public partial class MainWindowViewModel : ObservableObject
     /// <param name="clipExporter">Exports trimmed clip ranges. Defaults to the FFmpeg-backed exporter; overridable for tests.</param>
     /// <param name="savePathPicker">Maps a suggested file name to the chosen save path (null = canceled). Defaults to a save dialog; overridable for tests.</param>
     /// <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open. Overridable for tests.</param>
+    /// <param name="uiInvoker">Runs an action on the UI thread. Defaults to the dispatcher hop; overridable for tests, which have no pumped message loop to service it.</param>
     public MainWindowViewModel(
         Func<VideoPlayerController> playerControllerFactory,
         Func<string, IReadOnlyList<CamClip>> clipLoader = null,
         Func<Task> backgroundYield = null,
         IClipExporter clipExporter = null,
         Func<string, string> savePathPicker = null,
-        IClipMediaSourceBuilder exportMediaSourceBuilder = null)
+        IClipMediaSourceBuilder exportMediaSourceBuilder = null,
+        Action<Action> uiInvoker = null)
     {
         _playerControllerFactory = playerControllerFactory;
         _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
@@ -86,6 +89,7 @@ public partial class MainWindowViewModel : ObservableObject
         _savePathPicker = savePathPicker ?? PickSavePathWithDialog;
         _exportMediaSourceBuilder = exportMediaSourceBuilder ?? new FfconcatMediaSourceBuilder();
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _uiInvoker = uiInvoker ?? InvokeOnDispatcher;
         _scrubCoalescer = new SeekScrubCoalescer(ScrubToAsync);
 
         // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth;
@@ -1813,7 +1817,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static bool CanShowOnMap(CamClip clip) => clip?.Event is not null && ClipDisplay.HasLocation(clip.Event);
 
-    private void RunOnUiThread(Action action)
+    private void RunOnUiThread(Action action) => _uiInvoker(action);
+
+    private void InvokeOnDispatcher(Action action)
     {
         if (_dispatcher.CheckAccess())
         {

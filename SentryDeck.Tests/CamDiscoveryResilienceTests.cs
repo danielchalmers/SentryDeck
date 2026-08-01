@@ -6,7 +6,7 @@ namespace SentryDeck.Tests;
 /// Discovery must tolerate a single malformed/unreadable entry without discarding the whole
 /// library (regression guard for the "one bad filename empties the timeline" bug).
 /// </summary>
-public static class CamDiscoveryResilienceTests
+public sealed class CamDiscoveryResilienceTests
 {
     private static string CreateTempDir()
     {
@@ -22,7 +22,7 @@ public static class CamDiscoveryResilienceTests
         => File.WriteAllBytes(Path.Combine(dir, name), []);
 
     [Fact]
-    public static void FindFiles_SkipsCalendarInvalidFileName()
+    public void FindFiles_SkipsCalendarInvalidFileName()
     {
         var dir = CreateTempDir();
         try
@@ -42,7 +42,7 @@ public static class CamDiscoveryResilienceTests
     }
 
     [Fact]
-    public static void FindFiles_CanonicalizesLegacyRearViewSuffixToBack()
+    public void FindFiles_CanonicalizesLegacyRearViewSuffixToBack()
     {
         var dir = CreateTempDir();
         try
@@ -61,7 +61,7 @@ public static class CamDiscoveryResilienceTests
     }
 
     [Fact]
-    public static void FindClips_OneCalendarInvalidFileDoesNotDiscardOtherClips()
+    public void FindClips_OneCalendarInvalidFileDoesNotDiscardOtherClips()
     {
         var root = CreateTempDir();
         try
@@ -87,7 +87,7 @@ public static class CamDiscoveryResilienceTests
     }
 
     [Fact]
-    public static void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
+    public void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
     {
         // A folder like Tesla's RecentClips: loose files directly inside, no date-named subfolder and
         // no event.json. The clip timestamp must come from the file names, not DateTime.MinValue.
@@ -110,7 +110,7 @@ public static class CamDiscoveryResilienceTests
     }
 
     [Fact]
-    public static void Map_CalendarInvalidFolderName_DoesNotThrowAndKeepsChunks()
+    public void Map_CalendarInvalidFolderName_DoesNotThrowAndKeepsChunks()
     {
         var root = CreateTempDir();
         try
@@ -126,6 +126,33 @@ public static class CamDiscoveryResilienceTests
         finally
         {
             Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void Map_BackAndRearViewAtOneTimestamp_KeepsOneChunkAndDoesNotDropTheClip()
+    {
+        // What a drive spanning a firmware transition (or two drives merged by hand) actually holds: both rear-camera suffixes at the same timestamp.
+        // CamFile canonicalizes rear_view to back, so the two files collide on one camera key -- and an unguarded ToDictionary would throw there, with CamClip.TryMap swallowing it and the whole clip folder vanishing from the library.
+        var dir = CreateTempDir();
+        try
+        {
+            Touch(dir, "2023-02-23_14-14-48-front.mp4");
+            Touch(dir, "2023-02-23_14-14-48-back.mp4");
+            Touch(dir, "2023-02-23_14-14-48-rear_view.mp4");
+
+            var chunks = CamChunk.Map(dir);
+
+            chunks.Count.ShouldBe(1);
+
+            // Exactly one of the two rear files survives; which one follows enumeration order, so the winner is deliberately not pinned here.
+            chunks[0].Files.Keys.ShouldBe([CameraNames.Front, CameraNames.Back], ignoreOrder: true);
+
+            CamClip.Map(dir).ShouldNotBeNull();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
         }
     }
 }
