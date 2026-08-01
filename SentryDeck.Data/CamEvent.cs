@@ -122,8 +122,10 @@ public record class CamEvent
         return node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : node.ToJsonString();
     }
 
+    // RoundtripKind so this agrees with the strict System.Text.Json path above on a timestamp that carries a Z or an offset.
+    // With DateTimeStyles.None the two paths differed by the host's UTC offset for the same input, and which path runs depends on an unrelated field: Tesla's occasionally-blank est_lat is what forces the lenient fallback.
     private static DateTime ParseDateTime(string raw) =>
-        DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value) ? value : default;
+        DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var value) ? value : default;
 
     private static decimal ParseDecimal(string raw) =>
         decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value) ? value : default;

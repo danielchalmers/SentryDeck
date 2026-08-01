@@ -127,4 +127,20 @@ public sealed class CamEventTests
         camEvent.City.ShouldBe("Austin");
         camEvent.Reason.ShouldBe("user_interaction_honk");
     }
+
+    [Theory]
+    [InlineData("2023-06-03T15:54:27Z")]
+    [InlineData("2023-06-03T15:54:27-05:00")]
+    public void Deserialize_OffsetBearingTimestamp_ReadsTheSameOnBothPaths(string timestamp)
+    {
+        // A blank est_lat is enough to push a payload off the strict path onto the lenient one, and nothing about that field should change what the event's timestamp means.
+        // Asserting the two paths against each other rather than against a literal keeps this independent of the host's own time zone.
+        var strict = CamEvent.Deserialize($$"""{"timestamp":"{{timestamp}}"}""");
+        var lenient = CamEvent.Deserialize($$"""{"timestamp":"{{timestamp}}","est_lat":""}""");
+
+        strict.ShouldNotBeNull();
+        lenient.ShouldNotBeNull();
+        lenient.Timestamp.ShouldBe(strict.Timestamp);
+        lenient.Timestamp.Kind.ShouldBe(strict.Timestamp.Kind);
+    }
 }
