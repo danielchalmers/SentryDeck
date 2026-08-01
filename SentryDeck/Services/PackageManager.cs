@@ -63,6 +63,16 @@ public static class PackageManager
             }
 
             var outputPath = Path.Combine(destinationBinPath, relativePath);
+
+            // Entry names come straight out of a downloaded archive, and the destination sits next to the app's own binaries, so a name that walks up with ".." would overwrite them.
+            // Checked before the directory is created so the escaping path is never materialized.
+            var fullOutputPath = Path.GetFullPath(outputPath);
+            if (!fullOutputPath.StartsWith(Path.GetFullPath(destinationBinPath) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                Log.Warning("Skipping archive entry that escapes the destination. Entry={Entry}", entry.FullName);
+                continue;
+            }
+
             var outputDir = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrEmpty(outputDir))
             {

@@ -68,6 +68,21 @@ public sealed class PackageManagerTests : IDisposable
     }
 
     [Fact]
+    public void ExtractFFmpegBin_RejectsEntriesThatEscapeTheDestination()
+    {
+        // Entry names come verbatim out of a downloaded archive and the destination sits next to the app's own binaries, so a "../" walk must be dropped rather than written.
+        // Forward slashes because that is what the ZIP format mandates and what the real builds emit.
+        var zipPath = WriteArchive(
+            $"{ArchiveRoot}/bin/ffmpeg.exe",
+            $"{ArchiveRoot}/bin/../../evil.dll");
+
+        var extracted = PackageManager.ExtractFFmpegBin(zipPath, DestinationBinPath, ArchiveRoot);
+
+        extracted.ShouldBe(1);
+        Directory.GetFiles(_root, "evil.dll", SearchOption.AllDirectories).ShouldBeEmpty();
+    }
+
+    [Fact]
     public void ExtractFFmpegBin_ClearsAnExistingDestination()
     {
         // A leftover DLL from an earlier FFmpeg release must not survive alongside the new ones; Flyleaf loads whatever is in this folder and a mixed set fails at load time.
