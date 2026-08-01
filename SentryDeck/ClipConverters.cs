@@ -292,8 +292,14 @@ public sealed class NowPlayingConverter : MarkupExtension, IMultiValueConverter
 
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
     {
-        if (values.Length == 2 && values[0] is not null && ReferenceEquals(values[0], values[1]))
+        // Both legs can still be unresolved while a row's template is being realized, and UnsetValue is a non-null singleton, so an unresolved pair would otherwise compare equal and paint the badge on a row that is not playing.
+        if (values.Length == 2
+            && values[0] is not null
+            && !ReferenceEquals(values[0], DependencyProperty.UnsetValue)
+            && ReferenceEquals(values[0], values[1]))
+        {
             return Visibility.Visible;
+        }
 
         return Visibility.Collapsed;
     }

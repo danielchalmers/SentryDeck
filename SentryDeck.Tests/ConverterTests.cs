@@ -102,6 +102,20 @@ public sealed class ConverterTests
         converter.Convert([clips[0], clips[1]], typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
     }
 
+    [Fact]
+    public void NowPlayingConverter_UnresolvedBindings_AreNotNowPlaying()
+    {
+        // The badge multi-binds the row's own clip against the view-model's NowPlayingClip through a proxy resource, and either leg can still be unresolved while the row's template is realized.
+        // UnsetValue is a non-null singleton, so an unresolved pair used to compare equal and light up the badge on a row that is not playing.
+        var converter = new NowPlayingConverter();
+        var clip = TestClips.Create(1)[0];
+
+        converter.Convert([DependencyProperty.UnsetValue, DependencyProperty.UnsetValue], typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        converter.Convert([DependencyProperty.UnsetValue, clip], typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        converter.Convert([clip, DependencyProperty.UnsetValue], typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        converter.Convert([null, null], typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+    }
+
     [Theory]
     [InlineData("date")]
     [InlineData("time")]
