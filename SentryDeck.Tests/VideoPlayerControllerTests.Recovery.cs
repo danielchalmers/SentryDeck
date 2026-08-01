@@ -23,7 +23,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
 
         var builds = mediaSourceBuilder.Exclusions();
         builds.Count.ShouldBe(3);
@@ -31,7 +31,7 @@ public sealed partial class VideoPlayerControllerTests
         builds[2].ShouldBe(new HashSet<int> { 1 });
 
         // Resume position is chunk 1's start in the OLD timeline (60s), since everything before the bad chunk is unchanged.
-        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
         // The resume must play BEFORE seeking: a seek issued while paused right after open can be swallowed by the real player, whereas seeks during active playback are reliable.
         front.CallLog.LastIndexOf("play").ShouldBeGreaterThan(-1);
@@ -62,8 +62,8 @@ public sealed partial class VideoPlayerControllerTests
             var expectedBuildCount = mediaSourceBuilder.BuildCount + 2;
             front.RaisePositionChanged(TimeSpan.FromSeconds(30));
             front.RaiseEnded();
-            await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= expectedBuildCount);
-            await WaitUntilAsync(() => front.PlayCount > attempt + 1);
+            await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= expectedBuildCount);
+            await Wait.UntilAsync(() => front.PlayCount > attempt + 1);
         }
 
         mediaSourceBuilder.BuildCount.ShouldBe(7);
@@ -73,7 +73,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(30));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         mediaSourceBuilder.BuildCount.ShouldBe(buildCountBeforeFourth);
         controller.ErrorMessage.ShouldContain("too many unreadable video files");
@@ -97,7 +97,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.Zero);
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         controller.ErrorMessage.ShouldContain("too many unreadable video files");
         controller.IsMediaOpen.ShouldBeFalse();
@@ -123,7 +123,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.Zero);
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         // One rebuild, then give up: there is nothing left to reopen, so no second build and no reopen attempt on an empty playlist.
         mediaSourceBuilder.BuildCount.ShouldBe(2);
@@ -147,14 +147,14 @@ public sealed partial class VideoPlayerControllerTests
         // Trigger one (probe-clean, two-build) recovery on the first clip so it has a non-empty exclusion set.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
-        await WaitUntilAsync(() => front.PlayCount > 1);
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+        await Wait.UntilAsync(() => front.PlayCount > 1);
 
         await controller.GoToClipAsync(secondClipFiles.Clip);
         await WaitUntilClipOpenedAsync(controller, front);
 
         // Clip 2's open must have started from a fresh (empty) exclusion set, never clip 1's leftover {1}.
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
         mediaSourceBuilder.LastExclusionsFor(secondClipFiles.Clip).ShouldBeEmpty();
 
         // Ending the second clip prematurely should exclude relative to a fresh (empty) set, not carry over chunk 1 from the first clip.
@@ -162,7 +162,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(0));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) >= 3);
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) >= 3);
 
         mediaSourceBuilder.LastExclusionsFor(secondClipFiles.Clip).ShouldBe(new HashSet<int> { 0 });
     }
@@ -181,7 +181,7 @@ public sealed partial class VideoPlayerControllerTests
 
         // The front is open and playing but the back camera's open is held, so the clip-open operation is still in flight and IsLoading is still true -- the join window.
         // Waiting for the back's OpenAsync call guarantees the front's opening phase has fully completed.
-        await WaitUntilAsync(() => back.OpenedPaths.Count > 0);
+        await Wait.UntilAsync(() => back.OpenedPaths.Count > 0);
         controller.IsLoading.ShouldBeTrue();
 
         // The front dies far short of Duration (180s) -- a corrupt/truncated early chunk.
@@ -192,8 +192,8 @@ public sealed partial class VideoPlayerControllerTests
         // Let the held secondary open (and with it the original open operation) finish; recovery queues behind it on the serialized operation lock.
         back.OpenGate.SetResult(null);
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
-        await WaitUntilAsync(() => !controller.IsLoading);
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
+        await Wait.UntilAsync(() => !controller.IsLoading);
 
         // Recovery took over cleanly: no spurious "Playback failed", the media is open again, and the loading state (owned by the superseded open) was settled by the recovery pass.
         controller.ErrorMessage.ShouldBeNull();
@@ -220,8 +220,8 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
-        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
+        await Wait.UntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
         // The probe found the culprit, so exactly one rebuild happened and no Build call ever received a position-derived (healthy-chunk) exclusion.
         var builds = mediaSourceBuilder.Exclusions();
@@ -259,13 +259,13 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
 
         var builds = mediaSourceBuilder.Exclusions();
         builds[1].ShouldBe(new HashSet<int> { 1 });
         builds[2].ShouldBe(new HashSet<int> { 1, 2 });
 
-        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
         controller.ErrorMessage.ShouldBeNull();
         controller.IsMediaOpen.ShouldBeTrue();
@@ -285,7 +285,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
 
         // Front should start playing immediately, without waiting for the slowest side camera (right, held open via OpenGate) to finish opening.
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         front.PlayCount.ShouldBe(1);
         right.PlayCount.ShouldBe(0);
@@ -295,7 +295,7 @@ public sealed partial class VideoPlayerControllerTests
         // Release the gate; the side camera should now join in (seek + play).
         right.OpenGate.SetResult(null);
 
-        await WaitUntilAsync(() => right.PlayCount > 0);
+        await Wait.UntilAsync(() => right.PlayCount > 0);
 
         right.SeekPositions.ShouldNotBeEmpty();
         right.PlayCount.ShouldBe(1);
@@ -314,14 +314,14 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         // Advance the front's live position while back is still opening.
         front.RaisePositionChanged(TimeSpan.FromSeconds(42));
 
         back.OpenGate.SetResult(null);
 
-        await WaitUntilAsync(() => back.PlayCount > 0);
+        await Wait.UntilAsync(() => back.PlayCount > 0);
 
         back.SeekPositions.ShouldContain(TimeSpan.FromSeconds(42));
     }
@@ -340,7 +340,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clip]);
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
-        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(80)));
+        await Wait.UntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(80)));
 
         // The auto-jump plays first, then seeks: a seek issued while paused right after open can be swallowed, so (like recovery) it must land during active playback.
         // "seek:" is the accurate seek.
@@ -389,7 +389,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => back.PlayCount > 0);
+        await Wait.UntilAsync(() => back.PlayCount > 0);
 
         back.SeekPositions.ShouldContain(TimeSpan.FromSeconds(80));
     }
@@ -415,8 +415,8 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
-        await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
+        await Wait.UntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
+        await Wait.UntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
         // Exactly one play and one seek reach back (from the recovery code's own resume sequence), not a join seek/play from inside the reopen itself.
         back.CallLog.Count(call => call == "play").ShouldBe(1);
@@ -498,7 +498,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0 && right.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0 && right.PlayCount > 0);
 
         await controller.PauseAsync();
 

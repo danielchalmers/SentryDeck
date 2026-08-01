@@ -47,7 +47,7 @@ public sealed class SeekScrubCoalescerTests
 
         // Let the first seek complete; the coalescer should now issue exactly the last queued value.
         gate.SetResult();
-        await WaitUntilAsync(() => issued.Count == 2);
+        await Wait.UntilAsync(() => issued.Count == 2);
 
         issued.ShouldBe([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2.5)]);
     }
@@ -126,7 +126,7 @@ public sealed class SeekScrubCoalescerTests
         coalescer.CancelPending();
 
         gate.SetResult();
-        await WaitUntilAsync(() => !coalescer.IsSeekInFlight);
+        await Wait.UntilAsync(() => !coalescer.IsSeekInFlight);
         await Task.Delay(50); // give a (wrongly) re-issued trailing seek a chance to show up
 
         issued.ShouldBe([TimeSpan.FromSeconds(1)]);
@@ -168,24 +168,10 @@ public sealed class SeekScrubCoalescerTests
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1));
 
         // A fault has to release the in-flight flag too, or every later value is queued forever behind a seek that already finished and scrubbing is dead for the rest of the session.
-        await WaitUntilAsync(() => !coalescer.IsSeekInFlight);
+        await Wait.UntilAsync(() => !coalescer.IsSeekInFlight);
 
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(5));
 
         issued.ShouldBe([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5)]);
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException("Condition was not met within the timeout.");
-            }
-
-            await Task.Delay(10);
-        }
     }
 }

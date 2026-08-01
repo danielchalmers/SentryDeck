@@ -93,7 +93,7 @@ public sealed partial class MainWindowViewModelTests
         vm.SelectedClip = null;
         yieldGate.SetResult();
 
-        await WaitUntilAsync(() => !vm.IsLoading);
+        await Wait.UntilAsync(() => !vm.IsLoading);
         vm.HasNoClipSelected.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue(); // the idle empty state, not a permanent spinner
     }
@@ -118,7 +118,7 @@ public sealed partial class MainWindowViewModelTests
 
         // The winner's load resumes and auto-focuses the rear camera.
         // The superseded load is dropped on its way out, and the loading state it finds is no longer its own to clear -- doing so would strand the newer clip's open with no progress indication at all.
-        await WaitUntilAsync(() => vm.SelectedCameraView == CameraNames.Back);
+        await Wait.UntilAsync(() => vm.SelectedCameraView == CameraNames.Back);
         vm.IsLoading.ShouldBeTrue();
         vm.NowPlayingClip.ShouldBe(winner);
         vm.SelectedClip.ShouldBe(winner);

@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.CompilerServices;
 
 namespace SentryDeck.Tests;
 
@@ -40,28 +39,7 @@ public sealed partial class VideoPlayerControllerTests
     /// </summary>
     private static Task WaitUntilClipOpenedAsync(VideoPlayerController controller, FakeCameraPlayer front)
     {
-        return WaitUntilAsync(() => front.PlayCount > 0 && controller.IsMediaOpen && !controller.IsLoading);
-    }
-
-    /// <summary>
-    /// Polls until the condition holds, then throws naming the predicate that never came true -- this file drives the most timing-sensitive code in the suite, so a hang here has to say what it was waiting for rather than surfacing as a bare cancellation.
-    /// </summary>
-    private static async Task WaitUntilAsync(
-        Func<bool> condition,
-        [CallerArgumentExpression(nameof(condition))] string description = null)
-    {
-        var timeout = TimeSpan.FromSeconds(10);
-        var deadline = DateTime.UtcNow + timeout;
-
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException($"Condition was not met within {timeout}: {description}");
-            }
-
-            await Task.Delay(10);
-        }
+        return Wait.UntilAsync(() => front.PlayCount > 0 && controller.IsMediaOpen && !controller.IsLoading);
     }
 
     [Fact]
@@ -77,7 +55,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() =>
+        await Wait.UntilAsync(() =>
             front.PlayCount > 0 &&
             back.PlayCount > 0 &&
             left.PlayCount > 0 &&
@@ -105,7 +83,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => players.Values.All(player => player.PlayCount > 0));
+        await Wait.UntilAsync(() => players.Values.All(player => player.PlayCount > 0));
 
         players[CameraNames.LeftPillar].OpenedPaths.ShouldContain(path => path.Contains("-left_pillar.mp4"));
         players[CameraNames.RightPillar].OpenedPaths.ShouldContain(path => path.Contains("-right_pillar.mp4"));
@@ -124,7 +102,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() =>
+        await Wait.UntilAsync(() =>
             front.PlayCount > 0 &&
             back.PlayCount > 0 &&
             right.PlayCount > 0);
@@ -146,7 +124,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         controller.ErrorMessage.ShouldBe("No front camera footage found.");
         controller.IsPlaying.ShouldBeFalse();
@@ -173,7 +151,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         controller.ErrorMessage.ShouldBe(VideoPlayerController.EncryptedClipMessage);
         controller.ErrorMessage.ShouldContain("Encrypt Dashcam Recordings");
@@ -199,7 +177,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         controller.ErrorMessage.ShouldBe("No front camera footage found.");
         controller.IsPlaying.ShouldBeFalse();
@@ -218,7 +196,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => controller.ErrorMessage is not null);
+        await Wait.UntilAsync(() => controller.ErrorMessage is not null);
 
         controller.ErrorMessage.ShouldBe("Failed to open front camera video.");
         front.OpenedPaths.Count.ShouldBe(1);
@@ -238,7 +216,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
 
         await controller.PauseAsync();
         await controller.SeekAsync(TimeSpan.FromSeconds(12));
@@ -310,7 +288,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
 
         await controller.ScrubSeekAsync(TimeSpan.FromSeconds(12));
 
@@ -330,7 +308,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         await controller.SeekAsync(TimeSpan.FromSeconds(12));
 
@@ -347,7 +325,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         await controller.StopAsync();
 
@@ -388,7 +366,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
 
         back.RaiseFailed(new InvalidOperationException("secondary failed"));
 
@@ -443,7 +421,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(duration);
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
+        await Wait.UntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
         // The whole clip is one playlist per camera opened once; hitting the end of the playlist must not trigger another OpenAsync call (that would be the old per-chunk stall).
         front.OpenedPaths.Count.ShouldBe(openCountBeforeEnded);
@@ -473,7 +451,7 @@ public sealed partial class VideoPlayerControllerTests
         front.RaisePositionChanged(duration);
         front.RaiseEnded();
 
-        await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
+        await Wait.UntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
         // No auto-advance: the user stays on the finished clip (most likely to replay it), and the next clip is never opened or built.
         // Next remains an explicit action.
@@ -496,7 +474,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         var openCountBeforeSeek = front.OpenedPaths.Count;
 
@@ -519,7 +497,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         await controller.SeekAsync(TimeSpan.FromSeconds(999));
 
@@ -536,7 +514,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         front.RaisePositionChanged(TimeSpan.FromSeconds(68));
 
@@ -555,7 +533,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        await WaitUntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0 && back.PlayCount > 0);
 
         front.Speed.ShouldBe(2.0);
         back.Speed.ShouldBe(2.0);
@@ -577,19 +555,19 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         front.StopGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var changeClipTask = controller.GoToClipAsync(secondClipFiles.Clip);
 
-        await WaitUntilAsync(() => front.StopCount > 0);
+        await Wait.UntilAsync(() => front.StopCount > 0);
 
         controller.IsLoading.ShouldBeTrue();
 
         front.StopGate.SetResult(null);
         await changeClipTask;
-        await WaitUntilAsync(() => controller.CurrentClip == secondClipFiles.Clip && !controller.IsLoading);
+        await Wait.UntilAsync(() => controller.CurrentClip == secondClipFiles.Clip && !controller.IsLoading);
 
         controller.CurrentClip.ShouldBe(secondClipFiles.Clip);
         controller.IsLoading.ShouldBeFalse();
@@ -705,12 +683,12 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([firstClipFiles.Clip, secondClipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         // Hold the clip-change operation in flight -- it stops the current clip inside the serialized operation lock, so the lock is held while we dispose.
         front.StopGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
         var changeClipTask = controller.GoToClipAsync(secondClipFiles.Clip);
-        await WaitUntilAsync(() => front.StopCount > 0);
+        await Wait.UntilAsync(() => front.StopCount > 0);
 
         // Closing the window disposes the controller (and its operation lock) mid-operation.
         controller.Dispose();
@@ -733,7 +711,7 @@ public sealed partial class VideoPlayerControllerTests
 
         controller.LoadClips([firstClipFiles.Clip]);
         controller.Playlist.MoveTo(0);
-        await WaitUntilAsync(() => front.PlayCount > 0);
+        await Wait.UntilAsync(() => front.PlayCount > 0);
 
         await controller.LoadClipsAsync([secondClipFiles.Clip]);
 

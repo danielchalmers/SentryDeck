@@ -74,21 +74,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         CameraNames.RightPillar,
     ];
 
-    // A generous 20s deadline (vs. the 5s used elsewhere in these test files): this helper waits on a real clip-open flowing through Task.Run/the media source builder, which can slow down a lot under the CPU/disk contention of the full suite's many parallel test classes; 20s comfortably absorbs that while still catching a genuine hang.
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException("Condition was not met within the timeout.");
-            }
-
-            await Task.Delay(10);
-        }
-    }
-
     /// <summary>
     /// Runs a view-model async API to completion without ever leaving the calling thread.
     /// The view-model captures Dispatcher.CurrentDispatcher in its constructor, and these tests have no pumped message loop, so its dispatcher hop only stays deadlock-free while every later controller property change arrives on that exact same thread.
@@ -137,7 +122,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         built.LoadClips([clip]);
         built.Playlist.MoveTo(0);
-        WaitUntilAsync(() => front.PlayCount > 0 && built.IsMediaOpen && !built.IsLoading).GetAwaiter().GetResult();
+        Wait.UntilAsync(() => front.PlayCount > 0 && built.IsMediaOpen && !built.IsLoading).GetAwaiter().GetResult();
 
         var vm = new MainWindowViewModel(
             () => built,
