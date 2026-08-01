@@ -17,18 +17,31 @@ runs:
       with:
         dotnet-version: 10.0.x
 
-    - name: Install WiX v6
-      shell: bash
-      run: |
-        dotnet tool install --global wix --version 6.0.*
-
+    # Release, not the default Debug: shipped code has #if DEBUG blocks (log level, the update check, drive scanning), so a Debug-only run says nothing about the binaries users get.
     - name: Build
       shell: bash
-      run: dotnet build
+      run: dotnet build -c Release
 
+    # AGENTS.md requires `dotnet format`, and without a gate the rule gets missed.
+    # Runs after Build so a compile error is reported first: format's analyzers give a much worse message on a tree that doesn't compile.
+    - name: Verify formatting
+      shell: bash
+      run: dotnet format --verify-no-changes --no-restore
+
+    # --blame-hang is an inactivity timeout on the test host: a deadlocked dispatcher call is not covered by the suite's polling deadlines, and without this a hang regression burns the runner's entire budget instead of failing in minutes with the offending test named.
+    # The whole suite finishes in seconds, so 5m cannot fire on a healthy run.
     - name: Test
       shell: bash
-      run: dotnet test
+      run: dotnet test -c Release --no-build --blame-hang --blame-hang-timeout 5m --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+
+    # Explicitly named so it doesn't collide with the unnamed publish artifact below, and kept as its own step so that one can keep if-no-files-found:error without a failed test run, which never reaches the publish step, tripping it on an empty directory.
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: test-results
+        path: TestResults/**
+        if-no-files-found: ignore
 
     - name: Create Binaries
       shell: bash
@@ -44,6 +57,13 @@ runs:
         foreach ($arch in $archs) {
           Compress-Archive -Path "publish/$arch/*" -DestinationPath "publish/SentryDeck-${{ inputs.version }}-$arch.zip"
         }
+
+    # Installed here rather than up front so build, format, and test failures short-circuit ahead of the tool install.
+    # setup-dotnet keeps ~/.dotnet/tools on PATH for the whole job.
+    - name: Install WiX v6
+      shell: bash
+      run: |
+        dotnet tool install --global wix --version 6.0.*
 
     - name: Create MSI Installers
       shell: bash

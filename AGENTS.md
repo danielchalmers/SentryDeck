@@ -26,6 +26,12 @@ These instructions apply to Codex and other coding agents working in this repo.
 - Follow `.editorconfig` naming and formatting rules.
 - Use `ObservableProperty`/`RelayCommand` (CommunityToolkit.Mvvm) for view-model state and commands.
 
+## Comments
+- Break comment lines at sentence boundaries, one sentence per line, however long the line gets. Never wrap a sentence at a column width: editing one word would reflow every line after it and bury the real change in the diff.
+- This applies to every file type, including YAML in `.github/`, not just C#.
+- Don't use em dashes. A colon, semicolon, comma, or a second sentence reads the same and survives copy/paste.
+- Explain why the behavior matters, not what the code does.
+
 ## WPF-specific considerations
 - Be mindful of dispatcher usage when touching UI from background tasks.
 - Prefer `INotifyPropertyChanged` patterns over manual UI updates.
@@ -34,5 +40,6 @@ These instructions apply to Codex and other coding agents working in this repo.
 ## Testing/Validation
 - Always run `dotnet format`.
 - Tests live in `SentryDeck.Tests` and use xUnit/Shouldly.
+- Name tests `Subject_Scenario_Expectation` on a `public sealed class` with instance methods.
 - Add tests for new view-model and domain logic — view-models are plain objects that can be constructed directly in tests (see `MainWindowViewModelTests`).
 - If you change UI behavior, mention how to verify it (e.g., which view to open, what to click).

@@ -5,6 +5,13 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+# Superseded runs are cancelled, including on main.
+# That's safe here specifically because this workflow's artifacts are never consumed: releases are built by the tag-triggered deploy.yml.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,5 +21,5 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5
-      
+
       - uses: ./.github/actions/full-build
