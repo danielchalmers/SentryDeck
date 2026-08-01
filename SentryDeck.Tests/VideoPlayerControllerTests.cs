@@ -9,8 +9,7 @@ namespace SentryDeck.Tests;
 /// </summary>
 public sealed partial class VideoPlayerControllerTests
 {
-    // Clones a clip with an event at the given wall-clock instant (TestClipFiles builds event-less
-    // clips), preserving its real chunk files so the media source builds from the same footage.
+    // Clones a clip with an event at the given wall-clock instant (TestClipFiles builds event-less clips), preserving its real chunk files so the media source builds from the same footage.
     private static CamClip WithEvent(CamClip clip, DateTime eventTimestamp) =>
         new(clip.FullPath, clip.Name, clip.Timestamp, clip.Chunks, new CamEvent { Timestamp = eventTimestamp });
 
@@ -36,10 +35,8 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     /// <summary>
-    /// Waits until a clip is fully opened: playback has started AND the open operation has
-    /// completed (IsLoading cleared). Events raised between Play and the end of the open
-    /// operation are dropped by the controller's stale-event guards, so tests that raise
-    /// front-player events must wait for this state, not just PlayCount.
+    /// Waits until a clip is fully opened: playback has started AND the open operation has completed (IsLoading cleared).
+    /// Events raised between Play and the end of the open operation are dropped by the controller's stale-event guards, so tests that raise front-player events must wait for this state, not just PlayCount.
     /// </summary>
     private static Task WaitUntilClipOpenedAsync(VideoPlayerController controller, FakeCameraPlayer front)
     {
@@ -97,8 +94,7 @@ public sealed partial class VideoPlayerControllerTests
     [Fact]
     public async Task SelectingClip_WithPillarCameras_OpensAndPlaysEveryCamera()
     {
-        // An HW4 clip carries six cameras; the camera-keyed pool must open and play all of them,
-        // not just the classic four.
+        // An HW4 clip carries six cameras; the camera-keyed pool must open and play all of them, not just the classic four.
         using var clipFiles = TestClipFiles.Create(chunkCount: 1); // default fixture = all six cameras
         var players = CameraNames.All.ToDictionary(camera => camera, _ => new FakeCameraPlayer());
         using var controller = new VideoPlayerController(
@@ -160,8 +156,7 @@ public sealed partial class VideoPlayerControllerTests
     [Fact]
     public async Task SelectingClip_WhenAllFilesAreEncrypted_ExplainsTheEncryptionToggle()
     {
-        // A drive written by Tesla software 2026.20+ with "Encrypt Dashcam Recordings" on: every file exists but none is a playable MP4.
-        // The real builder probes and excludes every chunk, and the error must point at the encryption toggle, not claim missing footage.
+        // A drive written by Tesla software 2026.20+ with "Encrypt Dashcam Recordings" on: every file exists but none is a playable MP4. The real builder probes and excludes every chunk, and the error must point at the encryption toggle, not claim missing footage.
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);
         foreach (var chunk in clipFiles.Clip.Chunks)
         {
@@ -374,8 +369,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // A failure within the premature-end tolerance of Duration is not a corrupt-chunk
-        // candidate, so it must surface as a plain playback error.
+        // A failure within the premature-end tolerance of Duration is not a corrupt-chunk candidate, so it must surface as a plain playback error.
         front.RaisePositionChanged(controller.Duration - TimeSpan.FromSeconds(1));
         front.RaiseFailed(new InvalidOperationException("decode failed"));
 
@@ -451,8 +445,7 @@ public sealed partial class VideoPlayerControllerTests
 
         await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
-        // The whole clip is one playlist per camera opened once; hitting the end of the
-        // playlist must not trigger another OpenAsync call (that would be the old per-chunk stall).
+        // The whole clip is one playlist per camera opened once; hitting the end of the playlist must not trigger another OpenAsync call (that would be the old per-chunk stall).
         front.OpenedPaths.Count.ShouldBe(openCountBeforeEnded);
         mediaSourceBuilder.BuildCount.ShouldBe(1);
         controller.Position.ShouldBe(duration);
@@ -482,8 +475,8 @@ public sealed partial class VideoPlayerControllerTests
 
         await WaitUntilAsync(() => controller.Position == duration && !controller.IsPlaying);
 
-        // No auto-advance: the user stays on the finished clip (most likely to replay it), and
-        // the next clip is never opened or built. Next remains an explicit action.
+        // No auto-advance: the user stays on the finished clip (most likely to replay it), and the next clip is never opened or built.
+        // Next remains an explicit action.
         controller.CurrentClip.ShouldBe(firstClipFiles.Clip);
         mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip).ShouldBe(0);
         controller.Position.ShouldBe(duration);
@@ -507,8 +500,7 @@ public sealed partial class VideoPlayerControllerTests
 
         var openCountBeforeSeek = front.OpenedPaths.Count;
 
-        // 75s is past the old 60s per-chunk boundary; the clip is now a single continuous
-        // playlist, so this must be a plain seek with no reopen.
+        // 75s is past the old 60s per-chunk boundary; the clip is now a single continuous playlist, so this must be a plain seek with no reopen.
         await controller.SeekAsync(TimeSpan.FromSeconds(75));
 
         front.OpenedPaths.Count.ShouldBe(openCountBeforeSeek);
@@ -715,8 +707,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilAsync(() => front.PlayCount > 0);
 
-        // Hold the clip-change operation in flight -- it stops the current clip inside the serialized
-        // operation lock, so the lock is held while we dispose.
+        // Hold the clip-change operation in flight -- it stops the current clip inside the serialized operation lock, so the lock is held while we dispose.
         front.StopGate = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
         var changeClipTask = controller.GoToClipAsync(secondClipFiles.Clip);
         await WaitUntilAsync(() => front.StopCount > 0);
@@ -724,8 +715,8 @@ public sealed partial class VideoPlayerControllerTests
         // Closing the window disposes the controller (and its operation lock) mid-operation.
         controller.Dispose();
 
-        // Let the in-flight operation finish. Before the fix, releasing the now-disposed operation
-        // lock threw ObjectDisposedException, which surfaced through the awaited task.
+        // Let the in-flight operation finish.
+        // Before the fix, releasing the now-disposed operation lock threw ObjectDisposedException, which surfaced through the awaited task.
         front.StopGate.SetResult(null);
         await changeClipTask;
 

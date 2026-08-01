@@ -22,11 +22,8 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _player = new Player(CreateConfig(audioEnabled));
 
-        // All shortcuts are app-wide and act on every camera at once; Flyleaf's default
-        // bindings (space, arrows, …) would pause/seek only the player whose surface has
-        // focus. Must run AFTER the Player ctor: KeysConfig.SetPlayer force-loads the
-        // defaults into any empty binding list, so clearing the config up front is undone
-        // (and RemoveAll on a fresh config NREs — Keys is null until SetPlayer runs).
+        // All shortcuts are app-wide and act on every camera at once; Flyleaf's default bindings (space, arrows, …) would pause/seek only the player whose surface has focus.
+        // Must run AFTER the Player ctor: KeysConfig.SetPlayer force-loads the defaults into any empty binding list, so clearing the config up front is undone (and RemoveAll on a fresh config NREs, since Keys is null until SetPlayer runs).
         // Belt-and-braces with FlyleafHost.KeyBindings=None on the hosts.
         _player.Config.Player.KeyBindings.RemoveAll();
 
@@ -135,9 +132,8 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         }
         else
         {
-            // Keyframe seek: jumps to the nearest preceding keyframe instead of decoding forward
-            // to the exact frame. Far cheaper, so it's used for live scrubbing while dragging the
-            // seek bar; the final release seek always goes through the accurate path above.
+            // Keyframe seek: jumps to the nearest preceding keyframe instead of decoding forward to the exact frame.
+            // Far cheaper, so it's used for live scrubbing while dragging the seek bar; the final release seek always goes through the accurate path above.
             _player.Seek(milliseconds, forward: false);
         }
 
@@ -150,9 +146,7 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
     private const double FallbackStepFps = 30.0;
 
     /// <summary>
-    /// Safety factor applied to the backward-step target so PTS rounding can't make the accurate
-    /// seek land back on the frame currently displayed (accurate seeks present the frame at or
-    /// before the target, so overshooting slightly INTO the previous frame is what we want).
+    /// Safety factor applied to the backward-step target so PTS rounding can't make the accurate seek land back on the frame currently displayed (accurate seeks present the frame at or before the target, so overshooting slightly INTO the previous frame is what we want).
     /// </summary>
     private const double BackwardStepPtsGuard = 1.1;
 
@@ -173,14 +167,10 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             }
             else
             {
-                // Do NOT "simplify" this back to Flyleaf's ShowFramePrev. On our ffconcat (FFmpeg
-                // concat demuxer) playlists it is a silent no-op -- CurTime never moves, nothing
-                // throws -- and it poisons the decoder so the NEXT ShowFrameNext jumps ahead by
-                // 0.5s+ instead of one frame (verified against real footage, 2026-07). Backward
-                // stepping is therefore a small accurate seek: one frame duration back, padded by
-                // a PTS-rounding guard so the seek reliably presents the PREVIOUS frame rather
-                // than re-presenting the current one. Accurate seeks are proven reliable on these
-                // playlists, including while paused.
+                // Do NOT "simplify" this back to Flyleaf's ShowFramePrev.
+                // On our ffconcat (FFmpeg concat demuxer) playlists it is a silent no-op -- CurTime never moves, nothing throws -- and it poisons the decoder so the NEXT ShowFrameNext jumps ahead by 0.5s+ instead of one frame (verified against real footage, 2026-07).
+                // Backward stepping is therefore a small accurate seek: one frame duration back, padded by a PTS-rounding guard so the seek reliably presents the PREVIOUS frame rather than re-presenting the current one.
+                // Accurate seeks are proven reliable on these playlists, including while paused.
                 var fps = _player.Video?.FPS ?? 0;
                 if (fps <= 0 || double.IsNaN(fps))
                 {
@@ -233,8 +223,7 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             },
         };
 
-        // Clip playlists are ffconcat files with absolute paths; "safe=0" tells FFmpeg's
-        // concat demuxer to allow them (it refuses absolute/outside-directory paths by default).
+        // Clip playlists are ffconcat files with absolute paths; "safe=0" tells FFmpeg's concat demuxer to allow them (it refuses absolute/outside-directory paths by default).
         config.Demuxer.FormatOpt["safe"] = "0";
 
         return config;
@@ -270,12 +259,9 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
 
         if (_player.Status == Status.Ended)
         {
-            // Reaching end-of-stream does NOT close the media: Flyleaf keeps the demuxer open at
-            // EOF, so playback can still be replayed, scrubbed, or frame-stepped from the parked end
-            // position. Clearing _isOpen here made every open-player-gated operation (PlayAsync's
-            // replay, SeekAsync, StepFrameAsync) a silent no-op once a clip finished, freezing it on
-            // its last frame while the controller still reported IsPlaying. Leave it open; the real
-            // close happens on StopAndClose (user Stop / clip change / dispose).
+            // Reaching end-of-stream does NOT close the media: Flyleaf keeps the demuxer open at EOF, so playback can still be replayed, scrubbed, or frame-stepped from the parked end position.
+            // Clearing _isOpen here made every open-player-gated operation (PlayAsync's replay, SeekAsync, StepFrameAsync) a silent no-op once a clip finished, freezing it on its last frame while the controller still reported IsPlaying.
+            // Leave it open; the real close happens on StopAndClose (user Stop / clip change / dispose).
             Ended?.Invoke(this, EventArgs.Empty);
         }
     }

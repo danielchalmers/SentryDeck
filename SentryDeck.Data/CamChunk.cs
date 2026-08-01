@@ -23,10 +23,9 @@ public record class CamChunk
         Files = BuildFileMap(files);
     }
 
-    // Keyed by camera name, keeping the first file for each camera. A duplicate suffix at one
-    // timestamp (two files mapping to the same camera, e.g. after a rear_view -> back alias) would
-    // otherwise make ToDictionary throw -- and since CamClip.TryMap swallows that, the WHOLE clip
-    // folder would be silently dropped. Keep-first + log instead so one stray file can't lose a clip.
+    // Keyed by camera name, keeping the first file for each camera.
+    // A duplicate suffix at one timestamp (two files mapping to the same camera, e.g. after a rear_view -> back alias) would otherwise make ToDictionary throw -- and since CamClip.TryMap swallows that, the WHOLE clip folder would be silently dropped.
+    // Keep-first + log instead so one stray file can't lose a clip.
     private static IReadOnlyDictionary<string, CamFile> BuildFileMap(IEnumerable<CamFile> files)
     {
         var map = new Dictionary<string, CamFile>();

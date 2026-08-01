@@ -3,8 +3,7 @@ using System.IO;
 namespace SentryDeck.Tests;
 
 /// <summary>
-/// In-memory <see cref="IClipMediaSourceBuilder"/> that mirrors real chunk file layout as fake
-/// playlist paths, without touching FFmpeg or writing real ffconcat files.
+/// In-memory <see cref="IClipMediaSourceBuilder"/> that mirrors real chunk file layout as fake playlist paths, without touching FFmpeg or writing real ffconcat files.
 /// </summary>
 internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 {
@@ -59,8 +58,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
     }
 
     /// <summary>
-    /// The exclusion set from the most recent <see cref="Build"/> call for the given clip, or
-    /// null if it was never built.
+    /// The exclusion set from the most recent <see cref="Build"/> call for the given clip, or null if it was never built.
     /// </summary>
     public IReadOnlySet<int> LastExclusionsFor(CamClip clip)
     {
@@ -86,8 +84,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 
     public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
-        // Snapshot the set before recording: the controller passes (and later mutates) its live
-        // exclusion set, so recording the reference would retroactively rewrite earlier entries.
+        // Snapshot the set before recording: the controller passes (and later mutates) its live exclusion set, so recording the reference would retroactively rewrite earlier entries.
         var exclusionsSnapshot = excludedChunkIndices is null ? new HashSet<int>() : new HashSet<int>(excludedChunkIndices);
 
         HashSet<int> autoExcluded;

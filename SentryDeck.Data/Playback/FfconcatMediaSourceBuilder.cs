@@ -7,8 +7,7 @@ using Serilog;
 namespace SentryDeck;
 
 /// <summary>
-/// Builds per-camera ffconcat playlists on disk so a whole clip can be opened by FFmpeg's
-/// concat demuxer in one go.
+/// Builds per-camera ffconcat playlists on disk so a whole clip can be opened by FFmpeg's concat demuxer in one go.
 /// </summary>
 public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 {
@@ -27,11 +26,8 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
         Directory.CreateDirectory(PlaylistDirectory);
 
-        // The remaining chunks, in original order, with their original clip index preserved so
-        // callers can map a timeline position back to a chunk in the source clip. A chunk whose
-        // front file has no readable duration (no valid moov, e.g. a truncated recording) is
-        // unplayable by FFmpeg and can crash the concat demuxer, so it is auto-excluded up front
-        // for all cameras, exactly like a caller-supplied exclusion.
+        // The remaining chunks, in original order, with their original clip index preserved so callers can map a timeline position back to a chunk in the source clip.
+        // A chunk whose front file has no readable duration (no valid moov, e.g. a truncated recording) is unplayable by FFmpeg and can crash the concat demuxer, so it is auto-excluded up front for all cameras, exactly like a caller-supplied exclusion.
         var includedIndices = new List<int>();
         var chunkDurations = new List<TimeSpan>();
         var autoExcludedIndices = new List<int>();
@@ -64,13 +60,11 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
         var playlistPaths = new Dictionary<string, string>();
 
-        // Distinct clips can share a display name; only the folder path is unique per clip, so it
-        // is hashed into the filename to keep two clips (built concurrently or not) from clobbering
-        // each other's playlists. Must stay deterministic per clip: rebuilds overwrite in place.
+        // Distinct clips can share a display name; only the folder path is unique per clip, so it is hashed into the filename to keep two clips (built concurrently or not) from clobbering each other's playlists.
+        // Must stay deterministic per clip: rebuilds overwrite in place.
         var clipToken = $"{SanitizeForFileName(clip.Name)}-{HashForFileName(clip.FullPath)}";
 
-        // Build a playlist for every camera actually present in the clip -- not a fixed known set --
-        // so HW4 B-pillar cameras (and any future camera) are surfaced instead of silently dropped.
+        // Build a playlist for every camera actually present in the clip -- not a fixed known set -- so HW4 B-pillar cameras (and any future camera) are surfaced instead of silently dropped.
         // The front camera still drives the shared timeline (see ProbeFrontChunkDuration above).
         var camerasPresent = includedIndices
             .SelectMany(index => clip.Chunks[index].Files.Keys)
@@ -79,8 +73,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
         foreach (var camera in camerasPresent)
         {
-            // A camera absent from the first included chunk is omitted entirely (the playlist must
-            // start at the shared timeline's origin); one that drops out later truncates below.
+            // A camera absent from the first included chunk is omitted entirely (the playlist must start at the shared timeline's origin); one that drops out later truncates below.
             if (includedIndices.Count == 0 || !clip.Chunks[includedIndices[0]].Files.ContainsKey(camera))
             {
                 continue;
@@ -94,9 +87,8 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
                     break;
                 }
 
-                // An unreadable side file is treated exactly like a missing one: this camera's
-                // playlist truncates here. The shared timeline is unaffected -- it is driven by
-                // the front camera, whose readability was already verified above.
+                // An unreadable side file is treated exactly like a missing one: this camera's playlist truncates here.
+                // The shared timeline is unaffected -- it is driven by the front camera, whose readability was already verified above.
                 if (camera != CameraNames.Front && !IsProbeable(file.FullPath))
                 {
                     Log.Warning(
@@ -127,8 +119,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
         var chunkTimestamps = includedIndices.Select(index => clip.Chunks[index].Timestamp).ToList();
 
-        // The clip's ORIGINAL start (even if that chunk was excluded), so ToMediaTime can tell an
-        // event inside excluded leading footage (snap to media time zero) from pre-clip clock skew.
+        // The clip's ORIGINAL start (even if that chunk was excluded), so ToMediaTime can tell an event inside excluded leading footage (snap to media time zero) from pre-clip clock skew.
         DateTime? clipStartTimestamp = clip.Chunks.Count > 0 ? clip.Chunks[0].Timestamp : null;
 
         return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp);

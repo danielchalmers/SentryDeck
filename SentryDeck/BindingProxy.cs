@@ -3,10 +3,8 @@ using System.Windows;
 namespace SentryDeck;
 
 /// <summary>
-/// Carries the DataContext into resource-scoped bindings (e.g. a grouping
-/// <see cref="System.Windows.Data.CollectionViewSource"/> in Window.Resources).
-/// Being a <see cref="Freezable"/> lets it inherit the DataContext, which a plain
-/// resource cannot.
+/// Carries the DataContext into resource-scoped bindings (e.g. a grouping <see cref="System.Windows.Data.CollectionViewSource"/> in Window.Resources).
+/// Being a <see cref="Freezable"/> lets it inherit the DataContext, which a plain resource cannot.
 /// </summary>
 public sealed class BindingProxy : Freezable
 {

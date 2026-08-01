@@ -88,8 +88,8 @@ public sealed partial class MainWindowViewModelTests
         vm.SelectedClip = ClipWithChunks(1);
         vm.IsLoading.ShouldBeTrue();
 
-        // Clear the selection before the yield resumes (Ctrl+click deselect, or a search filter
-        // dropping the clip). The superseded load must not leave IsLoading stuck true forever.
+        // Clear the selection before the yield resumes (Ctrl+click deselect, or a search filter dropping the clip).
+        // The superseded load must not leave IsLoading stuck true forever.
         vm.SelectedClip = null;
         yieldGate.SetResult();
 
@@ -127,8 +127,7 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public void OpenFolderAndRefresh_AreDisabledWhileClipsAreScanning()
     {
-        // Both commands funnel into LoadClipsAsync, which has no re-entrancy protection: a second
-        // load started mid-scan would interleave with the first and merge both roots' clips.
+        // Both commands funnel into LoadClipsAsync, which has no re-entrancy protection: a second load started mid-scan would interleave with the first and merge both roots' clips.
         var vm = CreateViewModel();
 
         vm.OpenFolderCommand.CanExecute(null).ShouldBeTrue();

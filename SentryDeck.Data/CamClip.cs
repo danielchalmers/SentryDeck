@@ -76,10 +76,8 @@ public partial record class CamClip
             return null;
         }
 
-        // Neither the folder name nor event.json supplied a timestamp (e.g. Tesla's RecentClips
-        // folder: loose files directly under it, with no date-named subfolder and no event metadata).
-        // Fall back to the earliest chunk's timestamp, parsed from the file names, so the clip sorts
-        // and dates correctly instead of collapsing to DateTime.MinValue (1/1/0001).
+        // Neither the folder name nor event.json supplied a timestamp (e.g. Tesla's RecentClips folder: loose files directly under it, with no date-named subfolder and no event metadata).
+        // Fall back to the earliest chunk's timestamp, parsed from the file names, so the clip sorts and dates correctly instead of collapsing to DateTime.MinValue (1/1/0001).
         if (timestamp == default)
         {
             timestamp = chunks[0].Timestamp;
@@ -104,8 +102,7 @@ public partial record class CamClip
     }
 
     /// <summary>
-    /// Maps one folder, skipping (and logging) any folder that can't be read so a single bad
-    /// clip never discards the rest of the library.
+    /// Maps one folder, skipping (and logging) any folder that can't be read so a single bad clip never discards the rest of the library.
     /// </summary>
     private static CamClip TryMap(string directory)
     {
@@ -126,8 +123,7 @@ public partial record class CamClip
     {
         yield return rootDirectory;
 
-        // IgnoreInaccessible so one ACL-denied subfolder (e.g. System Volume Information at a
-        // drive root) is skipped rather than aborting the entire scan.
+        // IgnoreInaccessible so one ACL-denied subfolder (e.g. System Volume Information at a drive root) is skipped rather than aborting the entire scan.
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = true,
@@ -161,9 +157,8 @@ public partial record class CamClip
                 }
                 catch (Exception ex)
                 {
-                    // A transient IO error partway through recursion (bad sector, a drive yanked
-                    // mid-scan, a junction loop) would otherwise abort the whole root and discard
-                    // every clip found so far. Stop here and keep what we already enumerated.
+                    // A transient IO error partway through recursion (bad sector, a drive yanked mid-scan, a junction loop) would otherwise abort the whole root and discard every clip found so far.
+                    // Stop here and keep what we already enumerated.
                     Log.Warning(ex, "Clip-folder enumeration stopped early; keeping folders found so far. Root={Root}", rootDirectory);
                     break;
                 }

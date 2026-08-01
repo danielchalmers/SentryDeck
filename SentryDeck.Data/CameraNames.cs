@@ -4,10 +4,8 @@ namespace SentryDeck;
 /// Camera names used by Tesla dashcam file names.
 /// </summary>
 /// <remarks>
-/// The camera set of an actual clip is discovered from its files, not assumed from this list:
-/// newer HW4/AI4 vehicles add the two B-pillar cameras, and future firmware may add more. An
-/// unrecognized suffix is kept and played rather than dropped; <see cref="All"/> is only the set
-/// of cameras we recognize by name.
+/// The camera set of an actual clip is discovered from its files, not assumed from this list: newer HW4/AI4 vehicles add the two B-pillar cameras, and future firmware may add more.
+/// An unrecognized suffix is kept and played rather than dropped; <see cref="All"/> is only the set of cameras we recognize by name.
 /// </remarks>
 public static class CameraNames
 {
@@ -37,8 +35,8 @@ public static class CameraNames
     ];
 
     /// <summary>
-    /// Normalizes legacy suffix aliases so old and new clips share one vocabulary
-    /// (<c>rear_view</c> → <see cref="Back"/>). Unknown suffixes pass through unchanged.
+    /// Normalizes legacy suffix aliases so old and new clips share one vocabulary (<c>rear_view</c> → <see cref="Back"/>).
+    /// Unknown suffixes pass through unchanged.
     /// </summary>
     public static string Canonicalize(string camera) => camera == BackLegacy ? Back : camera;
 

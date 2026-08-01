@@ -16,10 +16,8 @@ using Serilog;
 namespace SentryDeck;
 
 /// <summary>
-/// View-model for the main window: clip browsing, playback orchestration, update checks,
-/// FFmpeg prompts, and shell actions. Holds no references to WPF controls; the view supplies
-/// the playback controller (via <see cref="MainWindowViewModel(Func{VideoPlayerController})"/>)
-/// and reacts to <see cref="SearchBoxFocusRequested"/> and <see cref="SelectedCameraView"/> changes.
+/// View-model for the main window: clip browsing, playback orchestration, update checks, FFmpeg prompts, and shell actions.
+/// Holds no references to WPF controls; the view supplies the playback controller (via <see cref="MainWindowViewModel(Func{VideoPlayerController})"/>) and reacts to <see cref="SearchBoxFocusRequested"/> and <see cref="SelectedCameraView"/> changes.
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
@@ -55,24 +53,22 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly SeekScrubCoalescer _scrubCoalescer;
     private bool _isSeeking;
 
-    // Identifies the current seek gesture. EndSeekAsync's slow tail (the accurate seek can queue
-    // behind in-flight scrubs) may complete after the user has already started a NEW drag; only
-    // the completion belonging to the latest gesture may clear _isSeeking, or the position sync
-    // would yank the thumb out from under the active drag.
+    // Identifies the current seek gesture.
+    // EndSeekAsync's slow tail (the accurate seek can queue behind in-flight scrubs) may complete after the user has already started a NEW drag; only the completion belonging to the latest gesture may clear _isSeeking, or the position sync would yank the thumb out from under the active drag.
     private int _seekGeneration;
     private bool _isInitialized;
 
-    // The source of dashcam roots: auto-discovery by default, or the user's last picked folders. Refresh
-    // re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
+    // The source of dashcam roots: auto-discovery by default, or the user's last picked folders.
+    // Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
     private Func<IEnumerable<string>> _rootSource = CamStorage.FindCommonRoots;
 
-    /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param>
-    /// <param name="clipLoader">Maps a dashcam root to its clips. Defaults to scanning the filesystem; overridable for tests.</param>
-    /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive. Overridable for tests.</param>
-    /// <param name="clipExporter">Exports trimmed clip ranges. Defaults to the FFmpeg-backed exporter; overridable for tests.</param>
-    /// <param name="savePathPicker">Maps a suggested file name to the chosen save path (null = canceled). Defaults to a save dialog; overridable for tests.</param>
-    /// <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open. Overridable for tests.</param>
-    /// <param name="uiInvoker">Runs an action on the UI thread. Defaults to the dispatcher hop; overridable for tests, which have no pumped message loop to service it.</param>
+    /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param> <param name="clipLoader">Maps a dashcam root to its clips.
+    /// Defaults to scanning the filesystem; overridable for tests.</param> <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive.
+    /// Overridable for tests.</param> <param name="clipExporter">Exports trimmed clip ranges.
+    /// Defaults to the FFmpeg-backed exporter; overridable for tests.</param> <param name="savePathPicker">Maps a suggested file name to the chosen save path (null = canceled).
+    /// Defaults to a save dialog; overridable for tests.</param> <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open.
+    /// Overridable for tests.</param> <param name="uiInvoker">Runs an action on the UI thread.
+    /// Defaults to the dispatcher hop; overridable for tests, which have no pumped message loop to service it.</param>
     public MainWindowViewModel(
         Func<VideoPlayerController> playerControllerFactory,
         Func<string, IReadOnlyList<CamClip>> clipLoader = null,
@@ -92,8 +88,7 @@ public partial class MainWindowViewModel : ObservableObject
         _uiInvoker = uiInvoker ?? InvokeOnDispatcher;
         _scrubCoalescer = new SeekScrubCoalescer(ScrubToAsync);
 
-        // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth;
-        // the getters stay live, so only the (debounced) change notification is deferred.
+        // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth; the getters stay live, so only the (debounced) change notification is deferred.
         _filterDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
         {
             Interval = TimeSpan.FromMilliseconds(150),
@@ -224,12 +219,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool CanGoPrevious => _playerController?.CanGoPrevious == true;
 
-    // Segoe Fluent Icons: Pause (E769) / PlaySolid (F5B0). Rendered with SymbolThemeFontFamily.
+    // Segoe Fluent Icons: Pause (E769) / PlaySolid (F5B0).
+    // Rendered with SymbolThemeFontFamily.
     public string PlayPauseIcon => IsPlaying ? "" : "";
 
-    // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF
-    // sibling it can't draw over the Flyleaf video surface anyway. While a selected clip loads, the hosts stay
-    // visible and simply show black until the first frame decodes — no loading screen flashing mid-playback.
+    // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF sibling it can't draw over the Flyleaf video surface anyway.
+    // While a selected clip loads, the hosts stay visible and simply show black until the first frame decodes, with no loading screen flashing mid-playback.
     public bool ShowStatusOverlay => (IsLoading && SelectedClip is null) || ShowErrorOverlay || HasNoClipSelected;
 
     public bool ShowVideoHosts => SelectedClip is not null && !ShowErrorOverlay;
@@ -268,14 +263,12 @@ public partial class MainWindowViewModel : ObservableObject
     public int RenderProgressPercent => (int)(RenderProgress * 100);
 
     // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
-    // Recomputed whenever the selection changes or the controller opens/replaces its media
-    // source; plain fields (not ObservableProperty) because they're derived, not independently
-    // settable.
+    // Recomputed whenever the selection changes or the controller opens/replaces its media source; plain fields (not ObservableProperty) because they're derived, not independently settable.
     private double? _eventPosition;
     private IReadOnlyList<double> _chunkBoundaries = [];
     private IReadOnlyList<double> _gapPositions = [];
 
-    /// <summary>The event moment as a 0..1 fraction of the clip timeline (0 when none — pair with <see cref="HasEventMarker"/>).</summary>
+    /// <summary>The event moment as a 0..1 fraction of the clip timeline (0 when none; pair with <see cref="HasEventMarker"/>).</summary>
     public double EventMarkerPosition => _eventPosition ?? 0d;
 
     /// <summary>True when the selected clip has a locatable event moment to mark on the seek bar and jump to.</summary>
@@ -290,25 +283,23 @@ public partial class MainWindowViewModel : ObservableObject
     public IReadOnlyList<double> ChunkBoundaries => _chunkBoundaries;
 
     /// <summary>
-    /// Fractional seek-bar positions where the opened clip's media time skips over a wall-clock
-    /// gap (deleted/corrupt/excluded chunks, or a Sentry idle period). Empty until the selected
-    /// clip's media source has actually been built and opened by the controller.
+    /// Fractional seek-bar positions where the opened clip's media time skips over a wall-clock gap (deleted/corrupt/excluded chunks, or a Sentry idle period).
+    /// Empty until the selected clip's media source has actually been built and opened by the controller.
     /// </summary>
     public IReadOnlyList<double> GapPositions => _gapPositions;
 
     // --- Export selection (in/out marks on the seek bar, as 0..1 fractions like SeekPosition) ---
-    // Plain fields + an explicit notify helper (not ObservableProperty) because the pair changes
-    // together under shared invariants (start < end) and several derived properties hang off both.
+    // Plain fields + an explicit notify helper (not ObservableProperty) because the pair changes together under shared invariants (start < end) and several derived properties hang off both.
     private double? _selectionStart;
     private double? _selectionEnd;
 
     /// <summary>How much footage to keep on each side of the event moment in "Save event clip".</summary>
     public static readonly TimeSpan EventClipPadding = TimeSpan.FromSeconds(30);
 
-    /// <summary>The selection start as a 0..1 fraction of the clip timeline (0 when unset — pair with <see cref="HasSelectionStart"/>).</summary>
+    /// <summary>The selection start as a 0..1 fraction of the clip timeline (0 when unset; pair with <see cref="HasSelectionStart"/>).</summary>
     public double SelectionStartPosition => _selectionStart ?? 0d;
 
-    /// <summary>The selection end as a 0..1 fraction of the clip timeline (0 when unset — pair with <see cref="HasSelectionEnd"/>).</summary>
+    /// <summary>The selection end as a 0..1 fraction of the clip timeline (0 when unset; pair with <see cref="HasSelectionEnd"/>).</summary>
     public double SelectionEndPosition => _selectionEnd ?? 0d;
 
     public bool HasSelectionStart => _selectionStart.HasValue;
@@ -321,16 +312,14 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanExportSelection => HasSelection && !IsExporting && CanSeek;
 
     /// <summary>
-    /// True while the trim panel is open. Opens explicitly (the Trim button) or implicitly
-    /// (marking a point via I/O); closing it always discards the marks, so the panel and the
-    /// selection can't drift apart.
+    /// True while the trim panel is open.
+    /// Opens explicitly (the Trim button) or implicitly (marking a point via I/O); closing it always discards the marks, so the panel and the selection can't drift apart.
     /// </summary>
     [ObservableProperty]
     private bool _isTrimming;
 
     /// <summary>
-    /// One-line guidance for the trim panel: walks the user through start → end → export, and
-    /// shows the selected length once the range is complete.
+    /// One-line guidance for the trim panel: walks the user through start → end → export, and shows the selected length once the range is complete.
     /// </summary>
     public string TrimHintText
     {
@@ -376,8 +365,7 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SaveEventClipCommand))]
     private bool _isExporting;
 
-    // FilteredClips/ClipCount are refreshed on a short debounce (see OnFilterTextChanged) rather than
-    // per keystroke; HasFilterText stays immediate so the search box's clear affordance is responsive.
+    // FilteredClips/ClipCount are refreshed on a short debounce (see OnFilterTextChanged) rather than per keystroke; HasFilterText stays immediate so the search box's clear affordance is responsive.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasFilterText))]
     private string _filterText = string.Empty;
@@ -601,8 +589,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            // Scan the disk off the UI thread; the continuation resumes on it via the WPF
-            // SynchronizationContext, so all view-model state below is mutated on the UI thread.
+            // Scan the disk off the UI thread; the continuation resumes on it via the WPF SynchronizationContext, so all view-model state below is mutated on the UI thread.
             var result = await Task.Run(() => ScanRoots(roots));
 
             if (!result.HadRoots)
@@ -624,8 +611,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             _playerController?.LoadClips(_allClips);
 
-            // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh
-            // (clear -> loading -> refill) instead of an imperceptible flicker.
+            // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh (clear -> loading -> refill) instead of an imperceptible flicker.
             var remaining = minimumLoadingDuration - stopwatch.Elapsed;
             if (remaining > TimeSpan.Zero)
             {
@@ -698,8 +684,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshClipState()
     {
-        // FilteredClips is intentionally NOT raised here: this runs on every clip change, and
-        // re-notifying the unchanged list rebuilds the ListBox and retriggers its fade (flicker).
+        // FilteredClips is intentionally NOT raised here: this runs on every clip change, and re-notifying the unchanged list rebuilds the ListBox and retriggers its fade (flicker).
         // The list is notified explicitly only when it actually changes (load + FilterText).
         OnPropertyChanged(nameof(HasNoClipSelected));
         OnPropertyChanged(nameof(ShowStatusOverlay));
@@ -709,8 +694,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanGoPrevious));
     }
 
-    // Gated like Refresh: LoadClipsAsync has no re-entrancy protection, so picking a folder while a
-    // scan is still running would interleave two loads and merge both roots into one clip list.
+    // Gated like Refresh: LoadClipsAsync has no re-entrancy protection, so picking a folder while a scan is still running would interleave two loads and merge both roots into one clip list.
     [RelayCommand(CanExecute = nameof(CanRefreshClips))]
     private async Task OpenFolderAsync()
     {
@@ -809,8 +793,8 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Marks the selection start at the current playhead. A mark that would invert the range
-    /// (start at or past the existing end) clears the other mark instead of silently swapping.
+    /// Marks the selection start at the current playhead.
+    /// A mark that would invert the range (start at or past the existing end) clears the other mark instead of silently swapping.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanSeek))]
     private void MarkSelectionStart()
@@ -875,8 +859,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>True when either mark is set (drives the clear affordance).</summary>
     public bool HasAnySelectionMark => _selectionStart.HasValue || _selectionEnd.HasValue;
 
-    // Everything downstream of CanSeek: the mark/export commands gate on it alongside the
-    // frame-step commands.
+    // Everything downstream of CanSeek: the mark/export commands gate on it alongside the frame-step commands.
     private void NotifyCanSeekChanged()
     {
         OnPropertyChanged(nameof(CanSeek));
@@ -926,9 +909,8 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Exports the front-camera footage around the clip's event moment (±<see cref="EventClipPadding"/>)
-    /// in one step — no in/out marks needed. Works from the clip list context menu even when the
-    /// clip isn't the one currently playing (its media source is built on demand).
+    /// Exports the front-camera footage around the clip's event moment (±<see cref="EventClipPadding"/>) in one step, with no in/out marks needed.
+    /// Works from the clip list context menu even when the clip isn't the one currently playing (its media source is built on demand).
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanSaveEventClip))]
     private async Task SaveEventClipAsync(CamClip clip)
@@ -943,10 +925,8 @@ public partial class MainWindowViewModel : ObservableObject
         {
             mediaSource = _playerController?.CurrentClip == clip ? _playerController.OpenedMediaSource : null;
 
-            // Building an unopened clip's source does real IO (probe every chunk, write ffconcat
-            // files) and can throw (drive unplugged, temp write fails). Unlike ExportSelectionAsync,
-            // nothing downstream caught it, so the fault escaped to the dispatcher; surface a normal
-            // "Export Failed" dialog instead.
+            // Building an unopened clip's source does real IO (probe every chunk, write ffconcat files) and can throw (drive unplugged, temp write fails).
+            // Unlike ExportSelectionAsync, nothing downstream caught it, so the fault escaped to the dispatcher; surface a normal "Export Failed" dialog instead.
             mediaSource ??= await Task.Run(() => _exportMediaSourceBuilder.Build(clip));
         }
         catch (Exception ex)
@@ -1033,12 +1013,14 @@ public partial class MainWindowViewModel : ObservableObject
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
-    /// <summary>Points Explorer at the exported file so it's immediately ready to share. Overridable for tests.</summary>
+    /// <summary>Points Explorer at the exported file so it's immediately ready to share.
+    /// Overridable for tests.</summary>
     internal Action<string> RevealInExplorer { get; set; } = path =>
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
 
     /// <summary>
-    /// Asks the user to confirm sending a clip to the Recycle Bin. Returns true to proceed.
+    /// Asks the user to confirm sending a clip to the Recycle Bin.
+    /// Returns true to proceed.
     /// Overridable for tests; defaults to a yes/no message box.
     /// </summary>
     internal Func<CamClip, bool> ConfirmDeleteClip { get; set; } = clip =>
@@ -1049,8 +1031,8 @@ public partial class MainWindowViewModel : ObservableObject
             MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
     /// <summary>
-    /// Sends a clip folder to the Windows Recycle Bin (recoverable). Overridable for tests; defaults
-    /// to the shell recycle operation, which surfaces its own error dialog if a file is in use.
+    /// Sends a clip folder to the Windows Recycle Bin (recoverable).
+    /// Overridable for tests; defaults to the shell recycle operation, which surfaces its own error dialog if a file is in use.
     /// </summary>
     internal Action<string> RecycleClipFolder { get; set; } = path =>
         FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
@@ -1128,13 +1110,10 @@ public partial class MainWindowViewModel : ObservableObject
         IsLoading = true;
         await _backgroundYield();
 
-        // A newer selection superseded this one while we yielded — drop it so the latest wins and the
-        // selection doesn't rubber-band backwards as earlier, slower loads complete.
+        // A newer selection superseded this one while we yielded, so drop it and let the latest win and the selection doesn't rubber-band backwards as earlier, slower loads complete.
         if (cancellationToken.IsCancellationRequested || !ReferenceEquals(clip, SelectedClip))
         {
-            // A newer selection's own load owns IsLoading now — but if the selection was cleared
-            // outright (deselect, or a filter dropping the clip), no load is in flight and nothing
-            // else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
+            // A newer selection's own load owns IsLoading now, but if the selection was cleared outright (deselect, or a filter dropping the clip), no load is in flight and nothing else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
             if (SelectedClip is null)
             {
                 IsLoading = false;
@@ -1180,8 +1159,8 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// True for the shortcuts that focus the clip search box (Ctrl+F, F3, or F6). Shared with the
-    /// view's tunneling PreviewKeyDown so it works regardless of which control currently has focus.
+    /// True for the shortcuts that focus the clip search box (Ctrl+F, F3, or F6).
+    /// Shared with the view's tunneling PreviewKeyDown so it works regardless of which control currently has focus.
     /// </summary>
     public static bool IsSearchFocusShortcut(Key key, ModifierKeys modifiers) =>
         (key == Key.F && modifiers == ModifierKeys.Control) ||
@@ -1202,9 +1181,8 @@ public partial class MainWindowViewModel : ObservableObject
             return true;
         }
 
-        // The About/Help page replaces the player, so playback/camera/trim shortcuts must not act
-        // on the hidden player behind it. (F1/Esc page navigation lives in the view's PreviewKeyDown,
-        // and the search shortcut above intentionally still leaves the page.)
+        // The About/Help page replaces the player, so playback/camera/trim shortcuts must not act on the hidden player behind it.
+        // (F1/Esc page navigation lives in the view's PreviewKeyDown, and the search shortcut above intentionally still leaves the page.)
         if (ShowAboutPage)
         {
             return false;
@@ -1265,8 +1243,9 @@ public partial class MainWindowViewModel : ObservableObject
             return true;
         }
 
-        // Shift+, / Shift+. (i.e. < / >) step the playback speed, YouTube-style. Unmodified
-        // , / . remain frame-step below.
+        // Shift+, / Shift+.
+        // (i.e. < / >) step the playback speed, YouTube-style.
+        // Unmodified , / . remain frame-step below.
         if (modifiers == ModifierKeys.Shift)
         {
             if (key == Key.OemComma)
@@ -1354,21 +1333,14 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        // The gesture is over: drop any scrub value still queued in the coalescer. When the
-        // in-flight scrub completes it would otherwise re-issue that value as a keyframe seek
-        // AFTER the accurate seek below (both queue on the controller's serialized-operation
-        // lock in that order), leaving the playhead on a keyframe instead of the release point.
+        // The gesture is over: drop any scrub value still queued in the coalescer.
+        // When the in-flight scrub completes it would otherwise re-issue that value as a keyframe seek AFTER the accurate seek below (both queue on the controller's serialized-operation lock in that order), leaving the playhead on a keyframe instead of the release point.
         _scrubCoalescer.CancelPending();
 
-        // _isSeeking stays true until after the accurate seek below completes, so a scrub seek
-        // still winding down from the drag doesn't race it: SeekToCurrentPositionAsync's SeekAsync
-        // shares the controller's serialized-operation lock with ScrubSeekAsync, so it naturally
-        // waits behind (and thus supersedes the effect of) any in-flight scrub seek issued by the
-        // coalescer rather than racing it.
+        // _isSeeking stays true until after the accurate seek below completes, so a scrub seek still winding down from the drag doesn't race it: SeekToCurrentPositionAsync's SeekAsync shares the controller's serialized-operation lock with ScrubSeekAsync, so it naturally waits behind (and thus supersedes the effect of) any in-flight scrub seek issued by the coalescer rather than racing it.
         await SeekToCurrentPositionAsync();
 
-        // Only the latest gesture's completion may end the seeking state: if the user has already
-        // grabbed the thumb again, this completion is stale and their new drag owns the flag.
+        // Only the latest gesture's completion may end the seeking state: if the user has already grabbed the thumb again, this completion is stale and their new drag owns the flag.
         if (generation == _seekGeneration)
         {
             _isSeeking = false;
@@ -1376,12 +1348,10 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Called on every seek-bar value change. While a seek gesture is active (<see cref="_isSeeking"/>,
-    /// set by <see cref="BeginSeek"/> on mouse-down for clicks and drags alike), each value feeds the
-    /// scrub coalescer so the video follows the thumb in near-real-time. A plain click therefore
-    /// issues one scrub seek too; the accurate seek from <see cref="EndSeekAsync"/> runs behind the
-    /// same serialized lock and always lands last. Value changes from playback position sync arrive
-    /// with <see cref="_isSeeking"/> false and are ignored.
+    /// Called on every seek-bar value change.
+    /// While a seek gesture is active (<see cref="_isSeeking"/>, set by <see cref="BeginSeek"/> on mouse-down for clicks and drags alike), each value feeds the scrub coalescer so the video follows the thumb in near-real-time.
+    /// A plain click therefore issues one scrub seek too; the accurate seek from <see cref="EndSeekAsync"/> runs behind the same serialized lock and always lands last.
+    /// Value changes from playback position sync arrive with <see cref="_isSeeking"/> false and are ignored.
     /// </summary>
     public void OnSeekSliderValueChanged()
     {
@@ -1417,17 +1387,11 @@ public partial class MainWindowViewModel : ObservableObject
         return TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
     }
 
-    // Derives the seek-bar overlays for the selected clip: the event moment, the interior
-    // chunk-boundary ticks, and gap ticks (mapped onto the 0..1 seek axis). Nulls out cleanly when
-    // the selection is cleared or the clip has no usable event metadata.
+    // Derives the seek-bar overlays for the selected clip: the event moment, the interior chunk-boundary ticks, and gap ticks (mapped onto the 0..1 seek axis).
+    // Nulls out cleanly when the selection is cleared or the clip has no usable event metadata.
     //
-    // Prefers the controller's actually-opened ClipMediaSource when it belongs to this clip: that
-    // source has real probed durations and gap-aware wall-clock mapping (see
-    // ClipMediaSource.ToMediaTime), so its positions match what's actually playing. Selecting a
-    // clip is synchronous but opening its media is not, so immediately after selection (or for a
-    // clip that never opens, e.g. in tests with no controller) there is no opened source yet; a
-    // ClipTimeline estimate (uniform assumed chunk length) is used as a same-frame placeholder so
-    // the markers don't flash empty, and is superseded once OpenedMediaSource changes.
+    // Prefers the controller's actually-opened ClipMediaSource when it belongs to this clip: that source has real probed durations and gap-aware wall-clock mapping (see ClipMediaSource.ToMediaTime), so its positions match what's actually playing.
+    // Selecting a clip is synchronous but opening its media is not, so immediately after selection (or for a clip that never opens, e.g. in tests with no controller) there is no opened source yet; a ClipTimeline estimate (uniform assumed chunk length) is used as a same-frame placeholder so the markers don't flash empty, and is superseded once OpenedMediaSource changes.
     private void RecomputeSelectedClipTimeline()
     {
         var clip = SelectedClip;
@@ -1470,16 +1434,14 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        // Fraction 0 is a real position: an event that fired on the first recorded frame (or one
-        // snapped forward to the start of the footage) still deserves its marker.
+        // Fraction 0 is a real position: an event that fired on the first recorded frame (or one snapped forward to the start of the footage) still deserves its marker.
         var mediaTime = mediaSource.ToMediaTime(camEvent.Timestamp);
         var fraction = mediaTime?.TotalSeconds / durationSeconds;
         _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
     }
 
-    // Fallback used before the selected clip's media has actually been opened (or when it never
-    // will be, e.g. no controller in tests): the legacy uniform-chunk-length estimate. Carries no
-    // gap information, since gaps can only be known once the builder has probed real durations.
+    // Fallback used before the selected clip's media has actually been opened (or when it never will be, e.g. no controller in tests): the legacy uniform-chunk-length estimate.
+    // Carries no gap information, since gaps can only be known once the builder has probed real durations.
     private void RecomputeFromEstimatedTimeline(CamClip clip)
     {
         var timeline = new ClipTimeline(clip.Chunks);
@@ -1495,9 +1457,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        // The event landing at or after the start and no later than the modeled end is markable
-        // (exactly 0 = the event fired on the first recorded frame); clock skew (fraction < 0) or
-        // an event past the estimate (> 1) yields no marker.
+        // The event landing at or after the start and no later than the modeled end is markable (exactly 0 = the event fired on the first recorded frame); clock skew (fraction < 0) or an event past the estimate (> 1) yields no marker.
         var fraction = (camEvent.Timestamp - clip.Chunks[0].Timestamp).TotalSeconds / timeline.Duration.TotalSeconds;
         _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
     }
@@ -1548,11 +1508,8 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case nameof(VideoPlayerController.OpenedMediaSource):
-                // The controller finished (re)building the media source for the selected clip
-                // (or one under recovery from a corrupt chunk) -- refresh the gap-aware overlays
-                // now that real probed durations/timestamps are available. A rebuild can reshape
-                // the timeline (chunks excluded during recovery), so in/out fractions marked
-                // against the old timeline no longer point at the same footage.
+                // The controller finished (re)building the media source for the selected clip (or one under recovery from a corrupt chunk) -- refresh the gap-aware overlays now that real probed durations/timestamps are available.
+                // A rebuild can reshape the timeline (chunks excluded during recovery), so in/out fractions marked against the old timeline no longer point at the same footage.
                 if (HasAnySelectionMark)
                 {
                     ClearSelection();
@@ -1741,16 +1698,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (clip is not null)
         {
-            // Invariant (24-hour, culture-stable) so the copied value matches the clip name and is
-            // paste-searchable, unlike the ambiguous AM/PM current-culture rendering.
+            // Invariant (24-hour, culture-stable) so the copied value matches the clip name and is paste-searchable, unlike the ambiguous AM/PM current-culture rendering.
             Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.InvariantCulture));
         }
     }
 
     /// <summary>
-    /// Sends the clip's folder to the Recycle Bin so the timeline can be tidied without leaving the
-    /// app. Confirms first, then — if the clip is the one currently open — stops playback so Flyleaf
-    /// releases its file handles before the shell tries to recycle the (otherwise locked) folder.
+    /// Sends the clip's folder to the Recycle Bin so the timeline can be tidied without leaving the app.
+    /// Confirms first, then, if the clip is the one currently open, stops playback so Flyleaf releases its file handles before the shell tries to recycle the (otherwise locked) folder.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanUseClip))]
     private async Task DeleteClipAsync(CamClip clip)
@@ -1760,8 +1715,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        // Flyleaf keeps the current clip's camera files open; Windows can't recycle a folder whose
-        // files are still locked, so stop and close the players before deleting it.
+        // Flyleaf keeps the current clip's camera files open; Windows can't recycle a folder whose files are still locked, so stop and close the players before deleting it.
         var isCurrent = ReferenceEquals(SelectedClip, clip)
             || ReferenceEquals(NowPlayingClip, clip)
             || _playerController?.CurrentClip == clip;
@@ -1837,7 +1791,7 @@ public partial class MainWindowViewModel : ObservableObject
         CameraViewOptions = BuildCameraViewOptions(value);
         if (IsAvailableView(SelectedCameraView))
         {
-            // Same view id as before, but the option objects are new — re-mark the selected one.
+            // Same view id as before, but the option objects are new, so re-mark the selected one.
             SyncCameraViewSelection();
         }
         else
@@ -1845,8 +1799,7 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedCameraView = CameraNames.Front;
         }
 
-        // In/out marks are fractions of the previous clip's timeline; they mean nothing on the
-        // new one, and a trim panel guiding a cut of the old clip would now be lying.
+        // In/out marks are fractions of the previous clip's timeline; they mean nothing on the new one, and a trim panel guiding a cut of the old clip would now be lying.
         CancelTrim();
 
         RecomputeSelectedClipTimeline();
@@ -1857,8 +1810,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(GapPositions));
         JumpToEventCommand.NotifyCanExecuteChanged();
 
-        // Cancel any in-flight selection load so quickly arrowing through the list doesn't open every
-        // clip in turn (which would also drag the selection backwards until the queue drained).
+        // Cancel any in-flight selection load so quickly arrowing through the list doesn't open every clip in turn (which would also drag the selection backwards until the queue drained).
         _selectionCts?.Cancel();
         _selectionCts?.Dispose();
         _selectionCts = null;
@@ -1867,8 +1819,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             _selectionCts = new CancellationTokenSource();
 
-            // Show the now-playing badge on the newly clicked clip right away, instead of only once its
-            // media finishes opening.
+            // Show the now-playing badge on the newly clicked clip right away, instead of only once its media finishes opening.
             NowPlayingClip = value;
 
             Log.Debug(

@@ -2,8 +2,7 @@ namespace SentryDeck.Tests;
 
 /// <summary>
 /// In-memory <see cref="IClipExporter"/> that records requests instead of running FFmpeg.
-/// Completes synchronously so controller-backed view-model tests keep their single-thread
-/// affinity (see the comments on CreateViewModelWithController).
+/// Completes synchronously so controller-backed view-model tests keep their single-thread affinity (see the comments on CreateViewModelWithController).
 /// </summary>
 internal sealed class FakeClipExporter : IClipExporter
 {

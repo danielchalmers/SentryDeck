@@ -80,8 +80,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
         var leftPlaylistPath = mediaSource.CameraPlaylistPaths[CameraNames.LeftRepeater];
         var leftContent = File.ReadAllText(leftPlaylistPath);
 
-        // Only chunk 0's file should appear; chunk 1 is missing so the camera's playlist stops there,
-        // and chunk 2 (which does have the file) must not be included since it comes after the gap.
+        // Only chunk 0's file should appear; chunk 1 is missing so the camera's playlist stops there, and chunk 2 (which does have the file) must not be included since it comes after the gap.
         leftContent.ShouldContain(clipFiles.GetFfconcatPath(0, CameraNames.LeftRepeater));
         leftContent.ShouldNotContain(clipFiles.GetFfconcatPath(2, CameraNames.LeftRepeater));
 
@@ -260,8 +259,8 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
         chunks[2] = chunkWithoutLeft;
         var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent: null);
 
-        // Exclude chunk 1 (corrupt). Remaining sequence for left-repeater is [0, 2(gap), 3];
-        // the gap at chunk 2 must still truncate the left-repeater playlist after chunk 0.
+        // Exclude chunk 1 (corrupt).
+        // Remaining sequence for left-repeater is [0, 2(gap), 3]; the gap at chunk 2 must still truncate the left-repeater playlist after chunk 0.
         var mediaSource = Build(clip, new HashSet<int> { 1 });
 
         mediaSource.ChunkStarts.Count.ShouldBe(3); // chunks 0, 2, 3 remain in the shared timeline.
@@ -282,8 +281,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
 
-        // Corrupt chunk 1's front file: a truncated Tesla mp4 loses its tail-positioned moov, so
-        // the duration probe fails and the whole chunk must be dropped up front.
+        // Corrupt chunk 1's front file: a truncated Tesla mp4 loses its tail-positioned moov, so the duration probe fails and the whole chunk must be dropped up front.
         File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.Front), TestMp4.GarbageBytes);
 
         var mediaSource = Build(clipFiles.Clip);
@@ -342,8 +340,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
 
-        // Corrupt chunk 1's back-camera file only; the shared timeline is front-driven and
-        // must be unaffected, while the back playlist truncates at the unreadable file.
+        // Corrupt chunk 1's back-camera file only; the shared timeline is front-driven and must be unaffected, while the back playlist truncates at the unreadable file.
         File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.Back), TestMp4.GarbageBytes);
 
         var mediaSource = Build(clipFiles.Clip);
@@ -423,9 +420,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     [Fact]
     public void Build_MissingMiddleChunk_ProducesOneGapAtTheRightMediaTime()
     {
-        // Chunk 1 (which would start at wall-clock +60s) is entirely absent from the clip -- as if
-        // deleted from disk -- so chunk 2's timestamp (+180s, i.e. a 2-minute jump from chunk 0's
-        // end at +60s) leaves a wall-clock gap the builder never even sees as an exclusion.
+        // Chunk 1 (which would start at wall-clock +60s) is entirely absent from the clip -- as if deleted from disk -- so chunk 2's timestamp (+180s, i.e. a 2-minute jump from chunk 0's end at +60s) leaves a wall-clock gap the builder never even sees as an exclusion.
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var firstTimestamp = clipFiles.Clip.Chunks[0].Timestamp;
         var laterTimestamp = firstTimestamp.AddMinutes(3);
@@ -448,8 +443,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
 
         var mediaSource = Build(clip);
 
-        // Chunk 0 is 60s of media, starting at media time 0; the second included chunk starts
-        // right after it at media time 60s, regardless of the 3-minute wall-clock jump.
+        // Chunk 0 is 60s of media, starting at media time 0; the second included chunk starts right after it at media time 60s, regardless of the 3-minute wall-clock jump.
         mediaSource.ChunkStarts.ShouldBe([TimeSpan.Zero, TimeSpan.FromSeconds(60)]);
         mediaSource.GapPositions.ShouldBe([TimeSpan.FromSeconds(60)]);
     }
@@ -491,8 +485,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
 
         var mediaSource = Build(clip);
 
-        // An instant that falls between chunk 0's probed end (+60s) and chunk 2's timestamp
-        // (+120s) has no media time of its own; it snaps forward to where footage resumes.
+        // An instant that falls between chunk 0's probed end (+60s) and chunk 2's timestamp (+120s) has no media time of its own; it snaps forward to where footage resumes.
         var instantInsideGap = clipFiles.Clip.Chunks[0].Timestamp.AddSeconds(90);
 
         mediaSource.ToMediaTime(instantInsideGap).ShouldBe(TimeSpan.FromSeconds(60));
@@ -501,9 +494,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     [Fact]
     public void ToMediaTime_InstantInsideExcludedLeadingChunk_SnapsForwardToMediaTimeZero()
     {
-        // Chunk 0 is excluded (e.g. corrupt), so the surviving footage begins at chunk 1. An event
-        // that fired during chunk 0's window sits in a LEADING gap and must snap forward to where
-        // footage resumes -- media time zero -- just like an instant inside a mid-clip gap.
+        // Chunk 0 is excluded (e.g. corrupt), so the surviving footage begins at chunk 1. An event that fired during chunk 0's window sits in a LEADING gap and must snap forward to where footage resumes -- media time zero -- just like an instant inside a mid-clip gap.
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         var mediaSource = Build(clipFiles.Clip, new HashSet<int> { 0 });
 
@@ -515,8 +506,7 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     [Fact]
     public void ToMediaTime_InstantBeforeClipStart_StaysNullEvenWithExcludedLeadingChunk()
     {
-        // Clock skew: earlier than the clip ever recorded stays unmapped -- the leading-gap snap
-        // only covers instants at or after the clip's original start.
+        // Clock skew: earlier than the clip ever recorded stays unmapped -- the leading-gap snap only covers instants at or after the clip's original start.
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         var mediaSource = Build(clipFiles.Clip, new HashSet<int> { 0 });
 

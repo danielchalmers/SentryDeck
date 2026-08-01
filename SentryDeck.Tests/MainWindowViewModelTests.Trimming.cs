@@ -92,10 +92,8 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public void TrimCommands_ReEnableWhenLoadingEndsLast()
     {
-        // Mirrors the real clip-open order: the controller reports Duration and IsMediaOpen while
-        // the view-model is still loading, so CanSeek only becomes true when IsLoading flips off.
-        // Every CanSeek-gated command must be re-queried on that final transition — the Trim
-        // button shipped permanently disabled because it wasn't.
+        // Mirrors the real clip-open order: the controller reports Duration and IsMediaOpen while the view-model is still loading, so CanSeek only becomes true when IsLoading flips off.
+        // Every CanSeek-gated command must be re-queried on that final transition: the Trim button shipped permanently disabled because it wasn't.
         var vm = CreateViewModelWithController(out var controller, out _);
         vm.IsLoading = true;
         controller.Duration = TimeSpan.FromMinutes(1);
@@ -276,8 +274,8 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public async Task SaveEventClip_ExportsFrontCameraWindowAroundTheEvent()
     {
-        // 3-chunk clip, event 90s in: the ±30s window is media time 60s-120s. The clip is not
-        // open in any player, so the media source is built on demand via the injected builder.
+        // 3-chunk clip, event 90s in: the ±30s window is media time 60s-120s.
+        // The clip is not open in any player, so the media source is built on demand via the injected builder.
         var clip = ClipWithChunksAndEvent(chunkCount: 3, eventOffset: TimeSpan.FromSeconds(90));
         var exporter = new FakeClipExporter();
         var vm = new MainWindowViewModel(
@@ -323,8 +321,8 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public async Task SaveEventClip_BuilderThrows_ShowsErrorInsteadOfCrashing()
     {
-        // Building an unopened clip's media source does real IO and can throw (drive unplugged,
-        // temp write fails). It must surface an Export Failed dialog, not escape to the dispatcher.
+        // Building an unopened clip's media source does real IO and can throw (drive unplugged, temp write fails).
+        // It must surface an Export Failed dialog, not escape to the dispatcher.
         var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
         var exporter = new FakeClipExporter();
         var vm = new MainWindowViewModel(

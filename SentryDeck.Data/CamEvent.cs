@@ -63,10 +63,8 @@ public record class CamEvent
         }
         catch (JsonException)
         {
-            // A single malformed field (e.g. the blank est_lat Tesla sometimes writes) makes strict
-            // deserialization throw, which would discard ALL metadata for the clip -- losing the
-            // city and the timestamp the clip name falls back to. Recover field by field instead,
-            // keeping whatever parses.
+            // A single malformed field (e.g. the blank est_lat Tesla sometimes writes) makes strict deserialization throw, which would discard ALL metadata for the clip -- losing the city and the timestamp the clip name falls back to.
+            // Recover field by field instead, keeping whatever parses.
             return DeserializeLenient(json);
         }
     }
@@ -99,9 +97,7 @@ public record class CamEvent
         };
     }
 
-    // Case-insensitive lookup (mirroring PropertyNameCaseInsensitive on the strict path) returning
-    // the field as text: a JSON string yields its unquoted content, a number/bool its literal, so
-    // the typed parsers below accept both quoted and unquoted values like the strict path does.
+    // Case-insensitive lookup (mirroring PropertyNameCaseInsensitive on the strict path) returning the field as text: a JSON string yields its unquoted content, a number/bool its literal, so the typed parsers below accept both quoted and unquoted values like the strict path does.
     private static string ReadRaw(JsonObject obj, string name)
     {
         JsonNode node = null;

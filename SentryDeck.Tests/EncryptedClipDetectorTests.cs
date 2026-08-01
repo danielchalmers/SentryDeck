@@ -81,7 +81,7 @@ public sealed class EncryptedClipDetectorTests : IDisposable
     [Fact]
     public void Clip_WithOnePlayableChunk_IsNotEncrypted()
     {
-        // One valid header among the chunks means ordinary video with some corruption — the recovery path should keep handling it.
+        // One valid header among the chunks means ordinary video with some corruption, so the recovery path should keep handling it.
         var clip = ClipWithFrontFiles(
             TestMp4.EncryptedLookingBytes,
             TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));

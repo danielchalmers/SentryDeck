@@ -11,9 +11,9 @@ using Serilog;
 namespace SentryDeck;
 
 /// <summary>
-/// Main WPF window. Owns only view concerns: window lifecycle, Flyleaf host layout, the seek
-/// slider input plumbing, and search-box focus. All state, commands, and orchestration live in
-/// <see cref="MainWindowViewModel"/>.
+/// Main WPF window.
+/// Owns only view concerns: window lifecycle, Flyleaf host layout, the seek slider input plumbing, and search-box focus.
+/// All state, commands, and orchestration live in <see cref="MainWindowViewModel"/>.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -48,8 +48,8 @@ public partial class MainWindow : Window
 
         DataContext = _viewModel;
 
-        // Clicking a player (incl. the mini previews) switches to that camera. Flyleaf renders each camera
-        // into its own native surface, so the click must be caught on the surface, not via a WPF overlay.
+        // Clicking a player (incl. the mini previews) switches to that camera.
+        // Flyleaf renders each camera into its own native surface, so the click must be caught on the surface, not via a WPF overlay.
         foreach (var (camera, host) in _cameraHosts)
         {
             HookCameraClick(host, camera);
@@ -119,8 +119,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Tunnels from the window down, so the search shortcut fires no matter which control holds focus
-        // (seek slider, a camera tile, the speed combo, …) — not only when the sidebar list is focused.
+        // Tunnels from the window down, so the search shortcut fires no matter which control holds focus (seek slider, a camera tile, the speed combo, …), not only when the sidebar list is focused.
         if (MainWindowViewModel.IsSearchFocusShortcut(e.Key, Keyboard.Modifiers))
         {
             _viewModel.RequestSearchFocus();
@@ -140,26 +139,22 @@ public partial class MainWindow : Window
 
     private void ClipListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
-        // Right-click should open the context menu without switching to (and playing) the clip. Marking
-        // the button-down handled suppresses the ListBox's right-click selection; the context menu still
-        // opens on button-up and targets the right-clicked item via its PlacementTarget.
+        // Right-click should open the context menu without switching to (and playing) the clip.
+        // Marking the button-down handled suppresses the ListBox's right-click selection; the context menu still opens on button-up and targets the right-clicked item via its PlacementTarget.
         e.Handled = true;
     }
 
     private void ClipListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        // A left-click selects a clip but leaves keyboard focus on the ListBoxItem, which then
-        // swallows Space/arrows before they bubble to Window_KeyDown — so playback shortcuts die
-        // after clicking a clip. Re-park focus on the neutral VideoContainer (same fix the camera
-        // tiles use). Deferred to Input priority because the ListBox's own click handling re-takes
-        // focus after this handler; mouse-only so Tab/arrow keyboard navigation of the list still works.
+        // A left-click selects a clip but leaves keyboard focus on the ListBoxItem, which then swallows Space/arrows before they bubble to Window_KeyDown, so playback shortcuts die after clicking a clip.
+        // Re-park focus on the neutral VideoContainer (same fix the camera tiles use).
+        // Deferred to Input priority because the ListBox's own click handling re-takes focus after this handler; mouse-only so Tab/arrow keyboard navigation of the list still works.
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Keyboard.Focus(VideoContainer)));
     }
 
     private async void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        // While typing in the search box, keys are text (space, digits, arrows) — don't
-        // hijack them for playback/camera shortcuts.
+        // While typing in the search box, keys are text (space, digits, arrows), so don't hijack them for playback/camera shortcuts.
         if (SearchBox.IsKeyboardFocused)
         {
             return;
@@ -181,11 +176,8 @@ public partial class MainWindow : Window
         await _viewModel.EndSeekAsync();
     }
 
-    // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation,
-    // whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for
-    // the one-off value jump a plain click makes. PreviewMouseDown has already called BeginSeek by
-    // the time this fires, so even a plain click issues one keyframe scrub seek here — harmless,
-    // since the accurate mouse-up seek runs behind the same serialized lock and lands last.
+    // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation, whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for the one-off value jump a plain click makes.
+    // PreviewMouseDown has already called BeginSeek by the time this fires, so even a plain click issues one keyframe scrub seek here, which is harmless since the accurate mouse-up seek runs behind the same serialized lock and lands last.
     private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         _viewModel.OnSeekSliderValueChanged();
@@ -207,9 +199,7 @@ public partial class MainWindow : Window
         SearchBox.SelectAll();
     }
 
-    // The FlyleafHost creates its native Surface window when it loads (and reuses it across reparenting),
-    // so subscribe once it exists. handledEventsToo ensures we still see the click if Flyleaf marks it
-    // handled, and the HashSet guards against re-subscribing when Loaded fires again on a reparent.
+    // The FlyleafHost creates its native Surface window when it loads (and reuses it across reparenting), so subscribe once it exists. handledEventsToo ensures we still see the click if Flyleaf marks it handled, and the HashSet guards against re-subscribing when Loaded fires again on a reparent.
     private void HookCameraClick(FlyleafHost host, string cameraView)
     {
         host.Loaded += (_, _) =>
@@ -222,10 +212,8 @@ public partial class MainWindow : Window
                     {
                         _viewModel.SelectCameraViewCommand.Execute(cameraView);
 
-                        // The click moved Win32 focus to the native Flyleaf surface, which would
-                        // swallow every keyboard shortcut (they're handled in Window_KeyDown).
-                        // Pull it back onto the video container — a neutral focusable element
-                        // that consumes no shortcut keys (see its remarks in the XAML).
+                        // The click moved Win32 focus to the native Flyleaf surface, which would swallow every keyboard shortcut (they're handled in Window_KeyDown).
+                        // Pull it back onto the video container, a neutral focusable element that consumes no shortcut keys (see its remarks in the XAML).
                         Activate();
                         Keyboard.Focus(VideoContainer);
 
@@ -259,7 +247,7 @@ public partial class MainWindow : Window
             placed.Add(host);
         }
 
-        // Hosts with no slot in this view — the B-pillars while the classic 2x2 grid is up, any camera the current clip didn't record, and the enlarged camera's own (empty) tile — wait hidden in the pool so they never linger inside a stale slot.
+        // Hosts with no slot in this view (the B-pillars while the classic 2x2 grid is up, any camera the current clip didn't record, and the enlarged camera's own empty tile) wait hidden in the pool so they never linger inside a stale slot.
         foreach (var host in _cameraHosts.Values)
         {
             if (!placed.Contains(host))
@@ -268,9 +256,8 @@ public partial class MainWindow : Window
             }
         }
 
-        // Force a synchronous layout pass so each moved host reaches its final bounds promptly. Note: a
-        // brief flash of the reparented Flyleaf surface at its old size is a known limitation here and is
-        // accepted (eliminating it would require not reparenting the hosts at all).
+        // Force a synchronous layout pass so each moved host reaches its final bounds promptly.
+        // Note: a brief flash of the reparented Flyleaf surface at its old size is a known limitation here and is accepted (eliminating it would require not reparenting the hosts at all).
         UpdateLayout();
     }
 

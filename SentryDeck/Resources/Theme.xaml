@@ -64,8 +64,8 @@
 
     <!--
         ============================================================
-        Iconography — Segoe Fluent Icons. Glyphs inherit Foreground
-        so they recolor on hover/disabled (the whole reason emoji fail).
+        Iconography: Segoe Fluent Icons.
+        Glyphs inherit Foreground so they recolor on hover/disabled (the whole reason emoji fail).
         ============================================================
     -->
     <Style x:Key="AppGlyph"
@@ -79,9 +79,8 @@
 
     <!--
         ============================================================
-        App icon — the "Sentry Eye" mark, kept in sync by hand with
-        SentryDeck.ico so in-app usages stay vector-crisp. Brand
-        colors are fixed on purpose; it does not follow the theme.
+        App icon: the "Sentry Eye" mark, kept in sync by hand with SentryDeck.ico so in-app usages stay vector-crisp.
+        Brand colors are fixed on purpose; it does not follow the theme.
         ============================================================
     -->
     <DrawingImage x:Key="AppIconImage">

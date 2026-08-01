@@ -50,8 +50,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        // Event fired on the first recorded frame (timestamp == first chunk's timestamp):
-        // fraction is exactly 0, which is a real position, not clock skew.
+        // Event fired on the first recorded frame (timestamp == first chunk's timestamp): fraction is exactly 0, which is a real position, not clock skew.
         vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.Zero);
 
         vm.HasEventMarker.ShouldBeTrue();
@@ -115,15 +114,12 @@ public sealed partial class MainWindowViewModelTests
         vm.ChunkBoundaries.ShouldBeEmpty();
     }
 
-    // --- Gap-aware markers: once the controller has actually opened the clip's media, event/gap
-    // positions come from the real ClipMediaSource (probed durations + wall-clock mapping) rather
-    // than the uniform-chunk-length estimate used before the media opens. ---
+    // --- Gap-aware markers: once the controller has actually opened the clip's media, event/gap positions come from the real ClipMediaSource (probed durations + wall-clock mapping) rather than the uniform-chunk-length estimate used before the media opens. ---
 
     [Fact]
     public void GapPositions_EmptyBeforeMediaOpens()
     {
-        // No controller at all: RecomputeSelectedClipTimeline can only fall back to the estimate,
-        // which carries no gap information.
+        // No controller at all: RecomputeSelectedClipTimeline can only fall back to the estimate, which carries no gap information.
         var vm = CreateViewModel();
 
         vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(90));
@@ -134,8 +130,7 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public void GapPositions_ReflectAGapOnceMediaSourceIsOpen()
     {
-        // Chunk 1 is missing from disk entirely (as if deleted), leaving a real wall-clock gap
-        // between chunk 0 (60s, ending at +60s) and chunk 2 (timestamped +120s).
+        // Chunk 1 is missing from disk entirely (as if deleted), leaving a real wall-clock gap between chunk 0 (60s, ending at +60s) and chunk 2 (timestamped +120s).
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         File.Delete(clipFiles.GetPath(1, CameraNames.Front));
         var chunks = new List<CamChunk> { clipFiles.Clip.Chunks[0], clipFiles.Clip.Chunks[2] };
@@ -151,10 +146,7 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public void EventMarker_AfterAGap_UsesGapCorrectedFraction_NotLinearTime()
     {
-        // Chunk 1 is missing; the event happened 10s into chunk 2 (wall-clock +130s), which the
-        // linear/estimated model (3 x 60s = 180s modeled) would place at (130/180) ~= 0.722, but
-        // the real, gap-aware media only spans 120s and the event lands at media time 70s (60s for
-        // chunk 0 + 10s into chunk 2) = 70/120 ~= 0.583.
+        // Chunk 1 is missing; the event happened 10s into chunk 2 (wall-clock +130s), which the linear/estimated model (3 x 60s = 180s modeled) would place at (130/180) ~= 0.722, but the real, gap-aware media only spans 120s and the event lands at media time 70s (60s for chunk 0 + 10s into chunk 2) = 70/120 ~= 0.583.
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         File.Delete(clipFiles.GetPath(1, CameraNames.Front));
         var chunk2Timestamp = clipFiles.Clip.Chunks[2].Timestamp;
@@ -168,8 +160,7 @@ public sealed partial class MainWindowViewModelTests
         vm.HasEventMarker.ShouldBeTrue();
         vm.EventMarkerPosition.ShouldBe(70.0 / 120, 0.0001);
 
-        // Sanity check that this genuinely differs from what the naive linear/estimated model
-        // (ignoring the gap) would have produced, so the test would fail if gap-awareness regressed.
+        // Sanity check that this genuinely differs from what the naive linear/estimated model (ignoring the gap) would have produced, so the test would fail if gap-awareness regressed.
         Math.Abs(vm.EventMarkerPosition - (130.0 / 180)).ShouldBeGreaterThan(0.01);
     }
 

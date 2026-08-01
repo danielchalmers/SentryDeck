@@ -6,9 +6,8 @@ using Serilog;
 namespace SentryDeck;
 
 /// <summary>
-/// A single export job: trim the clip's media timeline to [<see cref="Start"/>, <see cref="End"/>)
-/// for one camera and write the result to <see cref="OutputPath"/>. Times are media time on the
-/// opened <see cref="MediaSource"/> (the seek-bar axis), not wall-clock time.
+/// A single export job: trim the clip's media timeline to [<see cref="Start"/>, <see cref="End"/>) for one camera and write the result to <see cref="OutputPath"/>.
+/// Times are media time on the opened <see cref="MediaSource"/> (the seek-bar axis), not wall-clock time.
 /// </summary>
 public sealed record class ClipExportRequest(
     CamClip Clip,
@@ -27,14 +26,12 @@ public interface IClipExporter
 }
 
 /// <summary>
-/// Exports a media-time range of one camera's footage as a single mp4 via FFmpeg's concat
-/// demuxer with per-file inpoint/outpoint directives and stream copy — no re-encode, so exports
-/// are fast and lossless. Stream copy cuts at keyframes, so the actual bounds can land up to a
-/// GOP (~1s in Tesla footage) before the requested ones.
+/// Exports a media-time range of one camera's footage as a single mp4 via FFmpeg's concat demuxer with per-file inpoint/outpoint directives and stream copy: no re-encode, so exports are fast and lossless.
+/// Stream copy cuts at keyframes, so the actual bounds can land up to a GOP (~1s in Tesla footage) before the requested ones.
 /// </summary>
 /// <param name="runFfmpeg">
-/// Runs FFmpeg with an executable path and an argument string. Defaults to launching the real
-/// process; overridable for tests, which must not spawn ffmpeg.
+/// Runs FFmpeg with an executable path and an argument string.
+/// Defaults to launching the real process; overridable for tests, which must not spawn ffmpeg.
 /// </param>
 public sealed class ClipExporter(
     Func<string> ffmpegDirectoryResolver,
@@ -57,8 +54,7 @@ public sealed class ClipExporter(
 
         Directory.CreateDirectory(ExportScriptDirectory);
 
-        // Unique per export (unlike the deterministic playback playlists): two exports of the
-        // same clip may overlap in time and must not clobber each other's scripts.
+        // Unique per export (unlike the deterministic playback playlists): two exports of the same clip may overlap in time and must not clobber each other's scripts.
         var scriptPath = Path.Combine(ExportScriptDirectory, $"{Guid.NewGuid():N}.ffconcat");
         await File.WriteAllTextAsync(scriptPath, BuildConcatScript(entries), cancellationToken);
 
@@ -89,13 +85,12 @@ public sealed class ClipExporter(
     }
 
     /// <summary>
-    /// Resolves the trim segments to this camera's files. A chunk past the first missing or
-    /// present-but-unreadable camera file truncates the export there, mirroring how playback
-    /// truncates that camera's playlist; no footage at all for the range is an error.
+    /// Resolves the trim segments to this camera's files.
+    /// A chunk past the first missing or present-but-unreadable camera file truncates the export there, mirroring how playback truncates that camera's playlist; no footage at all for the range is an error.
     /// </summary>
     /// <param name="isSideFileReadable">
-    /// Whether a non-front camera file has a readable duration. Defaults to the same mp4 probe the
-    /// media-source builder uses; overridable for tests, which work on model-only file paths.
+    /// Whether a non-front camera file has a readable duration.
+    /// Defaults to the same mp4 probe the media-source builder uses; overridable for tests, which work on model-only file paths.
     /// </param>
     internal static IReadOnlyList<(string FilePath, TimeSpan? InPoint, TimeSpan? OutPoint)> ResolveEntries(
         ClipExportRequest request,
@@ -120,10 +115,8 @@ public sealed class ClipExporter(
                 break;
             }
 
-            // A present-but-unreadable side file would make FFmpeg's concat demuxer abort the whole
-            // export, so stop here exactly like the media-source builder truncates that camera's
-            // playback playlist. Front files need no probe: the timeline's segments only cover
-            // chunks whose front file was already probe-verified when the media source was built.
+            // A present-but-unreadable side file would make FFmpeg's concat demuxer abort the whole export, so stop here exactly like the media-source builder truncates that camera's playback playlist.
+            // Front files need no probe: the timeline's segments only cover chunks whose front file was already probe-verified when the media source was built.
             if (request.Camera != CameraNames.Front && !isSideFileReadable(file.FullPath))
             {
                 Log.Warning(
@@ -178,8 +171,7 @@ public sealed class ClipExporter(
 
     internal static string BuildArguments(string scriptPath, string outputPath)
     {
-        // -c copy: stream copy, no re-encode. +faststart: moov up front so the export streams
-        // well when shared. -safe 0: the script references absolute paths.
+        // -c copy: stream copy, no re-encode. +faststart: moov up front so the export streams well when shared. -safe 0: the script references absolute paths.
         return $"-hide_banner -loglevel error -y -f concat -safe 0 -i \"{scriptPath}\" -c copy -movflags +faststart \"{outputPath}\"";
     }
 

@@ -15,8 +15,7 @@ public sealed class CamChunkTests
         var first = CamFileFor(CameraNames.Back);
         var duplicate = CamFileFor(CameraNames.Back);
 
-        // Regression guard: an unguarded ToDictionary would throw here, and because CamClip.TryMap
-        // swallows the exception the whole clip folder would silently vanish from the library.
+        // Regression guard: an unguarded ToDictionary would throw here, and because CamClip.TryMap swallows the exception the whole clip folder would silently vanish from the library.
         var chunk = new CamChunk(Timestamp, [CamFileFor(CameraNames.Front), first, duplicate]);
 
         chunk.Files.Count.ShouldBe(2);

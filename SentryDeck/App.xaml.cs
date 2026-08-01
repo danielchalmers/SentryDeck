@@ -31,10 +31,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // A packaged WinExe has no console and no debugger attached, so without a file sink every
-        // log line — including the Log.Fatal from the unhandled-exception hooks above — is discarded
-        // in the field, making a shipped crash undiagnosable. Rolling daily with a small retention
-        // keeps the folder bounded.
+        // A packaged WinExe has no console and no debugger attached, so without a file sink every log line, including the Log.Fatal from the unhandled-exception hooks above, is discarded in the field, making a shipped crash undiagnosable.
+        // Rolling daily with a small retention keeps the folder bounded.
         var logPath = System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SentryDeck",
@@ -52,10 +50,8 @@ public partial class App : Application
             .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
             .CreateLogger();
 
-        // Last-resort safety net for exceptions raised on the UI thread by a command or event
-        // handler (e.g. Clipboard.SetText throwing COMException when a clipboard manager holds the
-        // clipboard, or Process.Start failing on a missing shell association). Without this, WPF
-        // tears the whole process down; a media reviewer should log the fault and stay open instead.
+        // Last-resort safety net for exceptions raised on the UI thread by a command or event handler (e.g. Clipboard.SetText throwing COMException when a clipboard manager holds the clipboard, or Process.Start failing on a missing shell association).
+        // Without this, WPF tears the whole process down; a media reviewer should log the fault and stay open instead.
         DispatcherUnhandledException += (_, e) =>
         {
             Log.Error(e.Exception, "Unhandled dispatcher exception; keeping the application alive");

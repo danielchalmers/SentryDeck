@@ -29,8 +29,7 @@ public sealed class ConverterTests
         converter.Convert("true", typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
     }
 
-    // The seek bar overlays position against the THUMB CENTER, which WPF's Track insets by half
-    // the thumb's width at each end: fraction f on a rail of width W maps to 10 + f × (W − 20).
+    // The seek bar overlays position against the THUMB CENTER, which WPF's Track insets by half the thumb's width at each end: fraction f on a rail of width W maps to 10 + f × (W − 20).
 
     [Fact]
     public void SeekOffsetConverter_MapsFractionToThumbCenter()
@@ -73,8 +72,7 @@ public sealed class ConverterTests
     [InlineData(1.0)]
     public void SeekFillWidth_EndsExactlyAtTheThumbCenter(double fraction)
     {
-        // The played fill must meet the thumb at every position, including the extremes (it used
-        // to diverge by half a thumb at 0 and 1).
+        // The played fill must meet the thumb at every position, including the extremes (it used to diverge by half a thumb at 0 and 1).
         var fill = (double)new SeekFillWidthConverter().Convert([fraction, 200d], typeof(double), null, null);
         var offset = (Thickness)new SeekOffsetConverter().Convert([fraction, 200d], typeof(Thickness), null, null);
 

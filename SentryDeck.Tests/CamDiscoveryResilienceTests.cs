@@ -3,8 +3,7 @@ using System.IO;
 namespace SentryDeck.Tests;
 
 /// <summary>
-/// Discovery must tolerate a single malformed/unreadable entry without discarding the whole
-/// library (regression guard for the "one bad filename empties the timeline" bug).
+/// Discovery must tolerate a single malformed/unreadable entry without discarding the whole library (regression guard for the "one bad filename empties the timeline" bug).
 /// </summary>
 public sealed class CamDiscoveryResilienceTests
 {
@@ -89,8 +88,8 @@ public sealed class CamDiscoveryResilienceTests
     [Fact]
     public void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
     {
-        // A folder like Tesla's RecentClips: loose files directly inside, no date-named subfolder and
-        // no event.json. The clip timestamp must come from the file names, not DateTime.MinValue.
+        // A folder like Tesla's RecentClips: loose files directly inside, no date-named subfolder and no event.json.
+        // The clip timestamp must come from the file names, not DateTime.MinValue.
         var root = CreateTempDir();
         try
         {

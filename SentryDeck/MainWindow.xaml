@@ -272,10 +272,7 @@
                                 </Track.IncreaseRepeatButton>
                                 <Track.Thumb>
                                     <!--
-                                        The scale transform lives on the Thumb (not the inner Grid) so
-                                        it sits in the Slider template's name scope — the hover storyboard
-                                        below targets ThumbScale by name, which fails across the nested
-                                        Thumb-template scope.
+                                        The scale transform lives on the Thumb (not the inner Grid) so it sits in the Slider template's name scope: the hover storyboard below targets ThumbScale by name, which fails across the nested Thumb-template scope.
                                     -->
                                     <Thumb x:Name="Thumb"
                                            RenderTransformOrigin="0.5,0.5">
@@ -587,9 +584,8 @@
                 </Grid.RowDefinitions>
 
                 <!--
-                    Search box. The Fluent TextBox supplies its own focus underline and inline
-                    clear button, so this chrome stays neutral (no accent outline on focus) and
-                    adds no second clear button — only the surrounding pill + a leading icon.
+                    Search box.
+                    The Fluent TextBox supplies its own focus underline and inline clear button, so this chrome stays neutral (no accent outline on focus) and adds no second clear button, only the surrounding pill plus a leading icon.
                 -->
                 <Border Grid.Row="0"
                         Margin="12,12,12,8"
@@ -1002,10 +998,10 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <!--  Focusable: keyboard focus is parked here after a camera-tile click so app-wide
-                              shortcuts bubble to Window_KeyDown. Focusing the Window instead doesn't work —
-                              it's a focus scope, so WPF redirects to the last focused child (often a clip
-                              ListBoxItem, which swallows Space/arrows for list navigation).  -->
+                        <!--
+                            Focusable: keyboard focus is parked here after a camera-tile click so app-wide shortcuts bubble to Window_KeyDown.
+                            Focusing the Window instead doesn't work because it's a focus scope, so WPF redirects to the last focused child (often a clip ListBoxItem, which swallows Space/arrows for list navigation).
+                        -->
                         <Border x:Name="VideoContainer"
                                 Grid.Row="0"
                                 Background="Black"
@@ -1341,10 +1337,8 @@
                 <StackPanel Grid.Row="1">
                     <!--
                         Trim panel: appears above the player controls while cutting a range.
-                        Deliberately wordy — labeled steps plus a hint line that walks through
-                        start → end → export, so the feature needs no manual. All state lives in
-                        the view-model (IsTrimming + the selection marks); closing always discards
-                        the marks.
+                        Deliberately wordy, with labeled steps plus a hint line that walks through start → end → export, so the feature needs no manual.
+                        All state lives in the view-model (IsTrimming plus the selection marks); closing always discards the marks.
                     -->
                     <Border Padding="16,10"
                             Background="{DynamicResource LayerFillColorDefaultBrush}"

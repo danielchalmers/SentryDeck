@@ -37,8 +37,7 @@ public sealed class SeekScrubCoalescerTests
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1));
         issued.ShouldBe([TimeSpan.FromSeconds(1)]);
 
-        // A rapid burst of further values arrives while the first seek is still in flight; all but
-        // the last are dropped entirely (never issued, not even queued).
+        // A rapid burst of further values arrives while the first seek is still in flight; all but the last are dropped entirely (never issued, not even queued).
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1.3));
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1.6));
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1.9));
@@ -123,8 +122,7 @@ public sealed class SeekScrubCoalescerTests
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(1));
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(30));
 
-        // Mouse-up: the gesture ends, so the queued value must be dropped -- re-issuing it after
-        // the release's accurate seek would land a keyframe scrub last and move the playhead.
+        // Mouse-up: the gesture ends, so the queued value must be dropped -- re-issuing it after the release's accurate seek would land a keyframe scrub last and move the playhead.
         coalescer.CancelPending();
 
         gate.SetResult();
@@ -147,8 +145,7 @@ public sealed class SeekScrubCoalescerTests
         coalescer.OnDragValueChanged(TimeSpan.FromSeconds(10));
         coalescer.Reset();
 
-        // Even though this is well within 250ms of the previous value, Reset cleared history for
-        // the new drag, so it must issue.
+        // Even though this is well within 250ms of the previous value, Reset cleared history for the new drag, so it must issue.
         coalescer.OnDragValueChanged(TimeSpan.FromMilliseconds(10050));
 
         issued.ShouldBe([TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(10050)]);

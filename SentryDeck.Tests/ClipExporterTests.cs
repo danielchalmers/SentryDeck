@@ -10,9 +10,8 @@ public sealed class ClipExporterTests
     private static readonly string ExportScriptDirectory =
         Path.Combine(Path.GetTempPath(), "SentryDeck", "exports");
 
-    // A clip of three 60s chunks plus the matching opened media source. Files never touch disk:
-    // ResolveEntries/BuildConcatScript work purely on the model. omitCameraFromChunk removes one
-    // camera's file from one chunk to exercise the truncation rules.
+    // A clip of three 60s chunks plus the matching opened media source.
+    // Files never touch disk: ResolveEntries/BuildConcatScript work purely on the model. omitCameraFromChunk removes one camera's file from one chunk to exercise the truncation rules.
     private static (CamClip Clip, ClipMediaSource Source) CreateClip(
         string omitCamera = null,
         int omitFromChunkIndex = -1)
@@ -79,8 +78,7 @@ public sealed class ClipExporterTests
     [Fact]
     public void ResolveEntries_TruncatesAtTheFirstMissingCameraFile()
     {
-        // The back camera is missing its middle chunk: an export spanning all three keeps only
-        // the first, mirroring how playback truncates that camera's playlist.
+        // The back camera is missing its middle chunk: an export spanning all three keeps only the first, mirroring how playback truncates that camera's playlist.
         var fixture = CreateClip(omitCamera: CameraNames.Back, omitFromChunkIndex: 1);
 
         var entries = ClipExporter.ResolveEntries(
@@ -94,9 +92,7 @@ public sealed class ClipExporterTests
     [Fact]
     public void ResolveEntries_TruncatesAtTheFirstUnreadableSideCameraFile()
     {
-        // The back camera's middle chunk is present but corrupt (no readable duration): playback
-        // truncates that camera's playlist there, so the export must stop there too instead of
-        // feeding the unreadable file to FFmpeg's concat demuxer.
+        // The back camera's middle chunk is present but corrupt (no readable duration): playback truncates that camera's playlist there, so the export must stop there too instead of feeding the unreadable file to FFmpeg's concat demuxer.
         var fixture = CreateClip();
 
         var entries = ClipExporter.ResolveEntries(
@@ -110,8 +106,7 @@ public sealed class ClipExporterTests
     [Fact]
     public void ResolveEntries_DoesNotProbeTheFrontCamera()
     {
-        // Front chunks were probe-verified when the media source was built, so the export must not
-        // second-guess them (a probe failing everything would otherwise truncate the cut to nothing).
+        // Front chunks were probe-verified when the media source was built, so the export must not second-guess them (a probe failing everything would otherwise truncate the cut to nothing).
         var fixture = CreateClip();
 
         var entries = ClipExporter.ResolveEntries(

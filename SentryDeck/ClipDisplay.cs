@@ -1,10 +1,8 @@
 namespace SentryDeck;
 
 /// <summary>
-/// View-side presentation helpers for clip metadata. Maps Tesla's raw
-/// <see cref="CamEvent.Reason"/> strings (e.g. "user_interaction_honk",
-/// "sentry_aware_object_detection", "vehicle_auto_emergency_braking") to a small,
-/// stable set of friendly categories used by the clip card and search.
+/// View-side presentation helpers for clip metadata.
+/// Maps Tesla's raw <see cref="CamEvent.Reason"/> strings (e.g. "user_interaction_honk", "sentry_aware_object_detection", "vehicle_auto_emergency_braking") to a small, stable set of friendly categories used by the clip card and search.
 /// </summary>
 public static class ClipDisplay
 {

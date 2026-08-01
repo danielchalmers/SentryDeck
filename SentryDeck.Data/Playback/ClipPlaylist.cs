@@ -62,10 +62,9 @@ public sealed class ClipPlaylist
     }
 
     /// <summary>
-    /// Removes a clip from the playlist while keeping the current selection pointed at the same
-    /// clip. Removing the current clip itself clears the selection (the caller owns stopping
-    /// playback); a clip before the current one shifts the index down to compensate. Returns false
-    /// when the clip isn't in the playlist.
+    /// Removes a clip from the playlist while keeping the current selection pointed at the same clip.
+    /// Removing the current clip itself clears the selection (the caller owns stopping playback); a clip before the current one shifts the index down to compensate.
+    /// Returns false when the clip isn't in the playlist.
     /// </summary>
     public bool RemoveClip(CamClip clip)
     {

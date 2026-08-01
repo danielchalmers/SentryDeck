@@ -52,17 +52,14 @@ public partial record class CamFile
             return null;
         }
 
-        // The regex only checks digit counts, so a pattern-valid but calendar-invalid name
-        // (e.g. month 13) reaches here; TryParseExact skips it instead of throwing and aborting
-        // the whole scan.
+        // The regex only checks digit counts, so a pattern-valid but calendar-invalid name (e.g. month 13) reaches here; TryParseExact skips it instead of throwing and aborting the whole scan.
         if (!DateTime.TryParseExact(match.Groups["date"].Value, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var timestamp))
         {
             return null;
         }
 
-        // Canonicalize legacy aliases (e.g. rear_view -> back) so old and new clips share one
-        // camera vocabulary. The capture stays greedy on purpose: an unrecognized suffix (a future
-        // camera) is kept as-is rather than dropped.
+        // Canonicalize legacy aliases (e.g. rear_view -> back) so old and new clips share one camera vocabulary.
+        // The capture stays greedy on purpose: an unrecognized suffix (a future camera) is kept as-is rather than dropped.
         var camera = CameraNames.Canonicalize(match.Groups["camera"].Value);
         return new CamFile(path, timestamp, camera);
     }

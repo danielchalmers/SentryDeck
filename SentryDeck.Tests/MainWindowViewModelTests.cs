@@ -16,8 +16,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
     public void Dispose() => _playlists.Dispose();
 
-    // The view-model never invokes the controller factory in these tests; playback paths
-    // require FFmpeg/Flyleaf and are covered separately via VideoPlayerController.
+    // The view-model never invokes the controller factory in these tests; playback paths require FFmpeg/Flyleaf and are covered separately via VideoPlayerController.
     private static MainWindowViewModel CreateViewModel() => new(() => null!);
 
     private static CamClip ClipWithEvent(string name, string reason, string city, decimal lat = 0, decimal lon = 0)
@@ -75,10 +74,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         CameraNames.RightPillar,
     ];
 
-    // A generous 20s deadline (vs. the 5s used elsewhere in these test files): this helper waits on
-    // a real clip-open flowing through Task.Run/the media source builder, which can slow down a lot
-    // under the CPU/disk contention of the full suite's many parallel test classes; 20s comfortably
-    // absorbs that while still catching a genuine hang.
+    // A generous 20s deadline (vs. the 5s used elsewhere in these test files): this helper waits on a real clip-open flowing through Task.Run/the media source builder, which can slow down a lot under the CPU/disk contention of the full suite's many parallel test classes; 20s comfortably absorbs that while still catching a genuine hang.
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(20);
@@ -374,8 +370,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     [Fact]
     public void SelectCameraView_RaisesPropertyChangedForSelectedCameraView()
     {
-        // The view re-parents the Flyleaf hosts when SelectedCameraView changes,
-        // so this notification is part of the view/view-model contract.
+        // The view re-parents the Flyleaf hosts when SelectedCameraView changes, so this notification is part of the view/view-model contract.
         var vm = CreateViewModel();
         var changed = new List<string>();
         vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);

@@ -1,10 +1,7 @@
 namespace SentryDeck;
 
 /// <summary>
-/// Coalesces a rapid stream of scrub-seek requests (e.g. from a dragged seek bar thumb) down to
-/// at most one in-flight seek at a time, with trailing-edge coalescing: intermediate values that
-/// arrive while a seek is in flight are dropped, and only the latest value is issued once the
-/// in-flight seek completes -- and only if it differs meaningfully from the last-issued value.
+/// Coalesces a rapid stream of scrub-seek requests (e.g. from a dragged seek bar thumb) down to at most one in-flight seek at a time, with trailing-edge coalescing: intermediate values that arrive while a seek is in flight are dropped, and only the latest value is issued once the in-flight seek completes -- and only if it differs meaningfully from the last-issued value.
 /// No timers or polling; everything is driven by completion of the issued seek task.
 /// </summary>
 public sealed class SeekScrubCoalescer
@@ -18,9 +15,7 @@ public sealed class SeekScrubCoalescer
 
     /// <param name="issueScrubSeek">Performs the actual (fast/keyframe) seek for a given position.</param>
     /// <param name="minimumStep">
-    /// A queued value within this much media time of the last-issued value is dropped rather than
-    /// triggering another seek -- defaults to 250ms, matching the granularity a human drag can
-    /// meaningfully perceive.
+    /// A queued value within this much media time of the last-issued value is dropped rather than triggering another seek -- defaults to 250ms, matching the granularity a human drag can meaningfully perceive.
     /// </param>
     public SeekScrubCoalescer(Func<TimeSpan, Task> issueScrubSeek, TimeSpan? minimumStep = null)
     {
@@ -41,10 +36,9 @@ public sealed class SeekScrubCoalescer
     }
 
     /// <summary>
-    /// Reports the drag's latest value. If no seek is in flight, issues one immediately. If one is
-    /// already in flight, remembers this value (overwriting any previously queued one) so it's
-    /// issued -- if it still clears <see cref="_minimumStep"/> against the last-issued value -- once
-    /// the in-flight seek completes.
+    /// Reports the drag's latest value.
+    /// If no seek is in flight, issues one immediately.
+    /// If one is already in flight, remembers this value (overwriting any previously queued one) so it's issued -- if it still clears <see cref="_minimumStep"/> against the last-issued value -- once the in-flight seek completes.
     /// </summary>
     public void OnDragValueChanged(TimeSpan value)
     {
@@ -66,10 +60,8 @@ public sealed class SeekScrubCoalescer
     }
 
     /// <summary>
-    /// Drops any value queued behind the in-flight seek without disturbing that seek. Called when
-    /// the drag gesture ends: the release is followed by an ACCURATE seek to the final position,
-    /// and a queued keyframe scrub re-issued after it would land last and yank the playhead off
-    /// the frame-accurate release point (up to a full GOP away).
+    /// Drops any value queued behind the in-flight seek without disturbing that seek.
+    /// Called when the drag gesture ends: the release is followed by an ACCURATE seek to the final position, and a queued keyframe scrub re-issued after it would land last and yank the playhead off the frame-accurate release point (up to a full GOP away).
     /// </summary>
     public void CancelPending()
     {
@@ -80,8 +72,7 @@ public sealed class SeekScrubCoalescer
     }
 
     /// <summary>
-    /// Resets state for a fresh drag: forgets the last-issued value so the next
-    /// <see cref="OnDragValueChanged"/> call always issues, regardless of where a previous drag left off.
+    /// Resets state for a fresh drag: forgets the last-issued value so the next <see cref="OnDragValueChanged"/> call always issues, regardless of where a previous drag left off.
     /// </summary>
     public void Reset()
     {
@@ -104,8 +95,7 @@ public sealed class SeekScrubCoalescer
         _lastIssuedValue = value;
         _pendingValue = null;
 
-        // Fire-and-forget by design: the coalescer chains the next seek off this task's completion
-        // itself (below), so callers never await individual scrub seeks.
+        // Fire-and-forget by design: the coalescer chains the next seek off this task's completion itself (below), so callers never await individual scrub seeks.
         _ = RunSeekAsync(value);
     }
 

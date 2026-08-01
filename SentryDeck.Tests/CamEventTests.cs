@@ -55,9 +55,8 @@ public sealed class CamEventTests
     [Fact]
     public void Deserialization_RecoversValidFieldsFromMalformedJson()
     {
-        // Every field here is well-formed JSON but several are semantically bad (bad date, non-numeric
-        // lat/lon, non-integer camera). Strict deserialization throws; the lenient fallback keeps the
-        // fields that DO parse (city, reason) instead of discarding all metadata.
+        // Every field here is well-formed JSON but several are semantically bad (bad date, non-numeric lat/lon, non-integer camera).
+        // Strict deserialization throws; the lenient fallback keeps the fields that DO parse (city, reason) instead of discarding all metadata.
         var json = """
         {
             "timestamp":"2023T15:54:27",
@@ -85,8 +84,7 @@ public sealed class CamEventTests
     [Fact]
     public void Deserialization_BlankCoordinateKeepsCityAndTimestamp()
     {
-        // Tesla occasionally writes an incomplete est_lat; a single blank field must not discard the
-        // city and the event timestamp the clip name falls back to.
+        // Tesla occasionally writes an incomplete est_lat; a single blank field must not discard the city and the event timestamp the clip name falls back to.
         var json = """
         {
             "timestamp":"2023-06-03T15:54:27",

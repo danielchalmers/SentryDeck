@@ -6,17 +6,13 @@ using Serilog;
 namespace SentryDeck;
 
 /// <summary>
-/// Coordinates Flyleaf camera players, playing each camera's chunk sequence as a single
-/// continuous ffconcat playlist so clip playback never stalls at chunk boundaries.
+/// Coordinates Flyleaf camera players, playing each camera's chunk sequence as a single continuous ffconcat playlist so clip playback never stalls at chunk boundaries.
 /// </summary>
 public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
     /// <summary>
-    /// How far short of <see cref="Duration"/> the front player's position can be when it ends
-    /// before we treat that as a premature stop (a corrupt/truncated chunk) rather than a normal
-    /// clip completion. Probed chunk durations are exact, so a genuine end lands within about a
-    /// frame of Duration; the imprecise case is a fallback-estimated (unprobeable) chunk, and
-    /// files we can't probe are exactly the files likely to be corrupt.
+    /// How far short of <see cref="Duration"/> the front player's position can be when it ends before we treat that as a premature stop (a corrupt/truncated chunk) rather than a normal clip completion.
+    /// Probed chunk durations are exact, so a genuine end lands within about a frame of Duration; the imprecise case is a fallback-estimated (unprobeable) chunk, and files we can't probe are exactly the files likely to be corrupt.
     /// </summary>
     private static readonly TimeSpan PrematureEndTolerance = TimeSpan.FromSeconds(3);
 
@@ -30,9 +26,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         "This clip appears to be encrypted by the vehicle (Tesla software 2026.20 and later encrypts dashcam recordings by default). To record playable clips, turn off Controls > Safety > Encrypt Dashcam Recordings. Already-encrypted clips can be viewed at dashcam.tesla.com.";
 
     /// <summary>
-    /// One-shot guard for the reopen/seek race after a recovery: how long to wait after issuing
-    /// the resume seek before verifying the front player actually landed near the target, and how
-    /// far below the target the reported position may sit before the seek is reissued once.
+    /// One-shot guard for the reopen/seek race after a recovery: how long to wait after issuing the resume seek before verifying the front player actually landed near the target, and how far below the target the reported position may sit before the seek is reissued once.
     /// </summary>
     private static readonly TimeSpan PostRecoverySeekVerifyDelay = TimeSpan.FromMilliseconds(500);
 
@@ -52,10 +46,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly HashSet<int> _excludedChunkIndices = [];
 
-    // _excludedChunkIndices is mutated under the operation lock (a clip change clears it, recovery
-    // adds to it) but is ALSO read outside that lock on a Flyleaf callback thread (recovery maps a
-    // failure position back to an original chunk index). Guard every access with this lock so a
-    // concurrent clear can't throw "Collection was modified" out of an async void player handler.
+    // _excludedChunkIndices is mutated under the operation lock (a clip change clears it, recovery adds to it) but is ALSO read outside that lock on a Flyleaf callback thread (recovery maps a failure position back to an original chunk index).
+    // Guard every access with this lock so a concurrent clear can't throw "Collection was modified" out of an async void player handler.
     private readonly Lock _excludedChunkIndicesLock = new();
     private CancellationTokenSource _playbackCts;
     private bool _isDisposed;
@@ -88,8 +80,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     [ObservableProperty]
     private bool _isMediaOpen;
 
-    /// <param name="players">Camera players keyed by camera name. Every present camera is played; the clip decides which are actually opened.</param>
-    /// <param name="primaryCamera">The camera that drives the shared clock, is required to open, and anchors corrupt-chunk recovery (front on a real Tesla).</param>
+    /// <param name="players">Camera players keyed by camera name.
+    /// Every present camera is played; the clip decides which are actually opened.</param> <param name="primaryCamera">The camera that drives the shared clock, is required to open, and anchors corrupt-chunk recovery (front on a real Tesla).</param>
     public VideoPlayerController(
         IReadOnlyDictionary<string, ICameraPlayer> players,
         string primaryCamera,
@@ -127,8 +119,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Creates the app's Flyleaf-backed playback controller from one surface per camera. The
-    /// primary camera (front when present) drives the timeline and owns the audio track.
+    /// Creates the app's Flyleaf-backed playback controller from one surface per camera.
+    /// The primary camera (front when present) drives the timeline and owns the audio track.
     /// </summary>
     public static VideoPlayerController Create(IReadOnlyList<(string Camera, FlyleafHost Host)> cameras)
     {
@@ -155,11 +147,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     public CamClip CurrentClip => Playlist.CurrentClip;
 
     /// <summary>
-    /// The media source backing the currently opened clip, or null when nothing is open. Exposed
-    /// (read-only) so callers can map wall-clock instants (e.g. event timestamps) onto the actual
-    /// playing media time via <see cref="ClipMediaSource.ToMediaTime"/> and read
-    /// <see cref="ClipMediaSource.GapPositions"/>, rather than re-deriving a timeline estimate of
-    /// their own. Changes alongside <see cref="IsMediaOpen"/> and <see cref="Duration"/>.
+    /// The media source backing the currently opened clip, or null when nothing is open.
+    /// Exposed (read-only) so callers can map wall-clock instants (e.g. event timestamps) onto the actual playing media time via <see cref="ClipMediaSource.ToMediaTime"/> and read <see cref="ClipMediaSource.GapPositions"/>, rather than re-deriving a timeline estimate of their own.
+    /// Changes alongside <see cref="IsMediaOpen"/> and <see cref="Duration"/>.
     /// </summary>
     public ClipMediaSource OpenedMediaSource => _openedMediaSource;
 
@@ -242,10 +232,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     public Task SeekAsync(TimeSpan position) => SeekInternalAsync(position, accurate: true);
 
     /// <summary>
-    /// Like <see cref="SeekAsync"/> but issues fast keyframe seeks to every open player instead of
-    /// accurate ones -- intended to be called repeatedly and cheaply while the seek bar thumb is
-    /// being dragged, so the video keeps up in near-real-time. Same clamping and serialized-operation
-    /// infrastructure as <see cref="SeekAsync"/>; only the seek mode differs.
+    /// Like <see cref="SeekAsync"/> but issues fast keyframe seeks to every open player instead of accurate ones -- intended to be called repeatedly and cheaply while the seek bar thumb is being dragged, so the video keeps up in near-real-time.
+    /// Same clamping and serialized-operation infrastructure as <see cref="SeekAsync"/>; only the seek mode differs.
     /// </summary>
     public Task ScrubSeekAsync(TimeSpan position) => SeekInternalAsync(position, accurate: false);
 
@@ -286,8 +274,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     /// <summary>
     /// Steps every open player one frame forward or backward -- for frame-by-frame incident review.
-    /// Stepping only makes sense paused, so playback is paused first if active; all open players are
-    /// stepped in the same direction to keep the four cameras in sync (they share the same frame rate).
+    /// Stepping only makes sense paused, so playback is paused first if active; all open players are stepped in the same direction to keep the four cameras in sync (they share the same frame rate).
     /// </summary>
     public async Task StepFrameAsync(bool forward)
     {
@@ -316,10 +303,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                     await player.StepFrameAsync(forward);
                 }
 
-                // Flyleaf raises PositionChanged (via CurTime) when a stepped frame shows, even while
-                // paused, so Position normally updates on its own via OnPositionChanged. This is a
-                // belt-and-suspenders sync from the front player in case that event doesn't fire for a
-                // given step.
+                // Flyleaf raises PositionChanged (via CurTime) when a stepped frame shows, even while paused, so Position normally updates on its own via OnPositionChanged.
+                // This is a belt-and-suspenders sync from the front player in case that event doesn't fire for a given step.
                 Position = Clamp(_primaryPlayer.Position, TimeSpan.Zero, Duration);
 
                 Log.Debug(
@@ -393,9 +378,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Drops a single clip from the playlist so Next/Previous navigation stays aligned with a
-    /// trimmed clip list (e.g. after the user deletes a clip). Does not touch what's playing;
-    /// when the removed clip is the current one the caller is responsible for having stopped it.
+    /// Drops a single clip from the playlist so Next/Previous navigation stays aligned with a trimmed clip list (e.g. after the user deletes a clip).
+    /// Does not touch what's playing; when the removed clip is the current one the caller is responsible for having stopped it.
     /// </summary>
     public void RemoveClip(CamClip clip) => Playlist.RemoveClip(clip);
 
@@ -452,15 +436,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
         catch (ObjectDisposedException) when (_isDisposed)
         {
-            // The controller was disposed (window closed) while this operation was in flight, so
-            // the lock or a player is already gone. We're shutting down; nothing to recover.
+            // The controller was disposed (window closed) while this operation was in flight, so the lock or a player is already gone.
+            // We're shutting down; nothing to recover.
         }
         finally
         {
             if (acquired)
             {
-                // Dispose() can run on the UI thread while this operation is mid-flight and then
-                // dispose the semaphore; releasing it afterwards would throw. Benign at shutdown.
+                // Dispose() can run on the UI thread while this operation is mid-flight and then dispose the semaphore; releasing it afterwards would throw.
+                // Benign at shutdown.
                 try
                 {
                     _operationLock.Release();
@@ -523,8 +507,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
                 await StopPlaybackInternalAsync(resetPlaybackState: false);
 
-                // A freshly selected clip starts with no known-bad chunks and a clean recovery budget,
-                // regardless of what happened on the previously playing clip.
+                // A freshly selected clip starts with no known-bad chunks and a clean recovery budget, regardless of what happened on the previously playing clip.
                 lock (_excludedChunkIndicesLock)
                 {
                     _excludedChunkIndices.Clear();
@@ -646,7 +629,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 mediaSource.CameraPlaylistPaths.Keys.Order().ToArray(),
                 requestId);
 
-            // A fully encrypted clip lands here too: the builder probes every chunk's front file, finds no readable moov in any of them, and excludes them all — indistinguishable from "no footage" without sniffing the files themselves.
+            // A fully encrypted clip lands here too: the builder probes every chunk's front file, finds no readable moov in any of them, and excludes them all, indistinguishable from "no footage" without sniffing the files themselves.
             ErrorMessage = EncryptedClipDetector.LooksEncrypted(clip)
                 ? EncryptedClipMessage
                 : $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
@@ -682,9 +665,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             _openedMediaSource = mediaSource;
             OnPropertyChanged(nameof(OpenedMediaSource));
 
-            // The builder may have dropped unreadable chunks on its own; fold those into the
-            // exclusion set so position-to-chunk mapping during recovery stays aligned with the
-            // shrunken timeline. They are not recovery attempts and don't count toward the cap.
+            // The builder may have dropped unreadable chunks on its own; fold those into the exclusion set so position-to-chunk mapping during recovery stays aligned with the shrunken timeline.
+            // They are not recovery attempts and don't count toward the cap.
             if (mediaSource.AutoExcludedChunkIndices.Count > 0)
             {
                 Log.Warning(
@@ -707,23 +689,18 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             if (playAfterOpen)
             {
-                // Get the user watching video as soon as the front camera (the authoritative,
-                // required source) is ready, rather than gating first-frame on the slowest of
-                // four opens. Side cameras join in progress once their own opens complete, below.
+                // Get the user watching video as soon as the front camera (the authoritative, required source) is ready, rather than gating first-frame on the slowest of four opens.
+                // Side cameras join in progress once their own opens complete, below.
                 await _primaryPlayer.PlayAsync();
                 IsPlaying = true;
 
-                // Position events can now flow: the front player is genuinely playing, so this is
-                // no different from a fully-completed open as far as Ended/Failed/PositionChanged
-                // are concerned. Side opens below still run under _isOpeningMedia's other
-                // protections indirectly -- those handlers only special-case the front player.
+                // Position events can now flow: the front player is genuinely playing, so this is no different from a fully-completed open as far as Ended/Failed/PositionChanged are concerned.
+                // Side opens below still run under _isOpeningMedia's other protections indirectly -- those handlers only special-case the front player.
                 _isOpeningMedia = false;
 
                 // Jump to just before the event moment on open, matching the in-car player.
-                // Seek AFTER Play (never before): a seek issued while paused right after open can be
-                // swallowed by the player, whereas seeks during active playback are reliable -- the
-                // same ordering the recovery resume relies on. The secondary cameras join at this
-                // position below, since they read _primaryPlayer.Position after the seek lands.
+                // Seek AFTER Play (never before): a seek issued while paused right after open can be swallowed by the player, whereas seeks during active playback are reliable -- the same ordering the recovery resume relies on.
+                // The secondary cameras join at this position below, since they read _primaryPlayer.Position after the seek lands.
                 var eventStartPosition = ResolveEventStartPosition(clip, mediaSource);
                 if (eventStartPosition > TimeSpan.Zero)
                 {
@@ -786,10 +763,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Opens the three non-front cameras in parallel (as before) but, unlike the pre-playback
-    /// path, joins each one in as soon as ITS OWN open completes rather than waiting for all
-    /// three: seeks it to the front player's current (live) position and starts it playing, so
-    /// the user isn't blocked on the slowest secondary camera to see the front feed.
+    /// Opens the three non-front cameras in parallel (as before) but, unlike the pre-playback path, joins each one in as soon as ITS OWN open completes rather than waiting for all three: seeks it to the front player's current (live) position and starts it playing, so the user isn't blocked on the slowest secondary camera to see the front feed.
     /// </summary>
     private async Task OpenAndJoinSecondaryCamerasAsync(
         ClipMediaSource mediaSource,
@@ -809,10 +783,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Opens a single secondary camera and, once open, joins it into the already-playing front
-    /// stream: seeks to the front's current position and plays. Performs a single-shot
-    /// correction afterward if the join seek's own latency let the gap grow further, so the
-    /// camera doesn't visibly trail the front by much more than one seek's worth of drift.
+    /// Opens a single secondary camera and, once open, joins it into the already-playing front stream: seeks to the front's current position and plays.
+    /// Performs a single-shot correction afterward if the join seek's own latency let the gap grow further, so the camera doesn't visibly trail the front by much more than one seek's worth of drift.
     /// </summary>
     private async Task OpenAndJoinSecondaryCameraAsync(
         string camera,
@@ -844,8 +816,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return;
         }
 
-        // The seek above takes some non-zero time, during which the front kept playing; do one
-        // single-shot correction if the gap grew meaningfully rather than looping/polling.
+        // The seek above takes some non-zero time, during which the front kept playing; do one single-shot correction if the gap grew meaningfully rather than looping/polling.
         var driftAfterJoin = _primaryPlayer.Position - joinPosition;
         if (driftAfterJoin > TimeSpan.FromMilliseconds(250))
         {
@@ -863,8 +834,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Opens the three non-front cameras in parallel without playing or seeking them -- used by
-    /// the recovery path, which stays paused until the caller positions and plays everything.
+    /// Opens the three non-front cameras in parallel without playing or seeking them -- used by the recovery path, which stays paused until the caller positions and plays everything.
     /// </summary>
     private async Task OpenSecondaryCamerasAsync(
         ClipMediaSource mediaSource,
@@ -1038,10 +1008,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         var wasPlaying = IsPlaying;
         IsPlaying = false;
 
-        // Deliberately NOT gated on IsLoading: the front plays (and can end or die on a corrupt
-        // first chunk) while the secondary-camera joins are still in flight, and IsLoading stays
-        // true until that whole open completes. The request-id check above already filters the
-        // transitions IsLoading used to guard (clip changes zero _currentMediaRequestId first).
+        // Deliberately NOT gated on IsLoading: the front plays (and can end or die on a corrupt first chunk) while the secondary-camera joins are still in flight, and IsLoading stays true until that whole open completes.
+        // The request-id check above already filters the transitions IsLoading used to guard (clip changes zero _currentMediaRequestId first).
         var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
         if (mediaRequestId == 0 || mediaRequestId != Volatile.Read(ref _activeRequestId))
         {
@@ -1054,22 +1022,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return;
         }
 
-        // Deliberately no auto-advance to the next clip: each clip is its own incident, and the
-        // most likely follow-up to watching one is replaying it, not being yanked to the next.
-        // Playback simply parks at the end. The media stays open (IsMediaOpen unchanged) so the
-        // scrubber and frame-step remain usable to review the final moments, and PlayAsync replays
-        // from the start when pressed at the end. Next/Previous remain explicit user actions.
+        // Deliberately no auto-advance to the next clip: each clip is its own incident, and the most likely follow-up to watching one is replaying it, not being yanked to the next.
+        // Playback simply parks at the end.
+        // The media stays open (IsMediaOpen unchanged) so the scrubber and frame-step remain usable to review the final moments, and PlayAsync replays from the start when pressed at the end.
+        // Next/Previous remain explicit user actions.
         Position = Duration;
     }
 
     /// <summary>
-    /// Handles the front player ending (or failing) well short of <see cref="Duration"/>, which
-    /// means the concat demuxer hit a corrupt/truncated chunk and stopped early rather than
-    /// reaching the real end of the clip. Recovery is probe-first: rebuild with the current
-    /// exclusions and let the builder's per-file probe find the culprit (the demuxer reads ahead
-    /// of the presentation position, so the failure position can sit inside a healthy chunk);
-    /// only when the probe finds nothing new is the chunk containing the failure position
-    /// excluded. Gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on the same clip.
+    /// Handles the front player ending (or failing) well short of <see cref="Duration"/>, which means the concat demuxer hit a corrupt/truncated chunk and stopped early rather than reaching the real end of the clip.
+    /// Recovery is probe-first: rebuild with the current exclusions and let the builder's per-file probe find the culprit (the demuxer reads ahead of the presentation position, so the failure position can sit inside a healthy chunk); only when the probe finds nothing new is the chunk containing the failure position excluded.
+    /// Gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on the same clip.
     /// </summary>
     private async Task RecoverFromPrematureEndAsync(bool wasPlaying)
     {
@@ -1083,9 +1046,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var failurePosition = Clamp(Position, TimeSpan.Zero, Duration);
 
-        // Find the last chunk boundary at or before the failure position; that's the chunk the
-        // failure happened inside, and where playback should resume. Map it from the (possibly
-        // already-shrunk) opened timeline back to the original clip's chunk index.
+        // Find the last chunk boundary at or before the failure position; that's the chunk the failure happened inside, and where playback should resume.
+        // Map it from the (possibly already-shrunk) opened timeline back to the original clip's chunk index.
         var badChunkTimelineIndex = 0;
         for (var i = 0; i < mediaSource.ChunkStarts.Count; i++)
         {
@@ -1130,10 +1092,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 if (!IsRequestActive(requestId) || clip != CurrentClip)
                     return;
 
-                // Probe-first: rebuild with the current exclusion set only. The builder re-probes
-                // every file, so a chunk that became unreadable since the last build shows up in
-                // AutoExcludedChunkIndices -- that's the real culprit, and the (possibly healthy)
-                // chunk under the failure position must NOT be excluded.
+                // Probe-first: rebuild with the current exclusion set only.
+                // The builder re-probes every file, so a chunk that became unreadable since the last build shows up in AutoExcludedChunkIndices -- that's the real culprit, and the (possibly healthy) chunk under the failure position must NOT be excluded.
                 var excludedSnapshot = SnapshotExcludedChunkIndices();
                 var newMediaSource = await Task.Run(
                     () => _mediaSourceBuilder.Build(clip, excludedSnapshot),
@@ -1152,8 +1112,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 }
                 else
                 {
-                    // Probe-clean corruption (moov intact, media data bad): fall back to
-                    // excluding the chunk containing the failure position and rebuild again.
+                    // Probe-clean corruption (moov intact, media data bad): fall back to excluding the chunk containing the failure position and rebuild again.
                     bool excludedNewChunk;
                     int excludedChunkCount;
                     lock (_excludedChunkIndicesLock)
@@ -1196,8 +1155,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
                 var clampedResumePosition = Clamp(resumePosition, TimeSpan.Zero, Duration);
 
-                // Resume playback BEFORE seeking: a seek issued while paused right after open can
-                // be swallowed by the player, whereas seeks during active playback are reliable.
+                // Resume playback BEFORE seeking: a seek issued while paused right after open can be swallowed by the player, whereas seeks during active playback are reliable.
                 if (wasPlaying)
                 {
                     await PlayOpenPlayersAsync();
@@ -1207,8 +1165,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 await SeekOpenPlayersAsync(clampedResumePosition);
                 Position = clampedResumePosition;
 
-                // One-shot guard against the reopen/seek race: give the player a moment and, if
-                // its reported position is still far below the resume target, reissue the seek.
+                // One-shot guard against the reopen/seek race: give the player a moment and, if its reported position is still far below the resume target, reissue the seek.
                 await Task.Delay(PostRecoverySeekVerifyDelay, ct);
 
                 if (IsRequestActive(requestId)
@@ -1240,9 +1197,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
         finally
         {
-            // The failure may have arrived while the original open was still joining secondary
-            // cameras (IsLoading true). Recovery bumped the request id above, so that open's
-            // finally no longer owns the flag; settle it here or the loading state sticks forever.
+            // The failure may have arrived while the original open was still joining secondary cameras (IsLoading true).
+            // Recovery bumped the request id above, so that open's finally no longer owns the flag; settle it here or the loading state sticks forever.
             if (IsRequestActive(requestId))
             {
                 IsLoading = false;
@@ -1265,9 +1221,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     }
 
     /// <summary>
-    /// Maps an index into the currently opened (possibly already-shrunk) timeline's
-    /// <see cref="ClipMediaSource.ChunkStarts"/> back to the corresponding index in the original
-    /// clip's <see cref="CamClip.Chunks"/>, accounting for chunks already excluded.
+    /// Maps an index into the currently opened (possibly already-shrunk) timeline's <see cref="ClipMediaSource.ChunkStarts"/> back to the corresponding index in the original clip's <see cref="CamClip.Chunks"/>, accounting for chunks already excluded.
     /// </summary>
     private HashSet<int> SnapshotExcludedChunkIndices()
     {
@@ -1279,8 +1233,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     private int MapTimelineIndexToOriginalChunkIndex(CamClip clip, int timelineIndex)
     {
-        // Snapshot under the lock: this runs on a Flyleaf callback thread during recovery, outside
-        // the operation lock, while a concurrent clip change can clear the exclusion set.
+        // Snapshot under the lock: this runs on a Flyleaf callback thread during recovery, outside the operation lock, while a concurrent clip change can clear the exclusion set.
         var excluded = SnapshotExcludedChunkIndices();
         var remaining = timelineIndex;
 
@@ -1316,15 +1269,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return;
         }
 
-        // A chunk whose moov is intact but whose media data is truncated/corrupt makes Flyleaf
-        // raise Failed ("Playback stopped unexpectedly") rather than Ended when the concat
-        // demuxer dies mid-clip. Route that into the same corrupt-chunk recovery as a premature
-        // Ended; only genuinely unrecoverable failures fall through to the error UI below.
+        // A chunk whose moov is intact but whose media data is truncated/corrupt makes Flyleaf raise Failed ("Playback stopped unexpectedly") rather than Ended when the concat demuxer dies mid-clip.
+        // Route that into the same corrupt-chunk recovery as a premature Ended; only genuinely unrecoverable failures fall through to the error UI below.
         if (!_isDisposed && !_isOpeningMedia && IsMediaOpen && _openedMediaSource is not null
             && Duration - Position > PrematureEndTolerance)
         {
-            // Same as OnPlayerEnded: not gated on IsLoading, so a front failure during the
-            // secondary-camera join window still reaches recovery instead of the error UI below.
+            // Same as OnPlayerEnded: not gated on IsLoading, so a front failure during the secondary-camera join window still reaches recovery instead of the error UI below.
             var mediaRequestId = Volatile.Read(ref _currentMediaRequestId);
             if (mediaRequestId != 0 && mediaRequestId == Volatile.Read(ref _activeRequestId))
             {

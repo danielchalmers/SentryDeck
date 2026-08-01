@@ -12,7 +12,7 @@ public static class EncryptedClipDetector
 {
     /// <summary>
     /// Top-level box types an unencrypted recording can plausibly start with.
-    /// Tesla files start with <c>ftyp</c>; the rest keep the sniff from misreporting other muxers' output — a file starting with any of these is ordinary video (playable or merely corrupt), not encrypted.
+    /// Tesla files start with <c>ftyp</c>; the rest keep the sniff from misreporting other muxers' output: a file starting with any of these is ordinary video (playable or merely corrupt), not encrypted.
     /// </summary>
     private static readonly string[] KnownLeadingBoxTypes =
     [
@@ -29,7 +29,7 @@ public static class EncryptedClipDetector
     ];
 
     /// <summary>
-    /// True when the clip's front-camera files are all present with content but none starts like an MP4 — the signature of a drive written with encryption enabled.
+    /// True when the clip's front-camera files are all present with content but none starts like an MP4, the signature of a drive written with encryption enabled.
     /// A merely corrupt or truncated clip still has a valid <c>ftyp</c> header on at least some chunks, so it stays on the ordinary unreadable-file path.
     /// </summary>
     public static bool LooksEncrypted(CamClip clip)

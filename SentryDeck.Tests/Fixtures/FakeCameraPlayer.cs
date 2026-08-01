@@ -1,8 +1,7 @@
 namespace SentryDeck.Tests;
 
 /// <summary>
-/// In-memory <see cref="ICameraPlayer"/> used to drive a real <see cref="VideoPlayerController"/>
-/// in tests without Flyleaf/FFmpeg.
+/// In-memory <see cref="ICameraPlayer"/> used to drive a real <see cref="VideoPlayerController"/> in tests without Flyleaf/FFmpeg.
 /// </summary>
 internal sealed class FakeCameraPlayer : ICameraPlayer
 {
@@ -18,8 +17,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     public List<bool> SeekAccurateFlags { get; } = [];
 
     /// <summary>
-    /// Ordered log of play/pause/seek calls so tests can assert on call ordering
-    /// (e.g. that a post-recovery resume plays before it seeks).
+    /// Ordered log of play/pause/seek calls so tests can assert on call ordering (e.g. that a post-recovery resume plays before it seeks).
     /// </summary>
     public List<string> CallLog { get; } = [];
     public bool OpenResult { get; init; } = true;
@@ -29,24 +27,18 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     public double Speed { get; set; } = 1.0;
 
     /// <summary>
-    /// Test-controlled position, used by the controller to read a camera's "live" position (e.g.
-    /// the front player's current time when joining a secondary camera mid-playback). Defaults to
-    /// zero and is kept in sync by <see cref="SeekAsync"/> so tests behave sensibly without
-    /// having to poke it manually after every seek.
+    /// Test-controlled position, used by the controller to read a camera's "live" position (e.g. the front player's current time when joining a secondary camera mid-playback).
+    /// Defaults to zero and is kept in sync by <see cref="SeekAsync"/> so tests behave sensibly without having to poke it manually after every seek.
     /// </summary>
     public TimeSpan Position { get; set; }
 
     /// <summary>
-    /// Optional gate that, when set, makes <see cref="OpenAsync"/> await it before completing --
-    /// lets tests hold a camera's open in progress to assert on ordering/timing.
+    /// Optional gate that, when set, makes <see cref="OpenAsync"/> await it before completing -- lets tests hold a camera's open in progress to assert on ordering/timing.
     /// </summary>
     public TaskCompletionSource<object> OpenGate { get; set; }
 
     /// <summary>
-    /// Optional hook invoked synchronously inside <see cref="SeekAsync"/> (after recording the
-    /// call, before updating <see cref="Position"/>) -- lets tests interleave actions mid-seek
-    /// (e.g. a new drag gesture starting while the previous release's accurate seek is still
-    /// executing) without leaving the test thread.
+    /// Optional hook invoked synchronously inside <see cref="SeekAsync"/> (after recording the call, before updating <see cref="Position"/>) -- lets tests interleave actions mid-seek (e.g. a new drag gesture starting while the previous release's accurate seek is still executing) without leaving the test thread.
     /// </summary>
     public Action SeekCallback { get; set; }
 

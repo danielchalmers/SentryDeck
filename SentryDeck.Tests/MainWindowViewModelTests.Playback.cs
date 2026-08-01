@@ -102,9 +102,8 @@ public sealed partial class MainWindowViewModelTests
         vm.BeginSeek();
         vm.SeekPosition = 0.5;
 
-        // While gesture #1's accurate release seek is executing, the user grabs the thumb again
-        // and starts a new drag. Gesture #1's completion is then stale: it must NOT clear the
-        // active drag's seeking state, or the position sync would yank the thumb mid-drag.
+        // While gesture #1's accurate release seek is executing, the user grabs the thumb again and starts a new drag.
+        // Gesture #1's completion is then stale: it must NOT clear the active drag's seeking state, or the position sync would yank the thumb mid-drag.
         front.SeekCallback = () =>
         {
             front.SeekCallback = null;
@@ -132,9 +131,7 @@ public sealed partial class MainWindowViewModelTests
 
         front.SeekPositions.Clear();
 
-        // Playback position advances on its own (not a drag): SeekPosition updates via the
-        // controller -> UpdateSeekPositionFromController path, which does not go through
-        // OnSeekSliderValueChanged, so no scrub seek should ever be issued.
+        // Playback position advances on its own (not a drag): SeekPosition updates via the controller -> UpdateSeekPositionFromController path, which does not go through OnSeekSliderValueChanged, so no scrub seek should ever be issued.
         controller.Position = TimeSpan.FromSeconds(10);
         vm.OnSeekSliderValueChanged(); // the view raises ValueChanged for programmatic changes too
 
@@ -186,10 +183,9 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = clip;
 
-        // Selecting a clip runs OnSelectedClipChanged -> PlaySelectedClipAsync, which sets IsLoading=true
-        // (synchronously, before the awaited yield) and calls the controller. The clip is intentionally NOT
-        // in the controller's playlist, so GoToClipAsync is a deterministic no-op; this verifies only that
-        // selection triggers the auto-play loading state. Opening media is VideoPlayerController's own job.
+        // Selecting a clip runs OnSelectedClipChanged -> PlaySelectedClipAsync, which sets IsLoading=true (synchronously, before the awaited yield) and calls the controller.
+        // The clip is intentionally NOT in the controller's playlist, so GoToClipAsync is a deterministic no-op; this verifies only that selection triggers the auto-play loading state.
+        // Opening media is VideoPlayerController's own job.
         vm.IsLoading.ShouldBeTrue();
         vm.ShowErrorOverlay.ShouldBeFalse();
     }

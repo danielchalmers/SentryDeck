@@ -11,8 +11,7 @@ public static class Mp4DurationReader
     private const int LargeSizeFieldSize = 8;
 
     /// <summary>
-    /// Returns the duration encoded in the file's "moov/mvhd" box, or null if it cannot be
-    /// determined (missing boxes, malformed data, or any IO error).
+    /// Returns the duration encoded in the file's "moov/mvhd" box, or null if it cannot be determined (missing boxes, malformed data, or any IO error).
     /// </summary>
     public static TimeSpan? TryReadDuration(string path)
     {
@@ -42,8 +41,7 @@ public static class Mp4DurationReader
     }
 
     /// <summary>
-    /// Scans sibling boxes starting at <paramref name="start"/> until <paramref name="end"/> for
-    /// one matching <paramref name="type"/>, returning its (contentStart, contentEnd) range.
+    /// Scans sibling boxes starting at <paramref name="start"/> until <paramref name="end"/> for one matching <paramref name="type"/>, returning its (contentStart, contentEnd) range.
     /// </summary>
     private static (long ContentStart, long ContentEnd)? FindBox(FileStream stream, string type, long end, long start = 0)
     {

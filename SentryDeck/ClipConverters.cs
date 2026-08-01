@@ -24,9 +24,8 @@ public sealed class ReasonLabelConverter : MarkupExtension, IValueConverter
 
 /// <summary>
 /// The stable reason category key for a <see cref="CamEvent"/> (see <see cref="ClipDisplay.ReasonKey"/>).
-/// Reason-colored overlays bind this into DataTriggers that pick a theme brush via
-/// <c>DynamicResource</c>, so the color follows a live OS light/dark switch. (Resolving the brush in
-/// the converter instead returned a one-time snapshot that stayed on the old theme.)
+/// Reason-colored overlays bind this into DataTriggers that pick a theme brush via <c>DynamicResource</c>, so the color follows a live OS light/dark switch.
+/// (Resolving the brush in the converter instead returned a one-time snapshot that stayed on the old theme.)
 /// </summary>
 public sealed class ReasonKeyConverter : MarkupExtension, IValueConverter
 {
@@ -40,9 +39,9 @@ public sealed class ReasonKeyConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// A friendly, culture-aware clip date/time. ConverterParameter selects the part: "date" →
-/// "Mon, Dec 16", "time" → "3:53 PM". The clip card lays those on opposite ends of the row, so
-/// no middot separator is needed.
+/// A friendly, culture-aware clip date/time.
+/// ConverterParameter selects the part: "date" → "Mon, Dec 16", "time" → "3:53 PM".
+/// The clip card lays those on opposite ends of the row, so no middot separator is needed.
 /// </summary>
 public sealed class FriendlyDateConverter : MarkupExtension, IValueConverter
 {
@@ -107,8 +106,7 @@ public sealed class DateOnlyConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Estimated clip duration as a human string, e.g. "~5 min" (uses the modeled
-/// <see cref="ClipTimeline.Duration"/> = chunk count × 60s).
+/// Estimated clip duration as a human string, e.g. "~5 min" (uses the modeled <see cref="ClipTimeline.Duration"/> = chunk count × 60s).
 /// </summary>
 public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
 {
@@ -189,11 +187,9 @@ public sealed class MapAvailabilityConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Shared geometry for the seek-bar overlays. WPF's <c>Track</c> insets the thumb's travel by the
-/// thumb's own width, so the thumb CENTER spans <c>[ThumbWidth/2, width − ThumbWidth/2]</c> — not
-/// <c>[0, width]</c>. Every overlay (played fill, event marker, chunk/gap ticks, selection band)
-/// maps its fraction into that same span so it lines up with the thumb at the extremes instead of
-/// diverging by half a thumb.
+/// Shared geometry for the seek-bar overlays.
+/// WPF's <c>Track</c> insets the thumb's travel by the thumb's own width, so the thumb CENTER spans <c>[ThumbWidth/2, width − ThumbWidth/2]</c>, not <c>[0, width]</c>.
+/// Every overlay (played fill, event marker, chunk/gap ticks, selection band) maps its fraction into that same span so it lines up with the thumb at the extremes instead of diverging by half a thumb.
 /// </summary>
 public static class SeekBarMetrics
 {
@@ -231,10 +227,9 @@ public sealed class SeekFillWidthConverter : MarkupExtension, IMultiValueConvert
 }
 
 /// <summary>
-/// Left offset for a seek-bar overlay (event marker or chunk tick): a left <see cref="Thickness"/>
-/// at the thumb-center position for the fraction. [0] fraction (0..1), [1] rail ActualWidth.
-/// Mirrors <see cref="SeekFillWidthConverter"/> so overlays track the played fill and the thumb,
-/// and reflow on resize.
+/// Left offset for a seek-bar overlay (event marker or chunk tick): a left <see cref="Thickness"/> at the thumb-center position for the fraction.
+/// [0] fraction (0..1), [1] rail ActualWidth.
+/// Mirrors <see cref="SeekFillWidthConverter"/> so overlays track the played fill and the thumb, and reflow on resize.
 /// </summary>
 public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
 {
@@ -255,10 +250,9 @@ public sealed class SeekOffsetConverter : MarkupExtension, IMultiValueConverter
 }
 
 /// <summary>
-/// Width of the selection-range highlight on the seek bar: (end − start) × the thumb's travel
-/// width. [0] start fraction (0..1), [1] end fraction (0..1), [2] rail ActualWidth. Pairs with
-/// <see cref="SeekOffsetConverter"/> (which places the highlight's left edge at the start
-/// fraction's thumb center) so the band ends exactly at the end fraction's thumb center.
+/// Width of the selection-range highlight on the seek bar: (end − start) × the thumb's travel width.
+/// [0] start fraction (0..1), [1] end fraction (0..1), [2] rail ActualWidth.
+/// Pairs with <see cref="SeekOffsetConverter"/> (which places the highlight's left edge at the start fraction's thumb center) so the band ends exactly at the end fraction's thumb center.
 /// </summary>
 public sealed class SelectionWidthConverter : MarkupExtension, IMultiValueConverter
 {

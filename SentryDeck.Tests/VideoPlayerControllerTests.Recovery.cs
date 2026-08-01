@@ -17,10 +17,9 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // Duration is 3 * 60s = 180s. Ending partway through chunk 1 (at 90s, far short of 180s)
-        // means chunk 1 is where playback died. All files still probe as healthy (probe-clean
-        // corruption), so recovery first rebuilds with no new exclusions (build 2), finds nothing,
-        // then falls back to excluding the failure-position chunk (build 3).
+        // Duration is 3 * 60s = 180s.
+        // Ending partway through chunk 1 (at 90s, far short of 180s) means chunk 1 is where playback died.
+        // All files still probe as healthy (probe-clean corruption), so recovery first rebuilds with no new exclusions (build 2), finds nothing, then falls back to excluding the failure-position chunk (build 3).
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
@@ -31,12 +30,10 @@ public sealed partial class VideoPlayerControllerTests
         builds[1].ShouldBeEmpty();
         builds[2].ShouldBe(new HashSet<int> { 1 });
 
-        // Resume position is chunk 1's start in the OLD timeline (60s), since everything before
-        // the bad chunk is unchanged.
+        // Resume position is chunk 1's start in the OLD timeline (60s), since everything before the bad chunk is unchanged.
         await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
-        // The resume must play BEFORE seeking: a seek issued while paused right after open can
-        // be swallowed by the real player, whereas seeks during active playback are reliable.
+        // The resume must play BEFORE seeking: a seek issued while paused right after open can be swallowed by the real player, whereas seeks during active playback are reliable.
         front.CallLog.LastIndexOf("play").ShouldBeGreaterThan(-1);
         front.CallLog.LastIndexOf("seek:60").ShouldBeGreaterThan(front.CallLog.LastIndexOf("play"));
 
@@ -58,11 +55,8 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // Trigger 3 successful recoveries (chunks 0, 1, 2 excluded one at a time), each ending
-        // partway through the earliest remaining chunk so the "bad chunk" is always chunk 0 of
-        // what's left, keeping this deterministic regardless of exact resume timing. Every file
-        // probes as healthy here, so each recovery is probe-clean: a probe-first rebuild plus a
-        // fallback rebuild with the position-derived exclusion (2 builds per recovery).
+        // Trigger 3 successful recoveries (chunks 0, 1, 2 excluded one at a time), each ending partway through the earliest remaining chunk so the "bad chunk" is always chunk 0 of what's left, keeping this deterministic regardless of exact resume timing.
+        // Every file probes as healthy here, so each recovery is probe-clean: a probe-first rebuild plus a fallback rebuild with the position-derived exclusion (2 builds per recovery).
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var expectedBuildCount = mediaSourceBuilder.BuildCount + 2;
@@ -150,8 +144,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // Trigger one (probe-clean, two-build) recovery on the first clip so it has a non-empty
-        // exclusion set.
+        // Trigger one (probe-clean, two-build) recovery on the first clip so it has a non-empty exclusion set.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
         await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
@@ -160,14 +153,12 @@ public sealed partial class VideoPlayerControllerTests
         await controller.GoToClipAsync(secondClipFiles.Clip);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // Clip 2's open must have started from a fresh (empty) exclusion set, never clip 1's
-        // leftover {1}.
+        // Clip 2's open must have started from a fresh (empty) exclusion set, never clip 1's leftover {1}.
         await WaitUntilAsync(() => mediaSourceBuilder.BuildCountFor(secondClipFiles.Clip) > 0);
         mediaSourceBuilder.LastExclusionsFor(secondClipFiles.Clip).ShouldBeEmpty();
 
-        // Ending the second clip prematurely should exclude relative to a fresh (empty) set, not
-        // carry over chunk 1 from the first clip. Probe-clean again: wait for both rebuilds so
-        // the fallback exclusion is recorded.
+        // Ending the second clip prematurely should exclude relative to a fresh (empty) set, not carry over chunk 1 from the first clip.
+        // Probe-clean again: wait for both rebuilds so the fallback exclusion is recorded.
         front.RaisePositionChanged(TimeSpan.FromSeconds(0));
         front.RaiseEnded();
 
@@ -188,26 +179,23 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        // The front is open and playing but the back camera's open is held, so the clip-open
-        // operation is still in flight and IsLoading is still true -- the join window. Waiting for
-        // the back's OpenAsync call guarantees the front's opening phase has fully completed.
+        // The front is open and playing but the back camera's open is held, so the clip-open operation is still in flight and IsLoading is still true -- the join window.
+        // Waiting for the back's OpenAsync call guarantees the front's opening phase has fully completed.
         await WaitUntilAsync(() => back.OpenedPaths.Count > 0);
         controller.IsLoading.ShouldBeTrue();
 
-        // The front dies far short of Duration (180s) -- a corrupt/truncated early chunk. This
-        // must route into corrupt-chunk recovery, not freeze silently or show the error UI.
+        // The front dies far short of Duration (180s) -- a corrupt/truncated early chunk.
+        // This must route into corrupt-chunk recovery, not freeze silently or show the error UI.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
 
-        // Let the held secondary open (and with it the original open operation) finish; recovery
-        // queues behind it on the serialized operation lock.
+        // Let the held secondary open (and with it the original open operation) finish; recovery queues behind it on the serialized operation lock.
         back.OpenGate.SetResult(null);
 
         await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
         await WaitUntilAsync(() => !controller.IsLoading);
 
-        // Recovery took over cleanly: no spurious "Playback failed", the media is open again, and
-        // the loading state (owned by the superseded open) was settled by the recovery pass.
+        // Recovery took over cleanly: no spurious "Playback failed", the media is open again, and the loading state (owned by the superseded open) was settled by the recovery pass.
         controller.ErrorMessage.ShouldBeNull();
         controller.IsMediaOpen.ShouldBeTrue();
     }
@@ -224,22 +212,18 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // Chunk 2's file becomes unreadable AFTER the clip opened (e.g. removed/truncated
-        // mid-playback); the fake's probe will auto-exclude it on the next rebuild.
+        // Chunk 2's file becomes unreadable AFTER the clip opened (e.g. removed/truncated mid-playback); the fake's probe will auto-exclude it on the next rebuild.
         mediaSourceBuilder.AutoExcludeChunk(2);
 
-        // The demuxer reads ahead of the presentation position, so Failed fires while playback
-        // is still inside HEALTHY chunk 1 (90s). Probe-first recovery must find chunk 2 via the
-        // rebuild's probe and keep chunk 1 -- excluding the chunk under the failure position
-        // would throw away a healthy minute.
+        // The demuxer reads ahead of the presentation position, so Failed fires while playback is still inside HEALTHY chunk 1 (90s).
+        // Probe-first recovery must find chunk 2 via the rebuild's probe and keep chunk 1 -- excluding the chunk under the failure position would throw away a healthy minute.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
 
         await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 2);
         await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
-        // The probe found the culprit, so exactly one rebuild happened and no Build call ever
-        // received a position-derived (healthy-chunk) exclusion.
+        // The probe found the culprit, so exactly one rebuild happened and no Build call ever received a position-derived (healthy-chunk) exclusion.
         var builds = mediaSourceBuilder.Exclusions();
         builds.Count.ShouldBe(2);
         builds[1].ShouldBeEmpty();
@@ -267,14 +251,11 @@ public sealed partial class VideoPlayerControllerTests
         controller.Playlist.MoveTo(0);
         await WaitUntilClipOpenedAsync(controller, front);
 
-        // The builder dropped chunk 1 on its own, so the opened timeline is [chunk0, chunk2]
-        // and Duration is 120s.
+        // The builder dropped chunk 1 on its own, so the opened timeline is [chunk0, chunk2] and Duration is 120s.
         controller.Duration.ShouldBe(TimeSpan.FromSeconds(120));
 
-        // A premature end at 90s is inside timeline slot 1, which maps back to ORIGINAL chunk 2
-        // (not 1) because the auto-exclusion must be accounted for in the mapping. Chunk 1 is
-        // already excluded, so the probe-first rebuild reports nothing new (probe-clean) and the
-        // fallback rebuild carries the position-derived exclusion.
+        // A premature end at 90s is inside timeline slot 1, which maps back to ORIGINAL chunk 2 (not 1) because the auto-exclusion must be accounted for in the mapping.
+        // Chunk 1 is already excluded, so the probe-first rebuild reports nothing new (probe-clean) and the fallback rebuild carries the position-derived exclusion.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
@@ -303,8 +284,7 @@ public sealed partial class VideoPlayerControllerTests
         controller.LoadClips([clipFiles.Clip]);
         controller.Playlist.MoveTo(0);
 
-        // Front should start playing immediately, without waiting for the slowest side camera
-        // (right, held open via OpenGate) to finish opening.
+        // Front should start playing immediately, without waiting for the slowest side camera (right, held open via OpenGate) to finish opening.
         await WaitUntilAsync(() => front.PlayCount > 0);
 
         front.PlayCount.ShouldBe(1);
@@ -349,9 +329,8 @@ public sealed partial class VideoPlayerControllerTests
     [Fact]
     public async Task SelectingClip_WithEvent_AutoJumpsToShortlyBeforeTheEventMoment()
     {
-        // A 3-chunk clip spans 0-180s of media time; an event 30s into the second chunk maps to
-        // media time 90s. Opening it must land the front player EventLeadIn (10s) before that -- 80s
-        // -- rather than at the top of the buffer, matching the in-car player since the 2024 Holiday Update.
+        // A 3-chunk clip spans 0-180s of media time; an event 30s into the second chunk maps to media time 90s.
+        // Opening it must land the front player EventLeadIn (10s) before that -- 80s -- rather than at the top of the buffer, matching the in-car player since the 2024 Holiday Update.
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         var clip = WithEvent(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
 
@@ -363,8 +342,8 @@ public sealed partial class VideoPlayerControllerTests
         await WaitUntilClipOpenedAsync(controller, front);
         await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(80)));
 
-        // The auto-jump plays first, then seeks: a seek issued while paused right after open can be
-        // swallowed, so (like recovery) it must land during active playback. "seek:" is the accurate seek.
+        // The auto-jump plays first, then seeks: a seek issued while paused right after open can be swallowed, so (like recovery) it must land during active playback.
+        // "seek:" is the accurate seek.
         front.CallLog.IndexOf("play").ShouldBeLessThan(front.CallLog.IndexOf("seek:80"));
         controller.Position.ShouldBe(TimeSpan.FromSeconds(80));
         controller.IsPlaying.ShouldBeTrue();
@@ -400,8 +379,7 @@ public sealed partial class VideoPlayerControllerTests
     [Fact]
     public async Task SelectingClip_WithEvent_SecondaryCamerasJoinAtTheJumpedToPosition()
     {
-        // The auto-jump seeks the front BEFORE the side cameras join, so they join at the jumped-to
-        // position (80s) and stay in sync with the front rather than starting at 0.
+        // The auto-jump seeks the front BEFORE the side cameras join, so they join at the jumped-to position (80s) and stay in sync with the front rather than starting at 0.
         using var clipFiles = TestClipFiles.Create(chunkCount: 3);
         var clip = WithEvent(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
 
@@ -432,18 +410,15 @@ public sealed partial class VideoPlayerControllerTests
         back.CallLog.Clear();
         front.CallLog.Clear();
 
-        // Probe-clean premature end -> recovery reopens with playAfterOpen: false. The reopen
-        // itself (OpenClipInternalAsync) must only pause -- no join seek/play, unlike the
-        // playAfterOpen: true path -- leaving the recovery code to position/play afterward exactly
-        // once each.
+        // Probe-clean premature end -> recovery reopens with playAfterOpen: false.
+        // The reopen itself (OpenClipInternalAsync) must only pause -- no join seek/play, unlike the playAfterOpen: true path -- leaving the recovery code to position/play afterward exactly once each.
         front.RaisePositionChanged(TimeSpan.FromSeconds(90));
         front.RaiseEnded();
 
         await WaitUntilAsync(() => mediaSourceBuilder.BuildCount >= 3);
         await WaitUntilAsync(() => front.SeekPositions.Contains(TimeSpan.FromSeconds(60)));
 
-        // Exactly one play and one seek reach back (from the recovery code's own resume
-        // sequence), not a join seek/play from inside the reopen itself.
+        // Exactly one play and one seek reach back (from the recovery code's own resume sequence), not a join seek/play from inside the reopen itself.
         back.CallLog.Count(call => call == "play").ShouldBe(1);
         back.CallLog.Count(call => call.StartsWith("seek:")).ShouldBe(1);
         back.CallLog.ShouldContain("seek:60");
