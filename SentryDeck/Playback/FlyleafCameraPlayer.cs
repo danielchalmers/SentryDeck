@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows.Media;
 using FlyleafLib;
 using FlyleafLib.Controls.WPF;
@@ -115,16 +116,27 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         return Task.Run(StopAndClose);
     }
 
-    public Task SeekAsync(TimeSpan position, bool accurate = true)
+    /// <summary>
+    /// How long a seek issued from the end of a clip waits for Flyleaf to leave its Ended state before returning anyway.
+    /// The flip normally lands within a few milliseconds; the cap only keeps a seek that never runs from stalling the caller.
+    /// </summary>
+    private static readonly TimeSpan LeaveEndedTimeout = TimeSpan.FromSeconds(1);
+
+    public async Task SeekAsync(TimeSpan position, bool accurate = true)
     {
         ThrowIfDisposed();
 
         if (!_isOpen)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var milliseconds = (int)Math.Clamp(position.TotalMilliseconds, 0, int.MaxValue);
+
+        // Flyleaf's Play() silently does nothing while the player is Ended, and a seek issued from the end only moves it back to Paused later, from the background task that performs the seek.
+        // Returning before that happens lets the very next Play() land on Ended and be dropped, leaving the video frozen while the transport reports playback.
+        // That is exactly what pressing play on a finished clip does, since PlayAsync seeks to the start and plays back to back.
+        var seekingFromEnded = _player.Status == Status.Ended;
 
         if (accurate)
         {
@@ -137,7 +149,14 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             _player.Seek(milliseconds, forward: false);
         }
 
-        return Task.CompletedTask;
+        if (seekingFromEnded)
+        {
+            var started = Stopwatch.GetTimestamp();
+            while (!_isDisposed && _player.Status == Status.Ended && Stopwatch.GetElapsedTime(started) < LeaveEndedTimeout)
+            {
+                await Task.Delay(5);
+            }
+        }
     }
 
     /// <summary>
