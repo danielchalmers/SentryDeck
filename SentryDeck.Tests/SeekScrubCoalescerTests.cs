@@ -77,7 +77,7 @@ public sealed class SeekScrubCoalescerTests
     }
 
     [Fact]
-    public async Task PendingValueWithinMinimumStep_OfLastIssuedValue_IsNotReissuedOnCompletion()
+    public void PendingValueWithinMinimumStep_OfLastIssuedValue_IsNotReissuedOnCompletion()
     {
         var issued = new List<TimeSpan>();
         var gate = new TaskCompletionSource();
@@ -95,17 +95,15 @@ public sealed class SeekScrubCoalescerTests
         // Queued while in flight, but only 100ms away from the last-issued value.
         coalescer.OnDragValueChanged(TimeSpan.FromMilliseconds(5100));
 
+        // The gate's continuation (the coalescer's completion handling) runs inline, so any trailing seek would already have been issued when SetResult returns.
         gate.SetResult();
-
-        // Give the continuation a chance to run; it must NOT issue a second seek.
-        await Task.Delay(50);
 
         issued.ShouldBe([TimeSpan.FromSeconds(5)]);
         coalescer.IsSeekInFlight.ShouldBeFalse();
     }
 
     [Fact]
-    public async Task CancelPending_DropsTheQueuedValue_SoCompletionIssuesNothing()
+    public void CancelPending_DropsTheQueuedValue_SoCompletionIssuesNothing()
     {
         var issued = new List<TimeSpan>();
         var gate = new TaskCompletionSource();
@@ -125,10 +123,10 @@ public sealed class SeekScrubCoalescerTests
         // Mouse-up: the gesture ends, so the queued value must be dropped -- re-issuing it after the release's accurate seek would land a keyframe scrub last and move the playhead.
         coalescer.CancelPending();
 
+        // The gate's continuation runs inline, so a (wrongly) re-issued trailing seek would already be recorded when SetResult returns.
         gate.SetResult();
-        await Wait.UntilAsync(() => !coalescer.IsSeekInFlight);
-        await Task.Delay(50); // give a (wrongly) re-issued trailing seek a chance to show up
 
+        coalescer.IsSeekInFlight.ShouldBeFalse();
         issued.ShouldBe([TimeSpan.FromSeconds(1)]);
     }
 

@@ -175,7 +175,7 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public void SelectingClip_TriggersPlaybackLoading()
+    public void SelectingClip_NotYetOpened_ShowsLoadingWithoutAnError()
     {
         var clip = TestClips.Create(1)[0];
         var vm = CreateViewModelWithController(out _, out _);
