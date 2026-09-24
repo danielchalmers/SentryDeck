@@ -949,7 +949,7 @@
                                     CornerRadius="4"
                                     IsHitTestVisible="False"
                                     ToolTip="Update available"
-                                    Visibility="{Binding HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
+                                    Visibility="{Binding About.HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
                         </Grid>
                     </Grid>
                 </Border>
@@ -1692,7 +1692,7 @@
                                     <TextBlock Margin="0,2,0,0"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}">
                                         <Run Text="Version" />
-                                        <Run Text="{Binding FileVersion, Mode=OneWay}" />
+                                        <Run Text="{Binding About.FileVersion, Mode=OneWay}" />
                                     </TextBlock>
                                 </StackPanel>
                             </StackPanel>
@@ -1925,18 +1925,18 @@
                                             VerticalAlignment="Top"
                                             Background="{DynamicResource AccentFillColorDefaultBrush}"
                                             CornerRadius="6"
-                                            Visibility="{Binding HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
+                                            Visibility="{Binding About.HasUpdateBadge, Converter={local:BoolToVisibilityConverter}}" />
                                     <StackPanel Grid.Column="2">
-                                        <TextBlock Text="{Binding UpdateStatusTitle}"
+                                        <TextBlock Text="{Binding About.UpdateStatusTitle}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextControlForeground}"
                                                    TextWrapping="Wrap" />
                                         <TextBlock Margin="0,4,0,0"
                                                    Foreground="{DynamicResource TextControlForeground}"
                                                    TextWrapping="Wrap">
-                                            <Run Text="{Binding UpdateStatusDetails, Mode=OneWay}" />
+                                            <Run Text="{Binding About.UpdateStatusDetails, Mode=OneWay}" />
                                             <Run Text=" " />
-                                            <Hyperlink NavigateUri="{Binding LatestReleaseUrl}"
+                                            <Hyperlink NavigateUri="{Binding About.LatestReleaseUrl}"
                                                        RequestNavigate="Hyperlink_RequestNavigate">
                                                 Learn more
                                             </Hyperlink>
@@ -1963,7 +1963,7 @@
                                                TextAlignment="Right" />
                                     <TextBlock Grid.Row="0"
                                                Grid.Column="2"
-                                               Text="{Binding FileVersion}"
+                                               Text="{Binding About.FileVersion}"
                                                Foreground="{DynamicResource TextControlForeground}" />
                                     <TextBlock Grid.Row="1"
                                                Grid.Column="0"
@@ -1973,7 +1973,7 @@
                                                TextAlignment="Right" />
                                     <TextBlock Grid.Row="1"
                                                Grid.Column="2"
-                                               Text="{Binding RuntimeDescription}"
+                                               Text="{Binding About.RuntimeDescription}"
                                                Foreground="{DynamicResource TextControlForeground}" />
                                     <TextBlock Grid.Row="2"
                                                Grid.Column="0"
@@ -1983,7 +1983,7 @@
                                                TextAlignment="Right" />
                                     <TextBlock Grid.Row="2"
                                                Grid.Column="2"
-                                               Text="{Binding OsDescription}"
+                                               Text="{Binding About.OsDescription}"
                                                Foreground="{DynamicResource TextControlForeground}" />
                                     <TextBlock Grid.Row="3"
                                                Grid.Column="0"
@@ -1993,7 +1993,7 @@
                                                TextAlignment="Right" />
                                     <TextBlock Grid.Row="3"
                                                Grid.Column="2"
-                                               Text="{Binding ExecutablePath}"
+                                               Text="{Binding About.ExecutablePath}"
                                                Foreground="{DynamicResource TextControlForeground}"
                                                TextWrapping="Wrap" />
                                 </Grid>

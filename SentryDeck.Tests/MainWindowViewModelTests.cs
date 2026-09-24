@@ -465,12 +465,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.IsUpdateAvailable.ShouldBeFalse();
-        vm.HasUpdateBadge.ShouldBeFalse();
-        vm.UpdateStatusTitle.ShouldBe("You're up to date");
-        vm.UpdateStatusDetails.ShouldBe("No newer release was found.");
-        vm.LatestVersionText.ShouldBe("Unknown");
-        vm.LatestReleaseUrl.ShouldBe(UpdateService.ReleasesPageUrl);
+        vm.About.IsUpdateAvailable.ShouldBeFalse();
+        vm.About.HasUpdateBadge.ShouldBeFalse();
+        vm.About.UpdateStatusTitle.ShouldBe("You're up to date");
+        vm.About.UpdateStatusDetails.ShouldBe("No newer release was found.");
+        vm.About.LatestVersionText.ShouldBe("Unknown");
+        vm.About.LatestReleaseUrl.ShouldBe(UpdateService.ReleasesPageUrl);
     }
 
     [Fact]
@@ -478,14 +478,14 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.LatestRelease = new UpdateRelease(new Version(1, 4, 2), "v1.4.2", "https://example.com/releases/1.4.2");
-        vm.IsUpdateAvailable = true;
+        vm.About.LatestRelease = new UpdateRelease(new Version(1, 4, 2), "v1.4.2", "https://example.com/releases/1.4.2");
+        vm.About.IsUpdateAvailable = true;
 
-        vm.HasUpdateBadge.ShouldBeTrue();
-        vm.UpdateStatusTitle.ShouldBe("Update available");
-        vm.LatestVersionText.ShouldBe("1.4.2");
-        vm.UpdateStatusDetails.ShouldBe("Version 1.4.2 is available.");
-        vm.LatestReleaseUrl.ShouldBe("https://example.com/releases/1.4.2");
+        vm.About.HasUpdateBadge.ShouldBeTrue();
+        vm.About.UpdateStatusTitle.ShouldBe("Update available");
+        vm.About.LatestVersionText.ShouldBe("1.4.2");
+        vm.About.UpdateStatusDetails.ShouldBe("Version 1.4.2 is available.");
+        vm.About.LatestReleaseUrl.ShouldBe("https://example.com/releases/1.4.2");
     }
 
     [Theory]

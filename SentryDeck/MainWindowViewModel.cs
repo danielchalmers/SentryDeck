@@ -2,8 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -38,7 +36,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     private readonly List<CamClip> _allClips = [];
     private readonly FlyleafRuntime _flyleafRuntime = new();
-    private readonly UpdateService _updateService = new();
     private readonly Func<VideoPlayerController> _playerControllerFactory;
     private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
     private readonly Func<Task> _backgroundYield;
@@ -119,33 +116,12 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public ErrorOverlayViewModel Error { get; } = new();
 
+    /// <summary>
+    /// Version, environment, and update details for the About and help page.
+    /// </summary>
+    public AboutViewModel About { get; } = new();
+
     public bool ShowMainContent => !ShowAboutPage;
-
-    public Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
-
-    public string FileVersion => FormatVersion(CurrentVersion);
-
-    public string RuntimeDescription => $"{RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})";
-
-    public string OsDescription => RuntimeInformation.OSDescription;
-
-    public string ExecutablePath => Environment.ProcessPath;
-
-    public bool HasUpdateBadge => IsUpdateAvailable;
-
-    public string LatestVersionText => LatestRelease is null ? "Unknown" : FormatVersion(LatestRelease.Version);
-
-    public string LatestReleaseUrl => LatestRelease?.ReleaseUrl ?? UpdateService.ReleasesPageUrl;
-
-    public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
-
-    public string UpdateStatusTitle => IsUpdateAvailable
-        ? "Update available"
-        : "You're up to date";
-
-    public string UpdateStatusDetails => IsUpdateAvailable
-        ? $"Version {LatestVersionText} is available."
-        : "No newer release was found.";
 
     /// <summary>
     /// Ladder the speed stepper walks: fine increments around 1x, doubling above.
@@ -481,18 +457,6 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
-    private bool _isUpdateAvailable;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(LatestVersionText))]
-    [NotifyPropertyChangedFor(nameof(LatestReleaseUrl))]
-    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
-    private UpdateRelease _latestRelease;
-
     public async Task InitializeAsync()
     {
         if (_isInitialized)
@@ -504,7 +468,7 @@ public partial class MainWindowViewModel : ObservableObject
 #if DEBUG
         Log.Debug("Skipping update check in debug build");
 #else
-        _ = UpdateLatestReleaseAsync();
+        _ = About.CheckForUpdatesAsync();
 #endif
 
         if (_flyleafRuntime.TryStart())
@@ -1548,23 +1512,6 @@ public partial class MainWindowViewModel : ObservableObject
             : ts.ToString(@"m\:ss");
     }
 
-    private static string FormatVersion(Version version)
-    {
-        if (version is null)
-        {
-            return "Unknown";
-        }
-
-        if (version.Revision >= 0)
-        {
-            return version.ToString(4);
-        }
-
-        return version.Build >= 0
-            ? version.ToString(3)
-            : version.ToString(2);
-    }
-
     private void ShowFFmpegMissingError()
     {
         Log.Debug("Showing FFmpeg missing prompt");
@@ -1607,19 +1554,6 @@ public partial class MainWindowViewModel : ObservableObject
         };
 
         return IsAvailableView(camera) ? camera : CameraNames.Front;
-    }
-
-    private async Task UpdateLatestReleaseAsync()
-    {
-        var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
-        LatestRelease = result.LatestRelease;
-        IsUpdateAvailable = result.IsUpdateAvailable;
-
-        Log.Information(
-            "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
-            FormatVersion(CurrentVersion),
-            LatestVersionText,
-            IsUpdateAvailable);
     }
 
     private static bool CanUseClip(CamClip clip)
