@@ -44,6 +44,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private static readonly TimeSpan ResumeAlignmentTolerance = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
+    /// How far a side camera may sit from the front after a forward frame step before it is reseeked onto the front's frame.
+    /// About one and a half frames at Tesla's 36 fps: a single-frame difference is just two cameras' clocks straddling a frame, anything more is a camera that skipped.
+    /// </summary>
+    private static readonly TimeSpan StepAlignmentTolerance = TimeSpan.FromMilliseconds(42);
+
+    /// <summary>
     /// A play request this close to the end restarts the clip, so pressing play on a finished clip replays it.
     /// </summary>
     private static readonly TimeSpan ReplayFromEndWindow = TimeSpan.FromMilliseconds(250);
@@ -254,9 +260,14 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     });
 
     /// <summary>
-    /// Steps every open camera one frame forward or backward, for frame-by-frame incident review.
-    /// Stepping only makes sense paused, so playback is paused first; all cameras step together so they stay in sync.
+    /// Steps one frame forward or backward, for frame-by-frame incident review.
+    /// Stepping only makes sense paused, so playback is paused first.
     /// </summary>
+    /// <remarks>
+    /// The front steps and the side cameras follow its clock.
+    /// Letting every camera step on its own drifted them apart, because each camera drops frames in different places: ten steps left the rear a third of a second off the front.
+    /// Stepping forward is cheap, so side cameras step too and are only reseeked when they've slipped; a backward step is a seek anyway, so they seek straight to the front's new frame.
+    /// </remarks>
     public Task StepFrameAsync(bool forward) => RunOperationAsync(_session, "Frame step error", async _ =>
     {
         if (!IsSessionOpen)
@@ -269,8 +280,22 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         _resumeAfterScrub = false;
-        await ForEachOpenPlayerAsync(player => player.StepFrameAsync(forward));
-        Position = Clamp(_primaryPlayer.Position, TimeSpan.Zero, Duration);
+
+        if (forward)
+        {
+            await ForEachOpenPlayerAsync(player => player.StepFrameAsync(forward: true));
+        }
+        else
+        {
+            await _primaryPlayer.StepFrameAsync(forward: false);
+        }
+
+        var anchor = _primaryPlayer.Position;
+        await Task.WhenAll(SecondaryPlayers()
+            .Where(player => !forward || (player.Position - anchor).Duration() > StepAlignmentTolerance)
+            .Select(player => player.SeekAsync(anchor)));
+
+        Position = Clamp(anchor, TimeSpan.Zero, Duration);
     });
 
     private IEnumerable<ICameraPlayer> SecondaryPlayers() =>

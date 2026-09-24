@@ -561,6 +561,45 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task StepFrameAsync_ForwardWhenASideCameraSlipped_ReseeksOnlyThatCameraOntoTheFront()
+    {
+        // Each camera drops frames in different places, so stepping them independently lets them drift apart; a camera more than a frame and a half off is pulled back onto the front's frame.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        rig.Back.RaisePositionChanged(TimeSpan.FromMilliseconds(200));
+
+        await rig.Controller.StepFrameAsync(forward: true);
+
+        var anchor = rig.Front.Position;
+        rig.Back.Seeks.ShouldHaveSingleItem().Position.ShouldBe(anchor);
+        rig.Left.Seeks.ShouldBeEmpty();
+        rig.Right.Seeks.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_Backward_SideCamerasFollowTheFrontsNewFrame()
+    {
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        await rig.Controller.SeekAsync(TimeSpan.FromSeconds(10));
+
+        await rig.Controller.StepFrameAsync(forward: false);
+
+        var anchor = TimeSpan.FromSeconds(10) - FakeCameraPlayer.FrameDuration;
+        rig.Front.Calls[^1].ShouldBe("step:backward");
+        rig.Front.Position.ShouldBe(anchor);
+        foreach (var player in new[] { rig.Back, rig.Left, rig.Right })
+        {
+            player.Calls.ShouldNotContain("step:backward");
+            player.Position.ShouldBe(anchor);
+        }
+
+        rig.Controller.Position.ShouldBe(anchor);
+    }
+
+    [Fact]
     public async Task StepFrameAsync_WhenNothingIsOpen_DoesNothing()
     {
         using var rig = new Rig();

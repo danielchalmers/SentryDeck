@@ -36,6 +36,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
     private const double BackwardStepPtsGuard = 1.1;
 
     /// <summary>
+    /// Backward-step distances in frames, tried in order until the position moves.
+    /// Only the first normally runs; the wider ones cross gaps where the camera dropped frames.
+    /// </summary>
+    private static readonly double[] BackwardStepAttempts = [BackwardStepPtsGuard, BackwardStepPtsGuard + 1, BackwardStepPtsGuard + 3];
+
+    /// <summary>
     /// Serializes Stop across every camera.
     /// Stop resets the player's renderer, and the players share one D3D device, so two resets at once crash the process inside the swap chain release.
     /// </summary>
@@ -212,8 +218,20 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             }
 
             var frameTicks = (long)(TimeSpan.TicksPerSecond / fps);
-            var targetTicks = Math.Max(0, _player.CurTime - (long)(BackwardStepPtsGuard * frameTicks));
-            await SeekCoreAsync(TimeSpan.FromTicks(targetTicks), accurate: true);
+            var startTicks = _player.CurTime;
+
+            // An accurate seek presents the first frame no earlier than half a frame before the target.
+            // Where the camera dropped a frame, the gap is wider than one frame, so the one-frame step lands back on the current frame; widen the step until the position actually moves.
+            foreach (var framesBack in BackwardStepAttempts)
+            {
+                var targetTicks = Math.Max(0, startTicks - (long)(framesBack * frameTicks));
+                await SeekCoreAsync(TimeSpan.FromTicks(targetTicks), accurate: true);
+
+                if (_player.CurTime < startTicks || targetTicks == 0)
+                {
+                    break;
+                }
+            }
         }
         finally
         {
