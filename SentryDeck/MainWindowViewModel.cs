@@ -15,25 +15,10 @@ namespace SentryDeck;
 
 /// <summary>
 /// View-model for the main window: clip browsing, playback orchestration, update checks, FFmpeg prompts, and shell actions.
-/// Holds no references to WPF controls; the view supplies the playback controller (via <see cref="MainWindowViewModel(Func{VideoPlayerController})"/>) and reacts to <see cref="SearchBoxFocusRequested"/> and <see cref="SelectedCameraView"/> changes.
+/// Holds no references to WPF controls; the view supplies the playback controller (via <see cref="MainWindowViewModel(Func{VideoPlayerController})"/>) and reacts to <see cref="SearchBoxFocusRequested"/> and <see cref="CameraViewsViewModel.SelectedCameraView"/> changes.
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
-    /// <summary>
-    /// The multi-camera grid pseudo-view.
-    /// Every other view id is a canonical camera name from <see cref="CameraNames"/>, so the selected view maps 1:1 onto the clip's camera files.
-    /// </summary>
-    public const string GridCameraView = "grid";
-
-    // The classic four-camera set (HW3 and earlier) shown before any clip is opened, so the selector strip doesn't start empty.
-    private static readonly string[] DefaultCameras =
-    [
-        CameraNames.Front,
-        CameraNames.Back,
-        CameraNames.LeftRepeater,
-        CameraNames.RightRepeater,
-    ];
-
     private readonly List<CamClip> _allClips = [];
     private readonly FlyleafRuntime _flyleafRuntime = new();
     private readonly Func<VideoPlayerController> _playerControllerFactory;
@@ -92,8 +77,6 @@ public partial class MainWindowViewModel : ObservableObject
         };
         _filterDebounceTimer.Tick += OnFilterDebounceTick;
 
-        SyncCameraViewSelection();
-
         Error.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ErrorOverlayViewModel.IsVisible))
@@ -120,6 +103,11 @@ public partial class MainWindowViewModel : ObservableObject
     /// Version, environment, and update details for the About and help page.
     /// </summary>
     public AboutViewModel About { get; } = new();
+
+    /// <summary>
+    /// The enlarged camera (or grid) and the strip of cameras the current clip recorded.
+    /// </summary>
+    public CameraViewsViewModel Cameras { get; } = new();
 
     public bool ShowMainContent => !ShowAboutPage;
 
@@ -224,27 +212,6 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasError => Error.IsVisible;
 
     public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !Error.IsVisible;
-
-    public bool IsGridViewSelected => SelectedCameraView == GridCameraView;
-
-    public bool IsSingleCameraViewSelected => !IsGridViewSelected;
-
-    public string ActiveCameraLabel => SelectedCameraView == GridCameraView ? "Grid" : CameraLabel(SelectedCameraView);
-
-    /// <summary>
-    /// Friendly tile label for a camera.
-    /// The classic four keep their short historical names; the HW4/AI4 B-pillars are spelled out to distinguish them from the repeaters.
-    /// </summary>
-    private static string CameraLabel(string camera) => camera switch
-    {
-        CameraNames.Front => "Front",
-        CameraNames.Back => "Rear",
-        CameraNames.LeftRepeater => "Left",
-        CameraNames.RightRepeater => "Right",
-        CameraNames.LeftPillar => "Left Pillar",
-        CameraNames.RightPillar => "Right Pillar",
-        _ => CameraNames.DisplayName(camera),
-    };
 
     // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
     // Recomputed whenever the selection changes or the controller opens/replaces its media source; plain fields (not ObservableProperty) because they're derived, not independently settable.
@@ -409,53 +376,6 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(IncreaseSpeedCommand))]
     [NotifyCanExecuteChangedFor(nameof(DecreaseSpeedCommand))]
     private double _playbackSpeed = 1.0;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsGridViewSelected))]
-    [NotifyPropertyChangedFor(nameof(IsSingleCameraViewSelected))]
-    [NotifyPropertyChangedFor(nameof(ActiveCameraLabel))]
-    private string _selectedCameraView = CameraNames.Front;
-
-    /// <summary>
-    /// The selectable views for the current clip: the grid plus one tile per camera the clip actually recorded, in <see cref="CameraNames.All"/> order.
-    /// The view re-parents its Flyleaf hosts into the tiles when this changes.
-    /// </summary>
-    [ObservableProperty]
-    private IReadOnlyList<CameraViewOption> _cameraViewOptions = BuildCameraViewOptions(null);
-
-    private static IReadOnlyList<CameraViewOption> BuildCameraViewOptions(CamClip clip)
-    {
-        // Only recognized cameras get a tile: each needs a dedicated Flyleaf host wired in the view, so an unknown future suffix is ingested and played in the engine but not shown.
-        var cameras = clip is null
-            ? DefaultCameras
-            : CameraNames.All.Where(camera => clip.Chunks.Any(chunk => chunk.Files.ContainsKey(camera))).ToArray();
-
-        // Metadata-only clips (no camera files at all) keep the classic strip rather than none.
-        if (cameras.Length == 0)
-        {
-            cameras = DefaultCameras;
-        }
-
-        var options = new List<CameraViewOption>(cameras.Length + 1)
-        {
-            new(GridCameraView, "Grid", shortcutNumber: 1, isGrid: true),
-        };
-        options.AddRange(cameras.Select((camera, index) => new CameraViewOption(camera, CameraLabel(camera), index + 2)));
-        return options;
-    }
-
-    private bool IsAvailableView(string view) =>
-        view is not null && CameraViewOptions.Any(option => option.ViewId == view);
-
-    partial void OnSelectedCameraViewChanged(string value) => SyncCameraViewSelection();
-
-    private void SyncCameraViewSelection()
-    {
-        foreach (var option in CameraViewOptions)
-        {
-            option.IsSelected = option.ViewId == SelectedCameraView;
-        }
-    }
 
     public async Task InitializeAsync()
     {
@@ -843,7 +763,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var start = TimeSpan.FromSeconds(startFraction * mediaSource.Duration.TotalSeconds);
         var end = TimeSpan.FromSeconds(endFraction * mediaSource.Duration.TotalSeconds);
-        var camera = ActiveExportCameraName;
+        var camera = Cameras.ExportCamera;
         var defaultFileName = $"{clip.Name} {CameraNames.DisplayName(camera)} {FormatTimeSpanForFileName(start)}-{FormatTimeSpanForFileName(end)}.mp4";
 
         await ExportAsync(clip, mediaSource, camera, start, end, defaultFileName);
@@ -937,9 +857,6 @@ public partial class MainWindowViewModel : ObservableObject
             IsExporting = false;
         }
     }
-
-    // The currently enlarged camera; grid view exports the front (primary) angle.
-    private string ActiveExportCameraName => SelectedCameraView == GridCameraView ? CameraNames.Front : SelectedCameraView;
 
     private static string PickSavePathWithDialog(string defaultFileName)
     {
@@ -1073,7 +990,7 @@ public partial class MainWindowViewModel : ObservableObject
             // Auto-focus the camera that triggered the event (Full metadata mode).
             if (clip.Event is not null)
             {
-                SelectedCameraView = CameraIdToView(clip.Event.Camera);
+                Cameras.SelectedCameraView = Cameras.CameraIdToView(clip.Event.Camera);
             }
         }
         catch (Exception ex)
@@ -1187,10 +1104,10 @@ public partial class MainWindowViewModel : ObservableObject
                 _ => 0,
             };
 
-            var numberedOption = CameraViewOptions.FirstOrDefault(option => option.ShortcutNumber == shortcutNumber);
+            var numberedOption = Cameras.CameraViewOptions.FirstOrDefault(option => option.ShortcutNumber == shortcutNumber);
             if (numberedOption is not null)
             {
-                return Run(() => SelectCameraView(numberedOption.ViewId));
+                return Run(() => Cameras.SelectCameraViewCommand.Execute(numberedOption.ViewId));
             }
 
             if (key == Key.E && HasEventMarker)
@@ -1531,31 +1448,6 @@ public partial class MainWindowViewModel : ObservableObject
         FilterText = string.Empty;
     }
 
-    [RelayCommand]
-    private void SelectCameraView(string cameraView)
-    {
-        // Unknown views and cameras the current clip didn't record fall back to the front (primary) angle, which every playable clip has.
-        SelectedCameraView = IsAvailableView(cameraView) ? cameraView : CameraNames.Front;
-    }
-
-    // Maps a Tesla event.json camera id to the camera view to auto-focus.
-    // Ids follow the community-documented map (0 front, 3/4 repeaters, 5/6 B-pillars, 7 rear; 1/2/8 are the non-recorded fisheye/narrow/cabin).
-    // Unknown ids and cameras this clip didn't record fall back to the front (primary) angle.
-    internal string CameraIdToView(int cameraId)
-    {
-        var camera = cameraId switch
-        {
-            3 => CameraNames.LeftRepeater,
-            4 => CameraNames.RightRepeater,
-            5 => CameraNames.LeftPillar,
-            6 => CameraNames.RightPillar,
-            7 => CameraNames.Back,
-            _ => CameraNames.Front,
-        };
-
-        return IsAvailableView(camera) ? camera : CameraNames.Front;
-    }
-
     private static bool CanUseClip(CamClip clip)
     {
         return clip is not null;
@@ -1693,18 +1585,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedClipChanged(CamClip value)
     {
-        // Rebuild the camera tiles from what this clip actually recorded (four on HW3, six on HW4/AI4).
-        // If the previously watched camera doesn't exist here, fall back to the front.
-        CameraViewOptions = BuildCameraViewOptions(value);
-        if (IsAvailableView(SelectedCameraView))
-        {
-            // Same view id as before, but the option objects are new, so re-mark the selected one.
-            SyncCameraViewSelection();
-        }
-        else
-        {
-            SelectedCameraView = CameraNames.Front;
-        }
+        Cameras.ShowCamerasOf(value);
 
         // In/out marks are fractions of the previous clip's timeline; they mean nothing on the new one, and a trim panel guiding a cut of the old clip would now be lying.
         CancelTrim();

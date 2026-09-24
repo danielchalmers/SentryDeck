@@ -216,7 +216,7 @@ public sealed partial class MainWindowViewModelTests
         var exporter = new FakeClipExporter();
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.Back);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
         vm.SeekPosition = 0.25;
         vm.MarkSelectionStartCommand.Execute(null);
         vm.SeekPosition = 0.75;

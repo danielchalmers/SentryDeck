@@ -199,7 +199,7 @@ public sealed partial class MainWindowViewModelTests
         vm.SelectedClip = ClipWithCamerasAndEventCamera(eventCamera: 7, SixCameras);
 
         // Opening an incident on the angle that triggered it is the whole point of the metadata.
-        vm.SelectedCameraView.ShouldBe(CameraNames.Back);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Back);
     }
 
     [Fact]

@@ -1010,7 +1010,7 @@
                                 CornerRadius="6"
                                 Focusable="True">
                             <Grid>
-                                <Grid Visibility="{Binding IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
+                                <Grid Visibility="{Binding Cameras.IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="*" />
                                         <RowDefinition Height="*" />
@@ -1101,7 +1101,7 @@
                                     </Border>
                                 </Grid>
 
-                                <Grid Visibility="{Binding IsSingleCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
+                                <Grid Visibility="{Binding Cameras.IsSingleCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
                                     <ContentControl x:Name="PrimaryCameraHostSlot" />
                                     <Border Margin="14"
                                             Padding="10,4"
@@ -1109,7 +1109,7 @@
                                             VerticalAlignment="Top"
                                             Background="#A0000000"
                                             CornerRadius="4">
-                                        <TextBlock Text="{Binding ActiveCameraLabel}"
+                                        <TextBlock Text="{Binding Cameras.ActiveCameraLabel}"
                                                    FontSize="13"
                                                    FontWeight="SemiBold"
                                                    Foreground="White" />
@@ -1127,7 +1127,7 @@
                                 CornerRadius="8">
                             <!--  One tile per view the current clip offers: the grid plus each recorded camera (four on HW3, six on HW4/AI4).
                                   Camera tiles carry a preview slot that registers itself with the code-behind (CameraTileSlot_Loaded), which re-parents each camera's Flyleaf host into it.  -->
-                            <ItemsControl ItemsSource="{Binding CameraViewOptions}">
+                            <ItemsControl ItemsSource="{Binding Cameras.CameraViewOptions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <UniformGrid Rows="1" />
@@ -1135,7 +1135,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type local:CameraViewOption}">
-                                        <RadioButton Command="{Binding DataContext.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        <RadioButton Command="{Binding DataContext.Cameras.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                      CommandParameter="{Binding ViewId}"
                                                      AutomationProperties.Name="{Binding AutomationName}"
                                                      GroupName="CameraViewMode"

@@ -44,7 +44,7 @@ public partial class MainWindow : Window
         _viewModel = new MainWindowViewModel(
             () => VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]));
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
-        _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
+        _viewModel.Cameras.PropertyChanged += CamerasOnPropertyChanged;
 
         DataContext = _viewModel;
 
@@ -177,11 +177,11 @@ public partial class MainWindow : Window
         _viewModel.OnSeekSliderValueChanged();
     }
 
-    private void ViewModelOnPropertyChanged(object sender, PropertyChangedEventArgs e)
+    private void CamerasOnPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
         // Re-parent the hosts when the enlarged view changes, and when a new clip swaps in a different camera set (the freshly generated tiles also self-register via CameraTileSlot_Loaded, which covers containers that don't exist yet at this moment).
-        if (e.PropertyName is nameof(MainWindowViewModel.SelectedCameraView)
-            or nameof(MainWindowViewModel.CameraViewOptions))
+        if (e.PropertyName is nameof(CameraViewsViewModel.SelectedCameraView)
+            or nameof(CameraViewsViewModel.CameraViewOptions))
         {
             UpdateCameraHostLayout();
         }
@@ -204,7 +204,7 @@ public partial class MainWindow : Window
                     MouseLeftButtonUpEvent,
                     new MouseButtonEventHandler((_, e) =>
                     {
-                        _viewModel.SelectCameraViewCommand.Execute(cameraView);
+                        _viewModel.Cameras.SelectCameraViewCommand.Execute(cameraView);
 
                         // The click moved Win32 focus to the native Flyleaf surface, which never routes keys back into WPF, so every keyboard shortcut would go dead.
                         // Pull it back onto the video container, a neutral focusable element that consumes no shortcut keys (see its remarks in the XAML).
@@ -235,7 +235,7 @@ public partial class MainWindow : Window
 
         var placed = new HashSet<FlyleafHost>();
 
-        foreach (var (host, slot) in GetCameraHostLayout(_viewModel.SelectedCameraView))
+        foreach (var (host, slot) in GetCameraHostLayout(_viewModel.Cameras.SelectedCameraView))
         {
             MoveHostToSlot(host, slot);
             placed.Add(host);
@@ -257,7 +257,7 @@ public partial class MainWindow : Window
 
     private IEnumerable<(FlyleafHost Host, ContentControl Slot)> GetCameraHostLayout(string view)
     {
-        if (view == MainWindowViewModel.GridCameraView)
+        if (view == CameraViewsViewModel.GridCameraView)
         {
             // The grid stays the classic four-camera 2x2 for now; pillar cameras are reachable through their single-camera views.
             yield return (FrontFlyleafHost, GridFrontHostSlot);
@@ -275,7 +275,7 @@ public partial class MainWindow : Window
         yield return (primaryHost, PrimaryCameraHostSlot);
 
         // Every other camera of this clip previews inside its own selector tile; the enlarged camera's tile stays empty behind its "this is the main view" icon.
-        foreach (var option in _viewModel.CameraViewOptions)
+        foreach (var option in _viewModel.Cameras.CameraViewOptions)
         {
             if (option.IsCamera
                 && option.ViewId != view

@@ -162,10 +162,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
-        vm.IsGridViewSelected.ShouldBeFalse();
-        vm.IsSingleCameraViewSelected.ShouldBeTrue();
-        vm.CameraViewOptions.Single(option => option.ViewId == CameraNames.Front).IsSelected.ShouldBeTrue();
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.IsGridViewSelected.ShouldBeFalse();
+        vm.Cameras.IsSingleCameraViewSelected.ShouldBeTrue();
+        vm.Cameras.CameraViewOptions.Single(option => option.ViewId == CameraNames.Front).IsSelected.ShouldBeTrue();
         vm.ShowMainContent.ShouldBeTrue();
         vm.ShowAboutPage.ShouldBeFalse();
 
@@ -187,13 +187,13 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute(cameraView);
+        vm.Cameras.SelectCameraViewCommand.Execute(cameraView);
 
         var expectedView = expectedLabel == "Front"
             ? CameraNames.Front
             : cameraView;
-        vm.SelectedCameraView.ShouldBe(expectedView);
-        vm.ActiveCameraLabel.ShouldBe(expectedLabel);
+        vm.Cameras.SelectedCameraView.ShouldBe(expectedView);
+        vm.Cameras.ActiveCameraLabel.ShouldBe(expectedLabel);
     }
 
     [Fact]
@@ -201,15 +201,15 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
             [
-                MainWindowViewModel.GridCameraView,
+                CameraViewsViewModel.GridCameraView,
                 CameraNames.Front,
                 CameraNames.Back,
                 CameraNames.LeftRepeater,
                 CameraNames.RightRepeater,
             ]);
-        vm.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5]);
+        vm.Cameras.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5]);
     }
 
     [Fact]
@@ -217,10 +217,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute("grid");
+        vm.Cameras.SelectCameraViewCommand.Execute("grid");
 
-        vm.IsGridViewSelected.ShouldBeTrue();
-        vm.IsSingleCameraViewSelected.ShouldBeFalse();
+        vm.Cameras.IsGridViewSelected.ShouldBeTrue();
+        vm.Cameras.IsSingleCameraViewSelected.ShouldBeFalse();
     }
 
     [Fact]
@@ -228,12 +228,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.Back);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.Back);
-        vm.IsGridViewSelected.ShouldBeFalse();
-        vm.IsSingleCameraViewSelected.ShouldBeTrue();
-        vm.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Back);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Back);
+        vm.Cameras.IsGridViewSelected.ShouldBeFalse();
+        vm.Cameras.IsSingleCameraViewSelected.ShouldBeTrue();
+        vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Back);
     }
 
     [Fact]
@@ -243,9 +243,9 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         vm.SelectedClip = ClipWithCameras(SixCameras);
 
-        vm.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
             [
-                MainWindowViewModel.GridCameraView,
+                CameraViewsViewModel.GridCameraView,
                 CameraNames.Front,
                 CameraNames.Back,
                 CameraNames.LeftRepeater,
@@ -253,12 +253,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
                 CameraNames.LeftPillar,
                 CameraNames.RightPillar,
             ]);
-        vm.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5, 6, 7]);
-        vm.CameraViewOptions.Last().Label.ShouldBe("Right Pillar");
+        vm.Cameras.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5, 6, 7]);
+        vm.Cameras.CameraViewOptions.Last().Label.ShouldBe("Right Pillar");
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
-        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
-        vm.ActiveCameraLabel.ShouldBe("Left Pillar");
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.ActiveCameraLabel.ShouldBe("Left Pillar");
     }
 
     [Fact]
@@ -268,11 +268,11 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.CameraViewOptions.Count.ShouldBe(5);
-        vm.CameraViewOptions.ShouldAllBe(option => option.ViewId != CameraNames.LeftPillar);
+        vm.Cameras.CameraViewOptions.Count.ShouldBe(5);
+        vm.Cameras.CameraViewOptions.ShouldAllBe(option => option.ViewId != CameraNames.LeftPillar);
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
@@ -280,11 +280,11 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
         vm.SelectedClip = ClipWithCameras(SixCameras);
-        vm.SelectCameraViewCommand.Execute(CameraNames.RightPillar);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.RightPillar);
 
         vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
@@ -292,12 +292,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
         vm.SelectedClip = ClipWithCameras(SixCameras);
-        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
 
         vm.SelectedClip = ClipWithCameras(SixCameras);
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
-        vm.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.LeftPillar);
     }
 
     [Theory]
@@ -314,7 +314,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         var vm = CreateViewModel();
         vm.SelectedClip = ClipWithCameras(SixCameras);
 
-        vm.CameraIdToView(cameraId).ShouldBe(expectedView);
+        vm.Cameras.CameraIdToView(cameraId).ShouldBe(expectedView);
     }
 
     [Fact]
@@ -323,8 +323,8 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         var vm = CreateViewModel();
         vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.CameraIdToView(5).ShouldBe(CameraNames.Front);
-        vm.CameraIdToView(7).ShouldBe(CameraNames.Back);
+        vm.Cameras.CameraIdToView(5).ShouldBe(CameraNames.Front);
+        vm.Cameras.CameraIdToView(7).ShouldBe(CameraNames.Back);
     }
 
     [Fact]
@@ -334,13 +334,13 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         vm.SelectedClip = ClipWithCameras(SixCameras);
 
         (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeTrue();
-        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
 
         (await vm.HandleKeyDownAsync(Key.NumPad7, ModifierKeys.None)).ShouldBeTrue();
-        vm.SelectedCameraView.ShouldBe(CameraNames.RightPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.RightPillar);
 
         (await vm.HandleKeyDownAsync(Key.D1, ModifierKeys.None)).ShouldBeTrue();
-        vm.SelectedCameraView.ShouldBe(MainWindowViewModel.GridCameraView);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraViewsViewModel.GridCameraView);
     }
 
     [Fact]
@@ -349,7 +349,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         var vm = CreateViewModel(); // classic strip: 5 tiles, so 6 has no target
 
         (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeFalse();
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
@@ -358,11 +358,11 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         // The view re-parents the Flyleaf hosts when SelectedCameraView changes, so this notification is part of the view/view-model contract.
         var vm = CreateViewModel();
         var changed = new List<string>();
-        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        vm.Cameras.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        vm.SelectCameraViewCommand.Execute("grid");
+        vm.Cameras.SelectCameraViewCommand.Execute("grid");
 
-        changed.ShouldContain(nameof(MainWindowViewModel.SelectedCameraView));
+        changed.ShouldContain(nameof(CameraViewsViewModel.SelectedCameraView));
     }
 
     [Fact]
@@ -514,12 +514,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
         vm.ShowAboutPage = true;
-        var cameraViewBefore = vm.SelectedCameraView;
+        var cameraViewBefore = vm.Cameras.SelectedCameraView;
 
         var handled = await vm.HandleKeyDownAsync(key, modifiers);
 
         handled.ShouldBeFalse();
-        vm.SelectedCameraView.ShouldBe(cameraViewBefore); // no camera switch behind the About page
+        vm.Cameras.SelectedCameraView.ShouldBe(cameraViewBefore); // no camera switch behind the About page
         vm.IsTrimming.ShouldBeFalse();
         vm.ShowAboutPage.ShouldBeTrue(); // the page stays open
     }

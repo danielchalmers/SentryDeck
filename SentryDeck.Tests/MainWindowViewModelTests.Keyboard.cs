@@ -160,7 +160,7 @@ public sealed partial class MainWindowViewModelTests
 
         // The winner's load resumes and auto-focuses the rear camera.
         // The superseded load is dropped on its way out, and the loading state it finds is no longer its own to clear -- doing so would strand the newer clip's open with no progress indication at all.
-        await Wait.UntilAsync(() => vm.SelectedCameraView == CameraNames.Back);
+        await Wait.UntilAsync(() => vm.Cameras.SelectedCameraView == CameraNames.Back);
         vm.IsLoading.ShouldBeTrue();
         vm.NowPlayingClip.ShouldBe(winner);
         vm.SelectedClip.ShouldBe(winner);
