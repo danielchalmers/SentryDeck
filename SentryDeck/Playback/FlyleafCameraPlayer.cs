@@ -254,6 +254,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         // Clip playlists are ffconcat files with absolute paths; "safe=0" tells FFmpeg's concat demuxer to allow them (it refuses absolute/outside-directory paths by default).
         config.Demuxer.FormatOpt["safe"] = "0";
 
+        // Every seek force-interrupts the demuxer's in-flight read.
+        // When that read is the concat demuxer opening the next chunk file, FFmpeg is left holding a half-initialized input and the next av_seek_frame dereferences it and kills the process with an access violation.
+        // A scrub stress run crashed 3 times in 8 with interrupts on and 0 in 12 with them off, and a single-file clip never crashed either way.
+        // Interrupts only help cut short slow network reads; every input here is a local file.
+        config.Demuxer.AllowReadInterrupts = false;
+
         return config;
     }
 
