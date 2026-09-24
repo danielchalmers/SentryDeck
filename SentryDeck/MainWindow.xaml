@@ -1236,16 +1236,14 @@
 
                             <!--  Loading / rendering status  -->
                             <StackPanel Visibility="{Binding IsLoading, Converter={local:BoolToVisibilityConverter}}">
-                                <TextBlock Text="{Binding LoadingStatusText}"
+                                <TextBlock Text="Loading..."
                                            Margin="0,0,0,16"
                                            HorizontalAlignment="Center"
                                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                            Style="{StaticResource AppSubtitle}" />
                                 <ProgressBar Width="300"
                                              Height="6"
-                                             IsIndeterminate="{Binding IsIndeterminateProgress}"
-                                             Maximum="100"
-                                             Value="{Binding RenderProgressPercent, Mode=OneWay}" />
+                                             IsIndeterminate="True" />
                             </StackPanel>
 
                             <!--  Error / first-run empty state  -->

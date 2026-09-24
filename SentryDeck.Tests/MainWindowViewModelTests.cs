@@ -388,7 +388,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ShowVideoHosts.ShouldBeFalse();
-        vm.IsIndeterminateProgress.ShouldBeTrue();
     }
 
     [Fact]
@@ -459,24 +458,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         vm.IsPlaying = isPlaying;
 
         vm.PlayPauseIcon.ShouldBe(expectedIcon);
-    }
-
-    [Fact]
-    public void LoadingStatusText_ShowsRenderProgressWhileRendering()
-    {
-        var vm = CreateViewModel();
-        vm.IsLoading = true;
-
-        vm.LoadingStatusText.ShouldBe("Loading...");
-        vm.IsIndeterminateProgress.ShouldBeTrue();
-
-        vm.IsRendering = true;
-        vm.RenderProgress = 0.5;
-
-        vm.RenderProgressPercent.ShouldBe(50);
-        vm.LoadingStatusText.ShouldBe("Rendering... 50%");
-        // A determinate render progress bar replaces the indeterminate spinner.
-        vm.IsIndeterminateProgress.ShouldBeFalse();
     }
 
     [Fact]

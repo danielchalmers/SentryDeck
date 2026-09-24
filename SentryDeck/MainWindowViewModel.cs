@@ -233,8 +233,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !ShowErrorOverlay;
 
-    public bool IsIndeterminateProgress => IsLoading && !IsRendering;
-
     public bool IsGridViewSelected => SelectedCameraView == GridCameraView;
 
     public bool IsSingleCameraViewSelected => !IsGridViewSelected;
@@ -255,12 +253,6 @@ public partial class MainWindowViewModel : ObservableObject
         CameraNames.RightPillar => "Right Pillar",
         _ => CameraNames.DisplayName(camera),
     };
-
-    public string LoadingStatusText => IsRendering
-        ? $"Rendering... {RenderProgressPercent}%"
-        : "Loading...";
-
-    public int RenderProgressPercent => (int)(RenderProgress * 100);
 
     // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
     // Recomputed whenever the selection changes or the controller opens/replaces its media source; plain fields (not ObservableProperty) because they're derived, not independently settable.
@@ -412,8 +404,6 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     [NotifyPropertyChangedFor(nameof(CanStop))]
-    [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
-    [NotifyPropertyChangedFor(nameof(IsIndeterminateProgress))]
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
     [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
@@ -427,21 +417,11 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
     private bool _isLoading;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
-    [NotifyPropertyChangedFor(nameof(IsIndeterminateProgress))]
-    private bool _isRendering;
-
     // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RefreshClipsCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenFolderCommand))]
     private bool _isLoadingClips;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RenderProgressPercent))]
-    [NotifyPropertyChangedFor(nameof(LoadingStatusText))]
-    private double _renderProgress;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PositionText))]
