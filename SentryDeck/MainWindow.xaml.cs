@@ -119,10 +119,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Tunnels from the window down, so the search shortcut fires no matter which control holds focus (seek slider, a camera tile, the speed combo, …), not only when the sidebar list is focused.
-        if (MainWindowViewModel.IsSearchFocusShortcut(e.Key, Keyboard.Modifiers))
+        // While typing in the search box, keys are text (space, digits, arrows), so don't hijack them for playback/camera shortcuts.
+        // The search shortcut itself still works there, so it can re-select the query.
+        if (SearchBox.IsKeyboardFocused && !MainWindowViewModel.IsSearchFocusShortcut(e.Key, Keyboard.Modifiers))
         {
-            _viewModel.RequestSearchFocus();
+            return;
+        }
+
+        // Shortcuts are handled while tunneling, before the focused control sees the key.
+        // Handling them on the bubbling KeyDown let whatever button was last clicked swallow Space (clicking itself again instead of play/pause) and let buttons eat the arrow keys for focus navigation.
+        // The handled decision is synchronous on purpose: WPF has finished routing by the time an awaited handler resumes.
+        if (_viewModel.HandleKeyDown(e.Key, Keyboard.Modifiers))
+        {
             e.Handled = true;
         }
     }
@@ -146,24 +154,10 @@ public partial class MainWindow : Window
 
     private void ClipListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        // A left-click selects a clip but leaves keyboard focus on the ListBoxItem, which then swallows Space/arrows before they bubble to Window_KeyDown, so playback shortcuts die after clicking a clip.
+        // A left-click selects a clip but leaves keyboard focus on the ListBoxItem, so Up/Down would then browse the list instead of leaving the selection alone.
         // Re-park focus on the neutral VideoContainer (same fix the camera tiles use).
         // Deferred to Input priority because the ListBox's own click handling re-takes focus after this handler; mouse-only so Tab/arrow keyboard navigation of the list still works.
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Keyboard.Focus(VideoContainer)));
-    }
-
-    private async void Window_KeyDown(object sender, KeyEventArgs e)
-    {
-        // While typing in the search box, keys are text (space, digits, arrows), so don't hijack them for playback/camera shortcuts.
-        if (SearchBox.IsKeyboardFocused)
-        {
-            return;
-        }
-
-        if (await _viewModel.HandleKeyDownAsync(e.Key, Keyboard.Modifiers))
-        {
-            e.Handled = true;
-        }
     }
 
     private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -212,7 +206,7 @@ public partial class MainWindow : Window
                     {
                         _viewModel.SelectCameraViewCommand.Execute(cameraView);
 
-                        // The click moved Win32 focus to the native Flyleaf surface, which would swallow every keyboard shortcut (they're handled in Window_KeyDown).
+                        // The click moved Win32 focus to the native Flyleaf surface, which never routes keys back into WPF, so every keyboard shortcut would go dead.
                         // Pull it back onto the video container, a neutral focusable element that consumes no shortcut keys (see its remarks in the XAML).
                         Activate();
                         Keyboard.Focus(VideoContainer);

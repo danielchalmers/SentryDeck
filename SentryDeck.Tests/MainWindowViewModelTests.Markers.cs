@@ -190,26 +190,26 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task JumpToEvent_MovesSeekPositionToMarker()
+    public void EventShortcut_WithAnOpenedEventClip_SeeksThePlayersToTheEventMoment()
     {
-        var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+        // The clip opens 10s before its event (80s of 180s); E must move the actual video to the event itself (90s), not just the seek bar.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = new CamClip(
+            clipFiles.Clip.FullPath,
+            clipFiles.Clip.Name,
+            clipFiles.Clip.Timestamp,
+            clipFiles.Clip.Chunks,
+            new CamEvent { Timestamp = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30) });
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clip);
+        vm.SelectedClip = clip;
 
-        await vm.JumpToEventCommand.ExecuteAsync(null);
-
-        vm.SeekPosition.ShouldBe(vm.EventMarkerPosition, 0.0001);
-    }
-
-    [Fact]
-    public async Task EventShortcut_JumpsToEvent_WhenMarkerPresent()
-    {
-        var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
-
-        var handled = await vm.HandleKeyDownAsync(Key.E, ModifierKeys.None);
+        var handled = vm.HandleKeyDown(Key.E, ModifierKeys.None);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
 
         handled.ShouldBeTrue();
-        vm.SeekPosition.ShouldBe(vm.EventMarkerPosition, 0.0001);
+        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(90));
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(90));
+        vm.SeekPosition.ShouldBe(0.5, 0.0001);
     }
 
     [Fact]

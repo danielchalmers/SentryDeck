@@ -308,6 +308,19 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     }
 
     [Fact]
+    public void Build_FrontFileClaimingHoursOfFootage_AutoExcludesChunk()
+    {
+        // A corrupt header can report an absurd but representable duration; trusted, it stretched the timeline by hours of footage that isn't there.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.Front), TestMp4.Build(version: 0, timescale: 1, duration: uint.MaxValue));
+
+        var mediaSource = Build(clipFiles.Clip);
+
+        mediaSource.AutoExcludedChunkIndices.ShouldBe([1]);
+        mediaSource.Duration.ShouldBe(TimeSpan.FromSeconds(120));
+    }
+
+    [Fact]
     public void Build_ChunkWithNoFrontFile_IsAutoExcluded()
     {
         // The front camera drives the shared timeline, so a chunk that never had a front file is dropped before any probe -- there is nothing to measure its length against.

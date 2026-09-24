@@ -152,12 +152,15 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
 
         try
         {
+            // Decode from a stream, not UriSource: for a URI, WPF first asks URLMON which security zone the file belongs to, and that COM round trip cost the UI thread about a second across the first screen of the clip list at startup.
+            // OnLoad reads the whole image during EndInit, so the stream can be closed right after.
+            // No IgnoreImageCache: the image cache is keyed by URI, and with only a stream WPF throws trying to evict a null key.
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
             bitmap.DecodePixelWidth = 192;
-            bitmap.UriSource = new Uri(path);
+            bitmap.StreamSource = stream;
             bitmap.EndInit();
             bitmap.Freeze();
             return bitmap;

@@ -13,7 +13,6 @@
         Closing="Window_Closing"
         ContentRendered="Window_ContentRendered"
         Foreground="{DynamicResource TextControlForeground}"
-        KeyDown="Window_KeyDown"
         PreviewKeyDown="Window_PreviewKeyDown"
         PreviewMouseDown="Window_PreviewMouseDown"
         mc:Ignorable="d">
@@ -36,7 +35,7 @@
             <Setter Property="IsMoveToPointEnabled" Value="True" />
             <!--  Not focusable: a keyboard-focused Slider consumes Left/Right/Home/End itself, moving
                   only the thumb (SeekPosition has no seek side effect outside a mouse gesture) and
-                  desyncing it from the video. Unfocusable, the keys bubble to Window_KeyDown, whose
+                  desyncing it from the video. Unfocusable, the keys reach Window_PreviewKeyDown, whose
                   arrow shortcuts issue real 5-second seeks. Mouse seeking is unaffected.  -->
             <Setter Property="Focusable" Value="False" />
             <Setter Property="Template">
@@ -980,7 +979,7 @@
 
                     <Grid x:Name="FlyleafHostPool"
                           Visibility="Collapsed">
-                        <!--  KeyBindings=None: shortcuts are app-wide (Window_KeyDown acts on all cameras);
+                        <!--  KeyBindings=None: shortcuts are app-wide (Window_PreviewKeyDown acts on all cameras);
                               Flyleaf's per-surface key handling would pause/seek a single camera only.  -->
                         <fl:FlyleafHost x:Name="FrontFlyleafHost" KeyBindings="None" />
                         <fl:FlyleafHost x:Name="BackFlyleafHost" KeyBindings="None" />
@@ -999,7 +998,7 @@
                         </Grid.RowDefinitions>
 
                         <!--
-                            Focusable: keyboard focus is parked here after a camera-tile click so app-wide shortcuts bubble to Window_KeyDown.
+                            Focusable: keyboard focus is parked here after a camera-tile click so no control consumes keys ahead of the app-wide shortcuts.
                             Focusing the Window instead doesn't work because it's a focus scope, so WPF redirects to the last focused child (often a clip ListBoxItem, which swallows Space/arrows for list navigation).
                         -->
                         <Border x:Name="VideoContainer"

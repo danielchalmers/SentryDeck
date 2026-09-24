@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace SentryDeck.Tests;
 
@@ -207,6 +208,19 @@ public sealed class ConverterTests
     }
 
     [Fact]
+    public void ThumbnailConverter_ValidThumbnail_YieldsADecodedImageAndReleasesTheFile()
+    {
+        using var thumbnail = new TempFile(BuildPng(width: 384, height: 288), ".png");
+
+        var image = new ThumbnailConverter().Convert(thumbnail.Path, typeof(ImageSource), null, null).ShouldBeOfType<BitmapImage>();
+
+        // Decoded straight to list size, and fully read up front: the file must not stay locked, or deleting the clip's folder fails.
+        image.PixelWidth.ShouldBe(192);
+        image.IsFrozen.ShouldBeTrue();
+        using var exclusive = new FileStream(thumbnail.Path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
+    [Fact]
     public void ThumbnailConverter_FallbackParameter_IsVisibleOnlyWhenTheFileIsMissing()
     {
         // The placeholder behind the image is driven purely by the file's presence.
@@ -234,6 +248,17 @@ public sealed class ConverterTests
             .Select(index => new CamChunk(Moment.AddMinutes(index), []));
 
         return new CamClip(Path.GetTempPath(), "Test Clip", Moment, chunks, camEvent: null);
+    }
+
+    private static byte[] BuildPng(int width, int height)
+    {
+        var pixels = new byte[width * height * 4];
+        var source = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(source));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
     }
 
     private static string MissingThumbnailPath() =>

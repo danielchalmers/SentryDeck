@@ -77,19 +77,18 @@ public sealed partial class MainWindowViewModelTests
         vm.SeekPosition = 0.5; // 30s
         vm.OnSeekSliderValueChanged();
 
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(30));
+        front.Seeks.ShouldContain((TimeSpan.FromSeconds(12), false));
+        front.Seeks.ShouldContain((TimeSpan.FromSeconds(30), false));
 
         // Every seek issued so far while dragging must have been fast (non-accurate).
-        front.SeekAccurateFlags.ShouldAllBe(accurate => accurate == false);
+        front.Seeks.ShouldAllBe(seek => !seek.Accurate);
 
         // Release at 0.75 (45s): EndSeekAsync must issue exactly one ACCURATE seek at the release position.
         vm.SeekPosition = 0.75;
 
         RunPinnedToTestThread(vm.EndSeekAsync);
 
-        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(45));
-        front.SeekAccurateFlags[^1].ShouldBeTrue();
+        front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(45), true));
     }
 
     // Synchronous for the same thread-affinity reason as DragSequence above (see RunPinnedToTestThread).
@@ -129,13 +128,13 @@ public sealed partial class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
-        front.SeekPositions.Clear();
+        var seeksBefore = front.Seeks.Count;
 
         // Playback position advances on its own (not a drag): SeekPosition updates via the controller -> UpdateSeekPositionFromController path, which does not go through OnSeekSliderValueChanged, so no scrub seek should ever be issued.
         controller.Position = TimeSpan.FromSeconds(10);
         vm.OnSeekSliderValueChanged(); // the view raises ValueChanged for programmatic changes too
 
-        front.SeekPositions.ShouldBeEmpty();
+        front.Seeks.Count.ShouldBe(seeksBefore);
     }
 
     [Fact]
@@ -176,7 +175,7 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public void SelectingClip_TriggersPlaybackLoading()
+    public void SelectingClip_NotYetOpened_ShowsLoadingWithoutAnError()
     {
         var clip = TestClips.Create(1)[0];
         var vm = CreateViewModelWithController(out _, out _);
@@ -201,5 +200,27 @@ public sealed partial class MainWindowViewModelTests
 
         // Opening an incident on the angle that triggered it is the whole point of the metadata.
         vm.SelectedCameraView.ShouldBe(CameraNames.Back);
+    }
+
+    [Fact]
+    public void StopCommand_WhileASelectionIsWaitingToLoad_KeepsItFromPlaying()
+    {
+        // Selecting a clip yields to the UI before loading it; a stop in that window used to be undone by the load starting right after.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([clipFiles.Clip]);
+        var loadGate = new TaskCompletionSource();
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => loadGate.Task);
+        vm.InitializePlayer();
+
+        vm.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(() => vm.StopCommand.ExecuteAsync(null));
+        loadGate.SetResult();
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.OpenedPaths.ShouldBeEmpty();
+        controller.IsPlaying.ShouldBeFalse();
+        vm.IsLoading.ShouldBeFalse();
     }
 }

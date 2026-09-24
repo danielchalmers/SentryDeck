@@ -112,4 +112,25 @@ public sealed class Mp4DurationReaderTests
         duration.ShouldNotBeNull();
         duration.Value.ShouldBe(TimeSpan.Zero);
     }
+
+    [Fact]
+    public void TryReadDuration_DurationBeyondTimeSpanRange_ReturnsNullInsteadOfThrowing()
+    {
+        // A corrupt 64-bit duration with a timescale of 1 is more seconds than TimeSpan can hold; it used to throw OverflowException out of the media source build and fail the whole clip.
+        var bytes = TestMp4.Build(version: 1, timescale: 1, duration: ulong.MaxValue);
+        using var file = new TempFile(bytes);
+
+        Mp4DurationReader.TryReadDuration(file.Path).ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryReadDuration_BoxSizeNearTheInt64Limit_ReturnsNullInsteadOfThrowing()
+    {
+        // Behind a leading box, the next box position wraps negative, and setting the stream there threw ArgumentOutOfRangeException.
+        byte[] leadingFreeBox = [0, 0, 0, 16, (byte)'f', (byte)'r', (byte)'e', (byte)'e', 0, 0, 0, 0, 0, 0, 0, 0];
+        var bytes = leadingFreeBox.Concat(TestMp4.BuildWithLargeSize("skip", long.MaxValue - 4)).ToArray();
+        using var file = new TempFile(bytes);
+
+        Mp4DurationReader.TryReadDuration(file.Path).ShouldBeNull();
+    }
 }
