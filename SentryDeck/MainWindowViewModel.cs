@@ -1320,6 +1320,10 @@ public partial class MainWindowViewModel : ObservableObject
             _seekGeneration++;
             _isSeeking = true;
             _scrubCoalescer.Reset();
+
+            // Holds playback paused for the gesture, so each scrub is one cheap paused seek and the release resumes every camera together.
+            // The controller serializes this ahead of the first scrub seek, so it needs no await here.
+            _ = _playerController.BeginScrubAsync();
         }
     }
 
@@ -1337,8 +1341,9 @@ public partial class MainWindowViewModel : ObservableObject
         // When the in-flight scrub completes it would otherwise re-issue that value as a keyframe seek AFTER the accurate seek below (both queue on the controller's serialized-operation lock in that order), leaving the playhead on a keyframe instead of the release point.
         _scrubCoalescer.CancelPending();
 
-        // _isSeeking stays true until after the accurate seek below completes, so a scrub seek still winding down from the drag doesn't race it: SeekToCurrentPositionAsync's SeekAsync shares the controller's serialized-operation lock with ScrubSeekAsync, so it naturally waits behind (and thus supersedes the effect of) any in-flight scrub seek issued by the coalescer rather than racing it.
-        await SeekToCurrentPositionAsync();
+        // _isSeeking stays true until the release seek completes, so the position sync can't pull the thumb back while a scrub seek winds down.
+        // The release seek queues behind any in-flight scrub on the controller's serialized-operation lock, so it always lands last.
+        await _playerController.EndScrubAsync(CurrentSeekTargetPosition());
 
         // Only the latest gesture's completion may end the seeking state: if the user has already grabbed the thumb again, this completion is stale and their new drag owns the flag.
         if (generation == _seekGeneration)
@@ -1781,7 +1786,8 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _dispatcher.Invoke(action);
+        // Never block the caller: a synchronous hop from a background thread while the UI thread waits on that thread is a deadlock.
+        _dispatcher.BeginInvoke(action);
     }
 
     partial void OnSelectedClipChanged(CamClip value)

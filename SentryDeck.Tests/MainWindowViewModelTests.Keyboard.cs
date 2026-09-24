@@ -16,18 +16,18 @@ public sealed partial class MainWindowViewModelTests
         var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Right, ModifierKeys.None));
-        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(5));
+        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(5));
 
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Left, ModifierKeys.None));
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Left, ModifierKeys.None));
 
         // Nudging back past the start parks on the first frame instead of seeking to a negative time.
-        front.SeekPositions[^1].ShouldBe(TimeSpan.Zero);
+        front.Seeks[^1].Position.ShouldBe(TimeSpan.Zero);
 
         controller.Position = TimeSpan.FromSeconds(60); // parked at the very end
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Right, ModifierKeys.None));
 
-        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(60));
+        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(60));
     }
 
     [Fact]
@@ -35,14 +35,14 @@ public sealed partial class MainWindowViewModelTests
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
-        var playsAfterOpen = front.PlayCount;
-        var pausesAfterOpen = front.PauseCount;
+        var playsAfterOpen = front.Count("play");
+        var pausesAfterOpen = front.Count("pause");
 
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Space, ModifierKeys.None));
-        front.PauseCount.ShouldBe(pausesAfterOpen + 1); // the clip was playing after the open
+        front.Count("pause").ShouldBe(pausesAfterOpen + 1); // the clip was playing after the open
 
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Space, ModifierKeys.None));
-        front.PlayCount.ShouldBe(playsAfterOpen + 1);
+        front.Count("play").ShouldBe(playsAfterOpen + 1);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed partial class MainWindowViewModelTests
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.OemPeriod, ModifierKeys.None));
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.OemComma, ModifierKeys.None));
 
-        front.StepLog.ShouldBe(["forward", "backward"]);
+        front.Calls.Where(call => call.StartsWith("step:")).ShouldBe(["step:forward", "step:backward"]);
     }
 
     [Fact]
@@ -62,14 +62,14 @@ public sealed partial class MainWindowViewModelTests
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
-        var stopsAfterOpen = front.StopCount;
+        var closesAfterOpen = front.Count("close");
         vm.SelectedClip = clipFiles.Clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
 
         RunPinnedToTestThread(() => vm.StopCommand.ExecuteAsync(null));
 
         // Stop is the only thing that takes the now-playing badge off the clip list; leaving it set would mark a clip as playing with nothing loaded.
         vm.NowPlayingClip.ShouldBeNull();
-        front.StopCount.ShouldBeGreaterThan(stopsAfterOpen);
+        front.Count("close").ShouldBeGreaterThan(closesAfterOpen);
     }
 
     [Fact]

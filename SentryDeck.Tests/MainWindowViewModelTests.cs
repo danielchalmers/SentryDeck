@@ -122,7 +122,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         built.LoadClips([clip]);
         built.Playlist.MoveTo(0);
-        Wait.UntilAsync(() => front.PlayCount > 0 && built.IsMediaOpen && !built.IsLoading).GetAwaiter().GetResult();
+        built.WhenIdleAsync().GetAwaiter().GetResult();
 
         var vm = new MainWindowViewModel(
             () => built,

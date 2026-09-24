@@ -77,19 +77,18 @@ public sealed partial class MainWindowViewModelTests
         vm.SeekPosition = 0.5; // 30s
         vm.OnSeekSliderValueChanged();
 
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(12));
-        front.SeekPositions.ShouldContain(TimeSpan.FromSeconds(30));
+        front.Seeks.ShouldContain((TimeSpan.FromSeconds(12), false));
+        front.Seeks.ShouldContain((TimeSpan.FromSeconds(30), false));
 
         // Every seek issued so far while dragging must have been fast (non-accurate).
-        front.SeekAccurateFlags.ShouldAllBe(accurate => accurate == false);
+        front.Seeks.ShouldAllBe(seek => !seek.Accurate);
 
         // Release at 0.75 (45s): EndSeekAsync must issue exactly one ACCURATE seek at the release position.
         vm.SeekPosition = 0.75;
 
         RunPinnedToTestThread(vm.EndSeekAsync);
 
-        front.SeekPositions[^1].ShouldBe(TimeSpan.FromSeconds(45));
-        front.SeekAccurateFlags[^1].ShouldBeTrue();
+        front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(45), true));
     }
 
     // Synchronous for the same thread-affinity reason as DragSequence above (see RunPinnedToTestThread).
@@ -129,13 +128,13 @@ public sealed partial class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
-        front.SeekPositions.Clear();
+        var seeksBefore = front.Seeks.Count;
 
         // Playback position advances on its own (not a drag): SeekPosition updates via the controller -> UpdateSeekPositionFromController path, which does not go through OnSeekSliderValueChanged, so no scrub seek should ever be issued.
         controller.Position = TimeSpan.FromSeconds(10);
         vm.OnSeekSliderValueChanged(); // the view raises ValueChanged for programmatic changes too
 
-        front.SeekPositions.ShouldBeEmpty();
+        front.Seeks.Count.ShouldBe(seeksBefore);
     }
 
     [Fact]

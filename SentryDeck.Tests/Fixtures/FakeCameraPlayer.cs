@@ -3,150 +3,229 @@ namespace SentryDeck.Tests;
 /// <summary>
 /// In-memory <see cref="ICameraPlayer"/> used to drive a real <see cref="VideoPlayerController"/> in tests without Flyleaf/FFmpeg.
 /// </summary>
+/// <remarks>
+/// Models the parts of the real Flyleaf player that the controller has to cope with: an ended player ignores Play until it is seeked, a failure closes the player, a closed player ignores seeks, and a disposed player throws.
+/// Commands complete synchronously unless a gate holds them, so tests stay deterministic; the controller runs camera commands in parallel, so every piece of bookkeeping is behind a lock and handed out as a snapshot.
+/// </remarks>
 internal sealed class FakeCameraPlayer : ICameraPlayer
 {
-    public event EventHandler Opened;
+    public static readonly TimeSpan FrameDuration = TimeSpan.FromSeconds(1.0 / 36);
+
+    private readonly Lock _lock = new();
+    private readonly List<string> _openedPaths = [];
+    private readonly List<string> _calls = [];
+    private readonly List<(TimeSpan Position, bool Accurate)> _seeks = [];
+    private double _speed = 1.0;
+
     public event EventHandler Ended;
     public event EventHandler<CameraPlaybackFailedEventArgs> Failed;
     public event EventHandler<CameraPositionChangedEventArgs> PositionChanged;
 
-    public List<string> OpenedPaths { get; } = [];
-    public List<TimeSpan> SeekPositions { get; } = [];
-
-    /// <summary>Ordered log of the <c>accurate</c> flag passed to each <see cref="SeekAsync"/> call.</summary>
-    public List<bool> SeekAccurateFlags { get; } = [];
-
-    /// <summary>
-    /// Ordered log of play/pause/seek calls so tests can assert on call ordering (e.g. that a post-recovery resume plays before it seeks).
-    /// </summary>
-    public List<string> CallLog { get; } = [];
     public bool OpenResult { get; init; } = true;
-    public bool ThrowOnStop { get; init; }
-    public TaskCompletionSource<object> StopGate { get; set; }
-    public bool IsOpen { get; private set; }
-    public double Speed { get; set; } = 1.0;
 
-    /// <summary>
-    /// Test-controlled position, used by the controller to read a camera's "live" position (e.g. the front player's current time when joining a secondary camera mid-playback).
-    /// Defaults to zero and is kept in sync by <see cref="SeekAsync"/> so tests behave sensibly without having to poke it manually after every seek.
-    /// </summary>
-    public TimeSpan Position { get; set; }
+    public bool ThrowOnClose { get; init; }
 
-    /// <summary>
-    /// Optional gate that, when set, makes <see cref="OpenAsync"/> await it before completing -- lets tests hold a camera's open in progress to assert on ordering/timing.
-    /// </summary>
-    public TaskCompletionSource<object> OpenGate { get; set; }
+    /// <summary>When set, <see cref="OpenAsync"/> waits on it, holding the open in progress so a test can act mid-open.</summary>
+    public TaskCompletionSource OpenGate { get; set; }
 
-    /// <summary>
-    /// Optional hook invoked synchronously inside <see cref="SeekAsync"/> (after recording the call, before updating <see cref="Position"/>) -- lets tests interleave actions mid-seek (e.g. a new drag gesture starting while the previous release's accurate seek is still executing) without leaving the test thread.
-    /// </summary>
+    /// <summary>When set, <see cref="PlayAsync"/> waits on it after recording the call and before playback starts.</summary>
+    public TaskCompletionSource PlayGate { get; set; }
+
+    /// <summary>Invoked inside <see cref="SeekAsync"/> after the seek is recorded, so a test can act while a seek is executing.</summary>
     public Action SeekCallback { get; set; }
 
-    public int PlayCount { get; private set; }
-    public int PauseCount { get; private set; }
-    public int StopCount { get; private set; }
-    public int CloseCount { get; private set; }
-    public int DisposeCount { get; private set; }
+    public bool IsOpen { get; private set; }
+
+    public bool IsEnded { get; private set; }
+
+    public bool IsPlaying { get; private set; }
+
+    public bool IsDisposed { get; private set; }
+
+    public TimeSpan Position { get; private set; }
+
+    public double Speed
+    {
+        get => _speed;
+        set
+        {
+            // The real player ignores non-positive speeds.
+            if (value > 0)
+            {
+                _speed = value;
+            }
+        }
+    }
+
+    public List<string> OpenedPaths
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _openedPaths];
+            }
+        }
+    }
+
+    /// <summary>Ordered log of commands: <c>open</c>, <c>play</c>, <c>pause</c>, <c>close</c>, <c>seek:{seconds}</c>, <c>scrub:{seconds}</c>, <c>step:forward</c>, <c>step:backward</c>.</summary>
+    public List<string> Calls
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _calls];
+            }
+        }
+    }
+
+    public IReadOnlyList<(TimeSpan Position, bool Accurate)> Seeks
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _seeks];
+            }
+        }
+    }
+
+    public int Count(string call) => Calls.Count(entry => entry == call);
 
     public async Task<bool> OpenAsync(string path)
     {
-        OpenedPaths.Add(path);
+        ThrowIfDisposed();
+        Record("open", () => _openedPaths.Add(path));
+        IsOpen = false;
+        IsEnded = false;
+        IsPlaying = false;
+        Position = TimeSpan.Zero;
 
-        if (OpenGate is not null)
+        if (OpenGate is { } gate)
         {
-            await OpenGate.Task;
+            await gate.Task;
         }
 
         IsOpen = OpenResult;
-
-        if (OpenResult)
-        {
-            Opened?.Invoke(this, EventArgs.Empty);
-        }
-
         return OpenResult;
     }
 
-    /// <summary>
-    /// Optional hook invoked synchronously inside <see cref="PlayAsync"/>, mirroring <see cref="SeekCallback"/>.
-    /// Lets a test make the clip end while a play operation is still in flight, which is the ordering that used to leave the controller reporting playback on a finished clip.
-    /// </summary>
-    public Action PlayCallback { get; set; }
-
-    public Task PlayAsync()
+    public async Task PlayAsync()
     {
-        PlayCount++;
-        CallLog.Add("play");
-        PlayCallback?.Invoke();
-        return Task.CompletedTask;
+        ThrowIfDisposed();
+        Record("play");
+
+        if (PlayGate is { } gate)
+        {
+            await gate.Task;
+        }
+
+        // Flyleaf silently ignores Play on an ended player.
+        if (IsOpen && !IsEnded)
+        {
+            IsPlaying = true;
+        }
     }
 
     public Task PauseAsync()
     {
-        PauseCount++;
-        CallLog.Add("pause");
+        ThrowIfDisposed();
+        Record("pause");
+        IsPlaying = false;
         return Task.CompletedTask;
-    }
-
-    public Task StopAsync()
-    {
-        StopCount++;
-        if (StopGate is not null)
-        {
-            return StopGate.Task;
-        }
-
-        return ThrowOnStop
-            ? Task.FromException(new InvalidOperationException("stop failed"))
-            : Task.CompletedTask;
     }
 
     public Task CloseAsync()
     {
-        CloseCount++;
+        ThrowIfDisposed();
+        Record("close");
         IsOpen = false;
-        return Task.CompletedTask;
+        IsEnded = false;
+        IsPlaying = false;
+
+        return ThrowOnClose
+            ? Task.FromException(new InvalidOperationException("close failed"))
+            : Task.CompletedTask;
     }
 
     public Task SeekAsync(TimeSpan position, bool accurate = true)
     {
-        SeekPositions.Add(position);
-        SeekAccurateFlags.Add(accurate);
-        CallLog.Add(accurate ? $"seek:{position.TotalSeconds}" : $"scrub:{position.TotalSeconds}");
+        ThrowIfDisposed();
+
+        // The real player drops seeks on a closed player.
+        if (!IsOpen)
+        {
+            return Task.CompletedTask;
+        }
+
+        Record(accurate ? $"seek:{position.TotalSeconds}" : $"scrub:{position.TotalSeconds}", () => _seeks.Add((position, accurate)));
         SeekCallback?.Invoke();
-        Position = position;
-        PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
+        IsEnded = false;
+        MoveTo(position);
         return Task.CompletedTask;
     }
-
-    /// <summary>Ordered log of <see cref="StepFrameAsync"/> calls: <c>"forward"</c> or <c>"backward"</c>.</summary>
-    public List<string> StepLog { get; } = [];
 
     public Task StepFrameAsync(bool forward)
     {
-        StepLog.Add(forward ? "forward" : "backward");
-        CallLog.Add(forward ? "step:forward" : "step:backward");
+        ThrowIfDisposed();
+
+        if (!IsOpen)
+        {
+            return Task.CompletedTask;
+        }
+
+        Record(forward ? "step:forward" : "step:backward");
+        IsEnded = false;
+        IsPlaying = false;
+        MoveTo(forward ? Position + FrameDuration : Position - FrameDuration);
         return Task.CompletedTask;
     }
 
-    public void RaiseEnded()
+    /// <summary>Simulates playback reaching the end of the stream: the player parks there and reports it.</summary>
+    public void RaiseEnded(TimeSpan? at = null)
     {
+        if (at is { } position)
+        {
+            Position = position;
+        }
+
+        IsEnded = true;
+        IsPlaying = false;
         Ended?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Simulates a playback failure, which the real adapter treats as closing the media.</summary>
     public void RaiseFailed(Exception exception)
     {
+        IsOpen = false;
+        IsPlaying = false;
         Failed?.Invoke(this, new CameraPlaybackFailedEventArgs(exception));
     }
 
-    public void RaisePositionChanged(TimeSpan position)
-    {
-        Position = position;
-        PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(position));
-    }
+    /// <summary>Simulates playback advancing to <paramref name="position"/>.</summary>
+    public void RaisePositionChanged(TimeSpan position) => MoveTo(position);
 
     public void Dispose()
     {
-        DisposeCount++;
+        IsDisposed = true;
+        IsOpen = false;
     }
+
+    private void MoveTo(TimeSpan position)
+    {
+        Position = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+        PositionChanged?.Invoke(this, new CameraPositionChangedEventArgs(Position));
+    }
+
+    private void Record(string call, Action extra = null)
+    {
+        lock (_lock)
+        {
+            _calls.Add(call);
+            extra?.Invoke();
+        }
+    }
+
+    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(IsDisposed, this);
 }
