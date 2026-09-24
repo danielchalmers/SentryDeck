@@ -14,9 +14,9 @@ public sealed partial class MainWindowViewModelTests
         var clips = TestClips.Create(3); // timestamps increase with index
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
 
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.FilteredClips.Select(c => c.Name).ShouldBe(new[] { "Clip 2", "Clip 1", "Clip 0" });
+        vm.Library.FilteredClips.Select(c => c.Name).ShouldBe(new[] { "Clip 2", "Clip 1", "Clip 0" });
     }
 
     [Fact]
@@ -24,11 +24,11 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = TestClips.Create(3);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.FilterText = "clip 1";
+        vm.Library.FilterText = "clip 1";
 
-        vm.FilteredClips.Single().Name.ShouldBe("Clip 1");
+        vm.Library.FilteredClips.Single().Name.ShouldBe("Clip 1");
     }
 
     [Fact]
@@ -37,11 +37,11 @@ public sealed partial class MainWindowViewModelTests
         // TestClips share a folder path but have distinct names, so a path-only match keeps them all.
         var clips = TestClips.Create(2);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.FilterText = clips[0].FullPath;
+        vm.Library.FilterText = clips[0].FullPath;
 
-        vm.FilteredClips.Count.ShouldBe(2);
+        vm.Library.FilteredClips.Count.ShouldBe(2);
     }
 
     [Fact]
@@ -53,11 +53,11 @@ public sealed partial class MainWindowViewModelTests
             ClipWithEvent("B", "user_interaction_honk", "San Antonio"),
         };
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.FilterText = "hutto";
+        vm.Library.FilterText = "hutto";
 
-        vm.FilteredClips.Single().Name.ShouldBe("A");
+        vm.Library.FilteredClips.Single().Name.ShouldBe("A");
     }
 
     [Fact]
@@ -69,11 +69,11 @@ public sealed partial class MainWindowViewModelTests
             ClipWithEvent("Saver", "user_interaction_dashcam_launcher_action_tapped", "X"),
         };
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.FilterText = "saved";
+        vm.Library.FilterText = "saved";
 
-        vm.FilteredClips.Single().Name.ShouldBe("Saver");
+        vm.Library.FilteredClips.Single().Name.ShouldBe("Saver");
     }
 
     [Fact]
@@ -81,26 +81,26 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = TestClips.Create(3);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.ClipCount.ShouldBe(3);
+        vm.Library.ClipCount.ShouldBe(3);
 
-        vm.FilterText = "Clip 1";
+        vm.Library.FilterText = "Clip 1";
 
-        vm.ClipCount.ShouldBe(1);
+        vm.Library.ClipCount.ShouldBe(1);
     }
 
     [Fact]
     public void ClearFilter_ResetsFilterTextAndFlag()
     {
         var vm = CreateViewModel();
-        vm.FilterText = "abc";
-        vm.HasFilterText.ShouldBeTrue();
+        vm.Library.FilterText = "abc";
+        vm.Library.HasFilterText.ShouldBeTrue();
 
-        vm.ClearFilterCommand.Execute(null);
+        vm.Library.ClearFilterCommand.Execute(null);
 
-        vm.FilterText.ShouldBe(string.Empty);
-        vm.HasFilterText.ShouldBeFalse();
+        vm.Library.FilterText.ShouldBe(string.Empty);
+        vm.Library.HasFilterText.ShouldBeFalse();
     }
 
     [Fact]
@@ -108,22 +108,22 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = TestClips.Create(3);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(["root"]);
+        await vm.Library.LoadClipsAsync(["root"]);
 
         var changed = new List<string>();
-        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        vm.Library.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        vm.FilterText = "C";
-        vm.FilterText = "Cl";
-        vm.FilterText = "Cli";
+        vm.Library.FilterText = "C";
+        vm.Library.FilterText = "Cl";
+        vm.Library.FilterText = "Cli";
 
         // The list rebind is deferred to a debounce timer (which never ticks in tests) so the ListBox doesn't rebuild and replay its fade on every keystroke.
         // Wiring FilteredClips/ClipCount straight onto FilterText would look harmless and quietly undo that.
-        changed.ShouldNotContain(nameof(MainWindowViewModel.FilteredClips));
-        changed.ShouldNotContain(nameof(MainWindowViewModel.ClipCount));
+        changed.ShouldNotContain(nameof(ClipLibraryViewModel.FilteredClips));
+        changed.ShouldNotContain(nameof(ClipLibraryViewModel.ClipCount));
 
         // The clear affordance is the one part that stays immediate.
-        changed.ShouldContain(nameof(MainWindowViewModel.HasFilterText));
+        changed.ShouldContain(nameof(ClipLibraryViewModel.HasFilterText));
     }
 
     [Fact]
@@ -133,8 +133,8 @@ public sealed partial class MainWindowViewModelTests
         var noLocation = ClipWithEvent("A", "user_interaction_honk", "Hutto");
         var withLocation = ClipWithEvent("B", "user_interaction_honk", "Hutto", 30.5m, -97.5m);
 
-        vm.ShowOnMapCommand.CanExecute(noLocation).ShouldBeFalse();
-        vm.ShowOnMapCommand.CanExecute(withLocation).ShouldBeTrue();
+        vm.Library.ShowOnMapCommand.CanExecute(noLocation).ShouldBeFalse();
+        vm.Library.ShowOnMapCommand.CanExecute(withLocation).ShouldBeTrue();
     }
 
     // --- Scanning: what the sidebar and the overlay show when there is nothing to scan, or a root can't be read.
@@ -145,15 +145,15 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        await vm.LoadClipsAsync([]);
+        await vm.Library.LoadClipsAsync([]);
 
         // First run with no USB drive attached: a friendly prompt the user can dismiss to reach the rest of the app, not a scary error they're stuck behind.
-        vm.ErrorTitle.ShouldBe("No dashcam footage yet");
-        vm.IsEmptyState.ShouldBeTrue();
-        vm.CanDismissError.ShouldBeTrue();
-        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("No dashcam footage yet");
+        vm.Error.IsEmptyState.ShouldBeTrue();
+        vm.Error.CanDismiss.ShouldBeTrue();
+        vm.Error.IsVisible.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
-        vm.ClipCount.ShouldBe(0);
+        vm.Library.ClipCount.ShouldBe(0);
     }
 
     [Fact]
@@ -161,13 +161,13 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => throw new UnauthorizedAccessException("denied"));
 
-        await vm.LoadClipsAsync([@"D:\TeslaCam"]);
+        await vm.Library.LoadClipsAsync([@"D:\TeslaCam"]);
 
         // A permissions problem gets its own title and remedy; it isn't the empty state.
-        vm.ErrorTitle.ShouldBe("Access Denied");
-        vm.ErrorDetails.ShouldContain(@"D:\TeslaCam");
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.IsEmptyState.ShouldBeFalse();
+        vm.Error.Title.ShouldBe("Access Denied");
+        vm.Error.Details.ShouldContain(@"D:\TeslaCam");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.IsEmptyState.ShouldBeFalse();
     }
 
     [Fact]
@@ -175,12 +175,12 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => throw new IOException("the drive was removed"));
 
-        await vm.LoadClipsAsync([@"E:\TeslaCam"]);
+        await vm.Library.LoadClipsAsync([@"E:\TeslaCam"]);
 
         // Both halves matter for a bug report: which folder failed, and what the failure was.
-        vm.ErrorTitle.ShouldBe("Error Loading Clips");
-        vm.ErrorDetails.ShouldContain(@"E:\TeslaCam");
-        vm.ErrorDetails.ShouldContain("the drive was removed");
+        vm.Error.Title.ShouldBe("Error Loading Clips");
+        vm.Error.Details.ShouldContain(@"E:\TeslaCam");
+        vm.Error.Details.ShouldContain("the drive was removed");
     }
 
     [Fact]
@@ -199,12 +199,12 @@ public sealed partial class MainWindowViewModelTests
                 return clips;
             });
 
-        await vm.LoadClipsAsync(["bad", "good"]);
+        await vm.Library.LoadClipsAsync(["bad", "good"]);
 
         // Scanning is per-root: one unreadable drive reports itself but must not cost the user the library on the drive that is still plugged in.
-        vm.ClipCount.ShouldBe(2);
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Error Loading Clips");
+        vm.Library.ClipCount.ShouldBe(2);
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Error Loading Clips");
     }
 
     // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
@@ -222,7 +222,7 @@ public sealed partial class MainWindowViewModelTests
     private static async Task<MainWindowViewModel> LoadedViewModelAsync(IReadOnlyList<CamClip> clips)
     {
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
         return vm;
     }
 
@@ -231,8 +231,8 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.DeleteClipCommand.CanExecute(null).ShouldBeFalse();
-        vm.DeleteClipCommand.CanExecute(TestClips.Create(1)[0]).ShouldBeTrue();
+        vm.Library.DeleteClipCommand.CanExecute(null).ShouldBeFalse();
+        vm.Library.DeleteClipCommand.CanExecute(TestClips.Create(1)[0]).ShouldBeTrue();
     }
 
     [Fact]
@@ -241,15 +241,15 @@ public sealed partial class MainWindowViewModelTests
         var clips = ClipsWithDistinctPaths(3);
         var vm = await LoadedViewModelAsync(clips);
         string recycledPath = null;
-        vm.ConfirmDeleteClip = _ => true;
-        vm.RecycleClipFolder = path => recycledPath = path;
+        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.RecycleClipFolder = path => recycledPath = path;
 
-        var target = vm.FilteredClips.Single(clip => clip.Name == "Clip 1");
-        await vm.DeleteClipCommand.ExecuteAsync(target);
+        var target = vm.Library.FilteredClips.Single(clip => clip.Name == "Clip 1");
+        await vm.Library.DeleteClipCommand.ExecuteAsync(target);
 
         recycledPath.ShouldBe(target.FullPath);
-        vm.FilteredClips.ShouldNotContain(target);
-        vm.ClipCount.ShouldBe(2);
+        vm.Library.FilteredClips.ShouldNotContain(target);
+        vm.Library.ClipCount.ShouldBe(2);
     }
 
     [Fact]
@@ -258,15 +258,15 @@ public sealed partial class MainWindowViewModelTests
         var clips = ClipsWithDistinctPaths(2);
         var vm = await LoadedViewModelAsync(clips);
         var recycleCalls = 0;
-        vm.ConfirmDeleteClip = _ => false;
-        vm.RecycleClipFolder = _ => recycleCalls++;
+        vm.Library.ConfirmDeleteClip = _ => false;
+        vm.Library.RecycleClipFolder = _ => recycleCalls++;
 
-        var target = vm.FilteredClips[0];
-        await vm.DeleteClipCommand.ExecuteAsync(target);
+        var target = vm.Library.FilteredClips[0];
+        await vm.Library.DeleteClipCommand.ExecuteAsync(target);
 
         recycleCalls.ShouldBe(0);
-        vm.ClipCount.ShouldBe(2);
-        vm.FilteredClips.ShouldContain(target);
+        vm.Library.ClipCount.ShouldBe(2);
+        vm.Library.FilteredClips.ShouldContain(target);
     }
 
     [Fact]
@@ -274,18 +274,18 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = ClipsWithDistinctPaths(2);
         var vm = await LoadedViewModelAsync(clips);
-        vm.ConfirmDeleteClip = _ => true;
-        vm.RecycleClipFolder = _ => { };
+        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.RecycleClipFolder = _ => { };
 
-        var target = vm.FilteredClips[0];
-        vm.SelectedClip = target; // sets NowPlayingClip too (see OnSelectedClipChanged)
-        vm.NowPlayingClip.ShouldBe(target);
+        var target = vm.Library.FilteredClips[0];
+        vm.Library.SelectedClip = target; // sets NowPlayingClip too (see OnSelectedClipChanged)
+        vm.Playback.NowPlayingClip.ShouldBe(target);
 
-        await vm.DeleteClipCommand.ExecuteAsync(target);
+        await vm.Library.DeleteClipCommand.ExecuteAsync(target);
 
-        vm.SelectedClip.ShouldBeNull();
-        vm.NowPlayingClip.ShouldBeNull();
-        vm.FilteredClips.ShouldNotContain(target);
+        vm.Library.SelectedClip.ShouldBeNull();
+        vm.Playback.NowPlayingClip.ShouldBeNull();
+        vm.Library.FilteredClips.ShouldNotContain(target);
     }
 
     [Fact]
@@ -293,18 +293,18 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = ClipsWithDistinctPaths(3);
         var vm = await LoadedViewModelAsync(clips);
-        vm.ConfirmDeleteClip = _ => true;
-        vm.RecycleClipFolder = _ => { };
+        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.RecycleClipFolder = _ => { };
 
-        var selected = vm.FilteredClips.Single(clip => clip.Name == "Clip 2");
-        var victim = vm.FilteredClips.Single(clip => clip.Name == "Clip 0");
-        vm.SelectedClip = selected;
+        var selected = vm.Library.FilteredClips.Single(clip => clip.Name == "Clip 2");
+        var victim = vm.Library.FilteredClips.Single(clip => clip.Name == "Clip 0");
+        vm.Library.SelectedClip = selected;
 
-        await vm.DeleteClipCommand.ExecuteAsync(victim);
+        await vm.Library.DeleteClipCommand.ExecuteAsync(victim);
 
-        vm.SelectedClip.ShouldBe(selected);
-        vm.FilteredClips.ShouldNotContain(victim);
-        vm.ClipCount.ShouldBe(2);
+        vm.Library.SelectedClip.ShouldBe(selected);
+        vm.Library.FilteredClips.ShouldNotContain(victim);
+        vm.Library.ClipCount.ShouldBe(2);
     }
 
     [Fact]
@@ -312,16 +312,16 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = ClipsWithDistinctPaths(2);
         var vm = await LoadedViewModelAsync(clips);
-        vm.ConfirmDeleteClip = _ => true;
-        vm.RecycleClipFolder = _ => throw new IOException("The file is in use.");
+        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.RecycleClipFolder = _ => throw new IOException("The file is in use.");
 
-        var target = vm.FilteredClips[0];
-        await vm.DeleteClipCommand.ExecuteAsync(target);
+        var target = vm.Library.FilteredClips[0];
+        await vm.Library.DeleteClipCommand.ExecuteAsync(target);
 
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Delete Failed");
-        vm.ClipCount.ShouldBe(2);
-        vm.FilteredClips.ShouldContain(target);
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Delete Failed");
+        vm.Library.ClipCount.ShouldBe(2);
+        vm.Library.FilteredClips.ShouldContain(target);
     }
 
     // --- Deleting the clip that is actually open: the point of the feature, and the only path that touches the player.
@@ -334,15 +334,15 @@ public sealed partial class MainWindowViewModelTests
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
         var closesBeforeDelete = front.Count("close");
         var closesWhenRecycled = -1;
-        vm.ConfirmDeleteClip = _ => true;
-        vm.RecycleClipFolder = _ => closesWhenRecycled = front.Count("close");
-        vm.SeekPosition = 0.5;
+        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.RecycleClipFolder = _ => closesWhenRecycled = front.Count("close");
+        vm.Playback.SeekPosition = 0.5;
 
-        await vm.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
+        await vm.Library.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
 
         // Windows can't recycle a folder whose files are still locked, so playback must already be stopped when the shell operation runs -- not merely by the time delete returns.
         closesWhenRecycled.ShouldBeGreaterThan(closesBeforeDelete);
-        vm.SeekPosition.ShouldBe(0);
+        vm.Playback.SeekPosition.ShouldBe(0);
     }
 
     [Fact]
@@ -351,16 +351,16 @@ public sealed partial class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var clip = clipFiles.Clip;
         var (vm, controller, _) = CreateViewModelWithOpenedClip(clip, uiInvoker: action => action());
-        vm.ConfirmDeleteClip = _ => true;
-        vm.RecycleClipFolder = _ => { };
-        vm.SelectedClip = clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
+        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.RecycleClipFolder = _ => { };
+        vm.Library.SelectedClip = clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
 
-        await vm.DeleteClipCommand.ExecuteAsync(clip);
+        await vm.Library.DeleteClipCommand.ExecuteAsync(clip);
 
         // Next/Previous walk the controller's playlist, so a deleted clip left behind in it would navigate straight back to a folder that no longer exists.
         controller.Playlist.Clips.ShouldNotContain(clip);
-        vm.NowPlayingClip.ShouldBeNull();
-        vm.SelectedClip.ShouldBeNull();
+        vm.Playback.NowPlayingClip.ShouldBeNull();
+        vm.Library.SelectedClip.ShouldBeNull();
     }
 
     [Fact]
@@ -368,10 +368,39 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = TestClips.Create(3);
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
-        await vm.LoadClipsAsync(new[] { "root" });
+        await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.FilterText = "no-such-clip";
+        vm.Library.FilterText = "no-such-clip";
 
-        vm.FilteredClips.ShouldBeEmpty();
+        vm.Library.FilteredClips.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadClipsAsync_WhileTheScanRuns_ShowsTheLoadingOverlay()
+    {
+        // Loading is shared by the scan, the FFmpeg download, and clip loading; the overlay has to follow the scan even though playback isn't loading anything.
+        using var scanGate = new ManualResetEventSlim();
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ =>
+        {
+            scanGate.Wait();
+            return TestClips.Create(2);
+        });
+        var changed = new List<string>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        var load = vm.Library.LoadClipsAsync(["root"]);
+
+        vm.IsLoading.ShouldBeTrue();
+        vm.ShowStatusOverlay.ShouldBeTrue();
+        vm.HasNoClipSelected.ShouldBeFalse();
+        changed.ShouldContain(nameof(MainWindowViewModel.IsLoading));
+        changed.ShouldContain(nameof(MainWindowViewModel.ShowStatusOverlay));
+
+        scanGate.Set();
+        await load;
+
+        vm.IsLoading.ShouldBeFalse();
+        vm.HasNoClipSelected.ShouldBeTrue();
+        vm.Library.ClipCount.ShouldBe(2);
     }
 }

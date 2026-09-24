@@ -131,7 +131,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
             savePathPicker: savePathPicker,
             uiInvoker: uiInvoker)
         {
-            RevealInExplorer = _ => { },
+            Trim = { RevealInExplorer = _ => { } },
         };
         vm.InitializePlayer();
         return (vm, built, front);
@@ -162,10 +162,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
-        vm.IsGridViewSelected.ShouldBeFalse();
-        vm.IsSingleCameraViewSelected.ShouldBeTrue();
-        vm.CameraViewOptions.Single(option => option.ViewId == CameraNames.Front).IsSelected.ShouldBeTrue();
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.IsGridViewSelected.ShouldBeFalse();
+        vm.Cameras.IsSingleCameraViewSelected.ShouldBeTrue();
+        vm.Cameras.CameraViewOptions.Single(option => option.ViewId == CameraNames.Front).IsSelected.ShouldBeTrue();
         vm.ShowMainContent.ShouldBeTrue();
         vm.ShowAboutPage.ShouldBeFalse();
 
@@ -173,7 +173,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         vm.HasNoClipSelected.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ShowVideoHosts.ShouldBeFalse();
-        vm.PlayPauseIcon.ShouldBe(""); // Segoe Fluent Icons PlaySolid
+        vm.Playback.PlayPauseIcon.ShouldBe(""); // Segoe Fluent Icons PlaySolid
     }
 
     [Theory]
@@ -187,13 +187,13 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute(cameraView);
+        vm.Cameras.SelectCameraViewCommand.Execute(cameraView);
 
         var expectedView = expectedLabel == "Front"
             ? CameraNames.Front
             : cameraView;
-        vm.SelectedCameraView.ShouldBe(expectedView);
-        vm.ActiveCameraLabel.ShouldBe(expectedLabel);
+        vm.Cameras.SelectedCameraView.ShouldBe(expectedView);
+        vm.Cameras.ActiveCameraLabel.ShouldBe(expectedLabel);
     }
 
     [Fact]
@@ -201,15 +201,15 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
             [
-                MainWindowViewModel.GridCameraView,
+                CameraViewsViewModel.GridCameraView,
                 CameraNames.Front,
                 CameraNames.Back,
                 CameraNames.LeftRepeater,
                 CameraNames.RightRepeater,
             ]);
-        vm.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5]);
+        vm.Cameras.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5]);
     }
 
     [Fact]
@@ -217,10 +217,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute("grid");
+        vm.Cameras.SelectCameraViewCommand.Execute("grid");
 
-        vm.IsGridViewSelected.ShouldBeTrue();
-        vm.IsSingleCameraViewSelected.ShouldBeFalse();
+        vm.Cameras.IsGridViewSelected.ShouldBeTrue();
+        vm.Cameras.IsSingleCameraViewSelected.ShouldBeFalse();
     }
 
     [Fact]
@@ -228,12 +228,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.Back);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.Back);
-        vm.IsGridViewSelected.ShouldBeFalse();
-        vm.IsSingleCameraViewSelected.ShouldBeTrue();
-        vm.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Back);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Back);
+        vm.Cameras.IsGridViewSelected.ShouldBeFalse();
+        vm.Cameras.IsSingleCameraViewSelected.ShouldBeTrue();
+        vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Back);
     }
 
     [Fact]
@@ -241,11 +241,11 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
-        vm.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
             [
-                MainWindowViewModel.GridCameraView,
+                CameraViewsViewModel.GridCameraView,
                 CameraNames.Front,
                 CameraNames.Back,
                 CameraNames.LeftRepeater,
@@ -253,12 +253,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
                 CameraNames.LeftPillar,
                 CameraNames.RightPillar,
             ]);
-        vm.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5, 6, 7]);
-        vm.CameraViewOptions.Last().Label.ShouldBe("Right Pillar");
+        vm.Cameras.CameraViewOptions.Select(option => option.ShortcutNumber).ShouldBe([1, 2, 3, 4, 5, 6, 7]);
+        vm.Cameras.CameraViewOptions.Last().Label.ShouldBe("Right Pillar");
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
-        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
-        vm.ActiveCameraLabel.ShouldBe("Left Pillar");
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.ActiveCameraLabel.ShouldBe("Left Pillar");
     }
 
     [Fact]
@@ -266,38 +266,38 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+        vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.CameraViewOptions.Count.ShouldBe(5);
-        vm.CameraViewOptions.ShouldAllBe(option => option.ViewId != CameraNames.LeftPillar);
+        vm.Cameras.CameraViewOptions.Count.ShouldBe(5);
+        vm.Cameras.CameraViewOptions.ShouldAllBe(option => option.ViewId != CameraNames.LeftPillar);
 
-        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
     public void SwitchingToClipWithoutTheWatchedCamera_FallsBackToFront()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
-        vm.SelectCameraViewCommand.Execute(CameraNames.RightPillar);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.RightPillar);
 
-        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+        vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
     public void SwitchingClips_KeepsTheWatchedCamera_WhenTheNewClipHasIt()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
-        vm.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
 
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
-        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
-        vm.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.LeftPillar);
     }
 
     [Theory]
@@ -312,35 +312,35 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void CameraIdToView_MapsDocumentedEventCameraIds(int cameraId, string expectedView)
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
-        vm.CameraIdToView(cameraId).ShouldBe(expectedView);
+        vm.Cameras.CameraIdToView(cameraId).ShouldBe(expectedView);
     }
 
     [Fact]
     public void CameraIdToView_FallsBackToFront_WhenTheClipLacksThatCamera()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+        vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.CameraIdToView(5).ShouldBe(CameraNames.Front);
-        vm.CameraIdToView(7).ShouldBe(CameraNames.Back);
+        vm.Cameras.CameraIdToView(5).ShouldBe(CameraNames.Front);
+        vm.Cameras.CameraIdToView(7).ShouldBe(CameraNames.Back);
     }
 
     [Fact]
     public async Task NumberKeys_SelectTilesByStripPosition_IncludingPillars()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
         (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeTrue();
-        vm.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
 
         (await vm.HandleKeyDownAsync(Key.NumPad7, ModifierKeys.None)).ShouldBeTrue();
-        vm.SelectedCameraView.ShouldBe(CameraNames.RightPillar);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.RightPillar);
 
         (await vm.HandleKeyDownAsync(Key.D1, ModifierKeys.None)).ShouldBeTrue();
-        vm.SelectedCameraView.ShouldBe(MainWindowViewModel.GridCameraView);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraViewsViewModel.GridCameraView);
     }
 
     [Fact]
@@ -349,7 +349,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         var vm = CreateViewModel(); // classic strip: 5 tiles, so 6 has no target
 
         (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeFalse();
-        vm.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
 
     [Fact]
@@ -358,11 +358,11 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         // The view re-parents the Flyleaf hosts when SelectedCameraView changes, so this notification is part of the view/view-model contract.
         var vm = CreateViewModel();
         var changed = new List<string>();
-        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        vm.Cameras.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        vm.SelectCameraViewCommand.Execute("grid");
+        vm.Cameras.SelectCameraViewCommand.Execute("grid");
 
-        changed.ShouldContain(nameof(MainWindowViewModel.SelectedCameraView));
+        changed.ShouldContain(nameof(CameraViewsViewModel.SelectedCameraView));
     }
 
     [Fact]
@@ -384,11 +384,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.IsLoading = true;
+        vm.Playback.IsLoading = true;
 
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ShowVideoHosts.ShouldBeFalse();
-        vm.IsIndeterminateProgress.ShouldBeTrue();
     }
 
     [Fact]
@@ -396,7 +395,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.ShowErrorOverlay = true;
+        vm.Error.IsVisible = true;
 
         vm.HasError.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
@@ -409,7 +408,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = TestClips.Create(1)[0];
+        vm.Library.SelectedClip = TestClips.Create(1)[0];
 
         vm.HasNoClipSelected.ShouldBeFalse();
         vm.ShowStatusOverlay.ShouldBeFalse();
@@ -420,33 +419,33 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void CanPlayPause_RequiresClipOrPlayback_AndNotLoading()
     {
         var vm = CreateViewModel();
-        vm.CanPlayPause.ShouldBeFalse();
+        vm.Playback.CanPlayPause.ShouldBeFalse();
 
-        vm.SelectedClip = TestClips.Create(1)[0];
-        vm.CanPlayPause.ShouldBeTrue();
+        vm.Library.SelectedClip = TestClips.Create(1)[0];
+        vm.Playback.CanPlayPause.ShouldBeTrue();
 
-        vm.IsLoading = true;
-        vm.CanPlayPause.ShouldBeFalse();
+        vm.Playback.IsLoading = true;
+        vm.Playback.CanPlayPause.ShouldBeFalse();
 
         // Even with no selected clip, an in-flight playback keeps the toggle live.
-        vm.IsLoading = false;
-        vm.SelectedClip = null;
-        vm.IsPlaying = true;
-        vm.CanPlayPause.ShouldBeTrue();
+        vm.Playback.IsLoading = false;
+        vm.Library.SelectedClip = null;
+        vm.Playback.IsPlaying = true;
+        vm.Playback.CanPlayPause.ShouldBeTrue();
     }
 
     [Fact]
     public void CanStop_WhenPlayingOrLoading()
     {
         var vm = CreateViewModel();
-        vm.CanStop.ShouldBeFalse();
+        vm.Playback.CanStop.ShouldBeFalse();
 
-        vm.IsPlaying = true;
-        vm.CanStop.ShouldBeTrue();
+        vm.Playback.IsPlaying = true;
+        vm.Playback.CanStop.ShouldBeTrue();
 
-        vm.IsPlaying = false;
-        vm.IsLoading = true;
-        vm.CanStop.ShouldBeTrue();
+        vm.Playback.IsPlaying = false;
+        vm.Playback.IsLoading = true;
+        vm.Playback.CanStop.ShouldBeTrue();
     }
 
     [Theory]
@@ -456,27 +455,9 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.IsPlaying = isPlaying;
+        vm.Playback.IsPlaying = isPlaying;
 
-        vm.PlayPauseIcon.ShouldBe(expectedIcon);
-    }
-
-    [Fact]
-    public void LoadingStatusText_ShowsRenderProgressWhileRendering()
-    {
-        var vm = CreateViewModel();
-        vm.IsLoading = true;
-
-        vm.LoadingStatusText.ShouldBe("Loading...");
-        vm.IsIndeterminateProgress.ShouldBeTrue();
-
-        vm.IsRendering = true;
-        vm.RenderProgress = 0.5;
-
-        vm.RenderProgressPercent.ShouldBe(50);
-        vm.LoadingStatusText.ShouldBe("Rendering... 50%");
-        // A determinate render progress bar replaces the indeterminate spinner.
-        vm.IsIndeterminateProgress.ShouldBeFalse();
+        vm.Playback.PlayPauseIcon.ShouldBe(expectedIcon);
     }
 
     [Fact]
@@ -484,12 +465,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.IsUpdateAvailable.ShouldBeFalse();
-        vm.HasUpdateBadge.ShouldBeFalse();
-        vm.UpdateStatusTitle.ShouldBe("You're up to date");
-        vm.UpdateStatusDetails.ShouldBe("No newer release was found.");
-        vm.LatestVersionText.ShouldBe("Unknown");
-        vm.LatestReleaseUrl.ShouldBe(UpdateService.ReleasesPageUrl);
+        vm.About.IsUpdateAvailable.ShouldBeFalse();
+        vm.About.HasUpdateBadge.ShouldBeFalse();
+        vm.About.UpdateStatusTitle.ShouldBe("You're up to date");
+        vm.About.UpdateStatusDetails.ShouldBe("No newer release was found.");
+        vm.About.LatestVersionText.ShouldBe("Unknown");
+        vm.About.LatestReleaseUrl.ShouldBe(UpdateService.ReleasesPageUrl);
     }
 
     [Fact]
@@ -497,14 +478,14 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.LatestRelease = new UpdateRelease(new Version(1, 4, 2), "v1.4.2", "https://example.com/releases/1.4.2");
-        vm.IsUpdateAvailable = true;
+        vm.About.LatestRelease = new UpdateRelease(new Version(1, 4, 2), "v1.4.2", "https://example.com/releases/1.4.2");
+        vm.About.IsUpdateAvailable = true;
 
-        vm.HasUpdateBadge.ShouldBeTrue();
-        vm.UpdateStatusTitle.ShouldBe("Update available");
-        vm.LatestVersionText.ShouldBe("1.4.2");
-        vm.UpdateStatusDetails.ShouldBe("Version 1.4.2 is available.");
-        vm.LatestReleaseUrl.ShouldBe("https://example.com/releases/1.4.2");
+        vm.About.HasUpdateBadge.ShouldBeTrue();
+        vm.About.UpdateStatusTitle.ShouldBe("Update available");
+        vm.About.LatestVersionText.ShouldBe("1.4.2");
+        vm.About.UpdateStatusDetails.ShouldBe("Version 1.4.2 is available.");
+        vm.About.LatestReleaseUrl.ShouldBe("https://example.com/releases/1.4.2");
     }
 
     [Theory]
@@ -533,13 +514,13 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
         vm.ShowAboutPage = true;
-        var cameraViewBefore = vm.SelectedCameraView;
+        var cameraViewBefore = vm.Cameras.SelectedCameraView;
 
         var handled = await vm.HandleKeyDownAsync(key, modifiers);
 
         handled.ShouldBeFalse();
-        vm.SelectedCameraView.ShouldBe(cameraViewBefore); // no camera switch behind the About page
-        vm.IsTrimming.ShouldBeFalse();
+        vm.Cameras.SelectedCameraView.ShouldBe(cameraViewBefore); // no camera switch behind the About page
+        vm.Trim.IsTrimming.ShouldBeFalse();
         vm.ShowAboutPage.ShouldBeTrue(); // the page stays open
     }
 
@@ -560,18 +541,18 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void DismissError_ClearsErrorState()
     {
         var vm = CreateViewModel();
-        vm.ShowErrorOverlay = true;
-        vm.ShowFFmpegDownloadButton = true;
-        vm.CanDismissError = false;
-        vm.ErrorTitle = "Boom";
-        vm.ErrorDetails = "Something went wrong";
+        vm.Error.IsVisible = true;
+        vm.Error.ShowFFmpegDownloadButton = true;
+        vm.Error.CanDismiss = false;
+        vm.Error.Title = "Boom";
+        vm.Error.Details = "Something went wrong";
 
-        vm.DismissErrorCommand.Execute(null);
+        vm.Error.DismissCommand.Execute(null);
 
-        vm.ShowErrorOverlay.ShouldBeFalse();
-        vm.ShowFFmpegDownloadButton.ShouldBeFalse();
-        vm.CanDismissError.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBeNull();
-        vm.ErrorDetails.ShouldBeNull();
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Error.ShowFFmpegDownloadButton.ShouldBeFalse();
+        vm.Error.CanDismiss.ShouldBeTrue();
+        vm.Error.Title.ShouldBeNull();
+        vm.Error.Details.ShouldBeNull();
     }
 }
