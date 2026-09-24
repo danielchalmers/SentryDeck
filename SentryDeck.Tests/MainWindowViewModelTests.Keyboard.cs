@@ -58,6 +58,48 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void FrameStepKeys_WithNothingOpen_AreNotHandled()
+    {
+        // Unhandled, the key stays available to whatever control has focus instead of being swallowed for a step that can't happen.
+        var vm = CreateViewModelWithController(out _, out var front);
+
+        vm.HandleKeyDown(Key.OemPeriod, ModifierKeys.None).ShouldBeFalse();
+        vm.HandleKeyDown(Key.OemComma, ModifierKeys.None).ShouldBeFalse();
+        front.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void HandleKeyDown_Space_ReportsHandledBeforeThePlayerFinishes()
+    {
+        // The view marks the key handled from the return value, and WPF has finished routing by the time any awaited work resumes.
+        // Returning only once playback started let a focused button act on the same Space press (clicking itself again instead of play/pause).
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+        RunPinnedToTestThread(controller.PauseAsync);
+        var gate = new TaskCompletionSource();
+        front.PlayGate = gate;
+
+        var handled = vm.HandleKeyDown(Key.Space, ModifierKeys.None);
+
+        handled.ShouldBeTrue();
+        controller.IsPlaying.ShouldBeFalse();
+
+        gate.SetResult();
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HandleKeyDown_KeyThatIsNotAShortcut_IsLeftForTheFocusedControl()
+    {
+        var vm = CreateViewModelWithController(out _, out _);
+
+        vm.HandleKeyDown(Key.A, ModifierKeys.None).ShouldBeFalse();
+        vm.HandleKeyDown(Key.Enter, ModifierKeys.None).ShouldBeFalse();
+        vm.HandleKeyDown(Key.Up, ModifierKeys.None).ShouldBeFalse();
+    }
+
+    [Fact]
     public void StopCommand_ClearsNowPlayingClip()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);

@@ -1177,19 +1177,60 @@ public partial class MainWindowViewModel : ObservableObject
         SearchBoxFocusRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Handles an app-wide shortcut and reports synchronously whether the key was one.
+    /// The view calls this from a tunneling key handler and must mark the key handled before any await, or a focused button would also act on it (Space clicks whatever button was last clicked).
+    /// </summary>
+    public bool HandleKeyDown(Key key, ModifierKeys modifiers)
+    {
+        var action = ResolveKeyAction(key, modifiers);
+        if (action is null)
+        {
+            return false;
+        }
+
+        _ = RunKeyActionAsync(action, key);
+        return true;
+    }
+
+    /// <summary>Awaitable form of <see cref="HandleKeyDown"/> for callers (tests) that need the shortcut's work to have finished.</summary>
     public async Task<bool> HandleKeyDownAsync(Key key, ModifierKeys modifiers)
+    {
+        var action = ResolveKeyAction(key, modifiers);
+        if (action is null)
+        {
+            return false;
+        }
+
+        await action();
+        return true;
+    }
+
+    private static async Task RunKeyActionAsync(Func<Task> action, Key key)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Keyboard shortcut failed. Key={Key}", key);
+        }
+    }
+
+    // Returns the work a shortcut performs, or null when the key isn't a shortcut in the current state.
+    private Func<Task> ResolveKeyAction(Key key, ModifierKeys modifiers)
     {
         if (IsSearchFocusShortcut(key, modifiers))
         {
-            RequestSearchFocus();
-            return true;
+            return Run(RequestSearchFocus);
         }
 
         // The About/Help page replaces the player, so playback/camera/trim shortcuts must not act on the hidden player behind it.
         // (F1/Esc page navigation lives in the view's PreviewKeyDown, and the search shortcut above intentionally still leaves the page.)
         if (ShowAboutPage)
         {
-            return false;
+            return null;
         }
 
         // Number keys switch camera views: 1 is the grid, then one key per camera tile in strip order (2 = Front, ... up to 7 on six-camera HW4 clips).
@@ -1212,106 +1253,83 @@ public partial class MainWindowViewModel : ObservableObject
             var numberedOption = CameraViewOptions.FirstOrDefault(option => option.ShortcutNumber == shortcutNumber);
             if (numberedOption is not null)
             {
-                SelectCameraView(numberedOption.ViewId);
-                return true;
+                return Run(() => SelectCameraView(numberedOption.ViewId));
             }
 
             if (key == Key.E && HasEventMarker)
             {
-                await JumpToEventAsync();
-                return true;
+                return JumpToEventAsync;
             }
 
             if (key == Key.I && CanSeek)
             {
-                MarkSelectionStart();
-                return true;
+                return Run(MarkSelectionStart);
             }
 
             if (key == Key.O && CanSeek)
             {
-                MarkSelectionEnd();
-                return true;
+                return Run(MarkSelectionEnd);
             }
 
             if (key == Key.Escape && IsTrimming)
             {
-                CancelTrim();
-                return true;
+                return Run(CancelTrim);
             }
         }
 
         if (key == Key.E && modifiers == ModifierKeys.Control && CanExportSelection)
         {
-            await ExportSelectionAsync();
-            return true;
+            return ExportSelectionAsync;
         }
 
-        // Shift+, / Shift+.
-        // (i.e. < / >) step the playback speed, YouTube-style.
+        // Shift+, / Shift+. (i.e. < / >) step the playback speed, YouTube-style.
         // Unmodified , / . remain frame-step below.
         if (modifiers == ModifierKeys.Shift)
         {
             if (key == Key.OemComma)
             {
-                DecreaseSpeed();
-                return true;
+                return Run(DecreaseSpeed);
             }
 
             if (key == Key.OemPeriod)
             {
-                IncreaseSpeed();
-                return true;
+                return Run(IncreaseSpeed);
             }
         }
 
-        if (_playerController is null)
+        var controller = _playerController;
+        if (controller is null)
         {
-            return false;
+            return null;
         }
 
-        switch (key)
+        return key switch
         {
-            case Key.Space:
-                await _playerController.TogglePlayPauseAsync();
-                return true;
+            Key.Space => controller.TogglePlayPauseAsync,
+            Key.OemComma when modifiers == ModifierKeys.None && CanSeek => () => controller.StepFrameAsync(forward: false),
+            Key.OemPeriod when modifiers == ModifierKeys.None && CanSeek => () => controller.StepFrameAsync(forward: true),
+            Key.Left when modifiers == ModifierKeys.Control => CanGoPrevious ? PreviousAsync : Run(() => { }),
+            Key.Right when modifiers == ModifierKeys.Control => CanGoNext ? NextAsync : Run(() => { }),
+            Key.Left => () => SeekRelativeAsync(TimeSpan.FromSeconds(-5)),
+            Key.Right => () => SeekRelativeAsync(TimeSpan.FromSeconds(5)),
+            _ => null,
+        };
 
-            case Key.OemComma when modifiers == ModifierKeys.None && CanSeek:
-                await _playerController.StepFrameAsync(forward: false);
-                return true;
+        static Func<Task> Run(Action action) => () =>
+        {
+            action();
+            return Task.CompletedTask;
+        };
+    }
 
-            case Key.OemPeriod when modifiers == ModifierKeys.None && CanSeek:
-                await _playerController.StepFrameAsync(forward: true);
-                return true;
-
-            case Key.Left:
-                if (modifiers == ModifierKeys.Control && CanGoPrevious)
-                {
-                    await _playerController.PreviousAsync();
-                    SelectedClip = _playerController.CurrentClip;
-                }
-                else if (CanSeek)
-                {
-                    await _playerController.SeekByAsync(TimeSpan.FromSeconds(-5));
-                }
-
-                return true;
-
-            case Key.Right:
-                if (modifiers == ModifierKeys.Control && CanGoNext)
-                {
-                    await _playerController.NextAsync();
-                    SelectedClip = _playerController.CurrentClip;
-                }
-                else if (CanSeek)
-                {
-                    await _playerController.SeekByAsync(TimeSpan.FromSeconds(5));
-                }
-
-                return true;
+    private Task SeekRelativeAsync(TimeSpan offset)
+    {
+        if (_playerController is not { } controller || !CanSeek)
+        {
+            return Task.CompletedTask;
         }
 
-        return false;
+        return controller.SeekByAsync(offset);
     }
 
     public void BeginSeek()
