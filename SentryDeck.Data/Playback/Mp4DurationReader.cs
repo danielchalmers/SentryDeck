@@ -30,12 +30,9 @@ public static class Mp4DurationReader
             var (mvhdStart, mvhdEnd) = mvhdBox.Value;
             return ReadMvhdDuration(stream, mvhdStart, mvhdEnd);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or OverflowException)
         {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
+            // A corrupt header can claim box sizes or durations no real file has; any of them means "no readable duration", never a crash that takes the whole clip down with it.
             return null;
         }
     }
@@ -72,7 +69,7 @@ public static class Mp4DurationReader
                 size = end - position;
             }
 
-            if (size < headerSize)
+            if (size < headerSize || size > end - position)
                 return null;
 
             var contentStart = position + headerSize;
