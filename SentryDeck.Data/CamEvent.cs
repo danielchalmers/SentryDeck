@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Serilog;
 
 namespace SentryDeck;
 
@@ -137,7 +138,18 @@ public record class CamEvent
         if (!File.Exists(path))
             return null;
 
-        var json = File.ReadAllText(path);
+        string json;
+        try
+        {
+            json = File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The event metadata is optional; a bad sector or locked file here must not hide the playable footage beside it.
+            Log.Warning(ex, "Could not read event metadata; loading the clip without it. File={File}", path);
+            return null;
+        }
+
         return Deserialize(json);
     }
 }

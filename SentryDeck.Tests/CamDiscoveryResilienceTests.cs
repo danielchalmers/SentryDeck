@@ -199,4 +199,14 @@ public sealed class CamDiscoveryResilienceTests
         chunk.Files.Keys.ShouldBe([CameraNames.Front, CameraNames.Back], ignoreOrder: true);
     }
 
+    [Fact]
+    public void CamEventFromFile_WhenTheFileCannotBeRead_ReturnsNullSoTheClipStillLoads()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "event.json");
+        File.WriteAllText(path, "{}");
+        using var exclusive = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        CamEvent.FromFile(path).ShouldBeNull();
+    }
 }
