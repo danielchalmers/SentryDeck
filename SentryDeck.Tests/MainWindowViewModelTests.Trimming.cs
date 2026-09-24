@@ -15,14 +15,14 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.SeekPosition = 0.3;
+        vm.Playback.SeekPosition = 0.3;
         vm.MarkSelectionStartCommand.Execute(null);
 
         vm.HasSelectionStart.ShouldBeTrue();
         vm.SelectionStartPosition.ShouldBe(0.3);
         vm.HasSelection.ShouldBeFalse(); // no end yet
 
-        vm.SeekPosition = 0.7;
+        vm.Playback.SeekPosition = 0.7;
         vm.MarkSelectionEndCommand.Execute(null);
 
         vm.HasSelection.ShouldBeTrue();
@@ -37,19 +37,19 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.SeekPosition = 0.3;
+        vm.Playback.SeekPosition = 0.3;
         vm.MarkSelectionStartCommand.Execute(null);
-        vm.SeekPosition = 0.7;
+        vm.Playback.SeekPosition = 0.7;
         vm.MarkSelectionEndCommand.Execute(null);
 
         // A start at/past the end invalidates the end...
-        vm.SeekPosition = 0.9;
+        vm.Playback.SeekPosition = 0.9;
         vm.MarkSelectionStartCommand.Execute(null);
         vm.SelectionStartPosition.ShouldBe(0.9);
         vm.HasSelectionEnd.ShouldBeFalse();
 
         // ...and an end at/before the start invalidates the start.
-        vm.SeekPosition = 0.1;
+        vm.Playback.SeekPosition = 0.1;
         vm.MarkSelectionEndCommand.Execute(null);
         vm.SelectionEndPosition.ShouldBe(0.1);
         vm.HasSelectionStart.ShouldBeFalse();
@@ -64,7 +64,7 @@ public sealed partial class MainWindowViewModelTests
 
         vm.ClearSelectionCommand.CanExecute(null).ShouldBeFalse(); // nothing to clear yet
 
-        vm.SeekPosition = 0.2;
+        vm.Playback.SeekPosition = 0.2;
         vm.MarkSelectionStartCommand.Execute(null);
         vm.HasAnySelectionMark.ShouldBeTrue();
 
@@ -81,7 +81,7 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.SeekPosition = 0.2;
+        vm.Playback.SeekPosition = 0.2;
         vm.MarkSelectionStartCommand.Execute(null);
 
         vm.SelectedClip = TestClips.Create(1)[0];
@@ -95,16 +95,16 @@ public sealed partial class MainWindowViewModelTests
         // Mirrors the real clip-open order: the controller reports Duration and IsMediaOpen while the view-model is still loading, so CanSeek only becomes true when IsLoading flips off.
         // Every CanSeek-gated command must be re-queried on that final transition: the Trim button shipped permanently disabled because it wasn't.
         var vm = CreateViewModelWithController(out var controller, out _);
-        vm.IsLoading = true;
+        vm.Playback.IsLoading = true;
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
         var trimCanExecuteChanged = false;
         vm.ToggleTrimmingCommand.CanExecuteChanged += (_, _) => trimCanExecuteChanged = true;
 
-        vm.IsLoading = false;
+        vm.Playback.IsLoading = false;
 
-        vm.CanSeek.ShouldBeTrue();
+        vm.Playback.CanSeek.ShouldBeTrue();
         trimCanExecuteChanged.ShouldBeTrue();
         vm.ToggleTrimmingCommand.CanExecute(null).ShouldBeTrue();
         vm.MarkSelectionStartCommand.CanExecute(null).ShouldBeTrue();
@@ -120,7 +120,7 @@ public sealed partial class MainWindowViewModelTests
 
         vm.IsTrimming.ShouldBeFalse();
 
-        vm.SeekPosition = 0.3;
+        vm.Playback.SeekPosition = 0.3;
         vm.MarkSelectionStartCommand.Execute(null);
 
         vm.IsTrimming.ShouldBeTrue();
@@ -137,7 +137,7 @@ public sealed partial class MainWindowViewModelTests
         vm.IsTrimming.ShouldBeTrue();
         vm.HasAnySelectionMark.ShouldBeFalse();
 
-        vm.SeekPosition = 0.3;
+        vm.Playback.SeekPosition = 0.3;
         vm.MarkSelectionStartCommand.Execute(null);
 
         vm.ToggleTrimmingCommand.Execute(null); // acts as cancel while open
@@ -153,9 +153,9 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.SeekPosition = 0.3;
+        vm.Playback.SeekPosition = 0.3;
         vm.MarkSelectionStartCommand.Execute(null);
-        vm.SeekPosition = 0.7;
+        vm.Playback.SeekPosition = 0.7;
         vm.MarkSelectionEndCommand.Execute(null);
 
         vm.CancelTrimCommand.Execute(null);
@@ -186,11 +186,11 @@ public sealed partial class MainWindowViewModelTests
 
         vm.TrimHintText.ShouldContain("set the start");
 
-        vm.SeekPosition = 0.25;
+        vm.Playback.SeekPosition = 0.25;
         vm.MarkSelectionStartCommand.Execute(null);
         vm.TrimHintText.ShouldContain("set the end");
 
-        vm.SeekPosition = 0.75;
+        vm.Playback.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
         // Half of a 2:00 clip is selected.
@@ -217,9 +217,9 @@ public sealed partial class MainWindowViewModelTests
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
 
         vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
-        vm.SeekPosition = 0.25;
+        vm.Playback.SeekPosition = 0.25;
         vm.MarkSelectionStartCommand.Execute(null);
-        vm.SeekPosition = 0.75;
+        vm.Playback.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
         RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
@@ -240,9 +240,9 @@ public sealed partial class MainWindowViewModelTests
         var exporter = new FakeClipExporter();
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => null);
 
-        vm.SeekPosition = 0.25;
+        vm.Playback.SeekPosition = 0.25;
         vm.MarkSelectionStartCommand.Execute(null);
-        vm.SeekPosition = 0.75;
+        vm.Playback.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
         RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
@@ -258,9 +258,9 @@ public sealed partial class MainWindowViewModelTests
         var exporter = new FakeClipExporter { ExceptionToThrow = new InvalidOperationException("ffmpeg exploded") };
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
 
-        vm.SeekPosition = 0.25;
+        vm.Playback.SeekPosition = 0.25;
         vm.MarkSelectionStartCommand.Execute(null);
-        vm.SeekPosition = 0.75;
+        vm.Playback.SeekPosition = 0.75;
         vm.MarkSelectionEndCommand.Execute(null);
 
         RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
@@ -361,35 +361,35 @@ public sealed partial class MainWindowViewModelTests
     public void SpeedStepper_WalksTheLadder_AndClampsAtTheEnds()
     {
         var vm = CreateViewModel();
-        vm.PlaybackSpeed.ShouldBe(1.0);
+        vm.Playback.PlaybackSpeed.ShouldBe(1.0);
 
-        vm.IncreaseSpeedCommand.Execute(null);
-        vm.PlaybackSpeed.ShouldBe(1.25);
+        vm.Playback.IncreaseSpeedCommand.Execute(null);
+        vm.Playback.PlaybackSpeed.ShouldBe(1.25);
 
         // Run the ladder up: it must stop at the top step (Flyleaf's 16x clamp).
         for (var i = 0; i < 20; i++)
-            vm.IncreaseSpeedCommand.Execute(null);
-        vm.PlaybackSpeed.ShouldBe(16.0);
-        vm.CanIncreaseSpeed.ShouldBeFalse();
-        vm.IncreaseSpeedCommand.CanExecute(null).ShouldBeFalse();
+            vm.Playback.IncreaseSpeedCommand.Execute(null);
+        vm.Playback.PlaybackSpeed.ShouldBe(16.0);
+        vm.Playback.CanIncreaseSpeed.ShouldBeFalse();
+        vm.Playback.IncreaseSpeedCommand.CanExecute(null).ShouldBeFalse();
 
         // And back down to the bottom step.
         for (var i = 0; i < 20; i++)
-            vm.DecreaseSpeedCommand.Execute(null);
-        vm.PlaybackSpeed.ShouldBe(0.25);
-        vm.CanDecreaseSpeed.ShouldBeFalse();
-        vm.DecreaseSpeedCommand.CanExecute(null).ShouldBeFalse();
+            vm.Playback.DecreaseSpeedCommand.Execute(null);
+        vm.Playback.PlaybackSpeed.ShouldBe(0.25);
+        vm.Playback.CanDecreaseSpeed.ShouldBeFalse();
+        vm.Playback.DecreaseSpeedCommand.CanExecute(null).ShouldBeFalse();
     }
 
     [Fact]
     public void ResetSpeed_ReturnsToRealtime()
     {
         var vm = CreateViewModel();
-        vm.PlaybackSpeed = 8.0;
+        vm.Playback.PlaybackSpeed = 8.0;
 
-        vm.ResetSpeedCommand.Execute(null);
+        vm.Playback.ResetSpeedCommand.Execute(null);
 
-        vm.PlaybackSpeed.ShouldBe(1.0);
+        vm.Playback.PlaybackSpeed.ShouldBe(1.0);
     }
 
     [Theory]
@@ -401,9 +401,9 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.PlaybackSpeed = speed;
+        vm.Playback.PlaybackSpeed = speed;
 
-        vm.PlaybackSpeedText.ShouldBe(expected);
+        vm.Playback.PlaybackSpeedText.ShouldBe(expected);
     }
 
     [Fact]
@@ -412,11 +412,11 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
 
         (await vm.HandleKeyDownAsync(Key.OemPeriod, ModifierKeys.Shift)).ShouldBeTrue();
-        vm.PlaybackSpeed.ShouldBe(1.25);
+        vm.Playback.PlaybackSpeed.ShouldBe(1.25);
 
         (await vm.HandleKeyDownAsync(Key.OemComma, ModifierKeys.Shift)).ShouldBeTrue();
         (await vm.HandleKeyDownAsync(Key.OemComma, ModifierKeys.Shift)).ShouldBeTrue();
-        vm.PlaybackSpeed.ShouldBe(0.75);
+        vm.Playback.PlaybackSpeed.ShouldBe(0.75);
     }
 
     [Fact]
@@ -428,7 +428,7 @@ public sealed partial class MainWindowViewModelTests
         var handled = await vm.HandleKeyDownAsync(Key.OemPeriod, ModifierKeys.Shift);
 
         handled.ShouldBeFalse();
-        vm.PlaybackSpeed.ShouldBe(1.0);
+        vm.Playback.PlaybackSpeed.ShouldBe(1.0);
     }
 
     [Fact]
@@ -436,7 +436,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModelWithController(out var controller, out _);
 
-        vm.PlaybackSpeed = 4.0;
+        vm.Playback.PlaybackSpeed = 4.0;
 
         controller.PlaybackSpeed.ShouldBe(4.0);
     }

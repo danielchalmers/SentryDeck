@@ -21,24 +21,14 @@ public partial class MainWindowViewModel : ObservableObject
 {
     private readonly List<CamClip> _allClips = [];
     private readonly FlyleafRuntime _flyleafRuntime = new();
-    private readonly Func<VideoPlayerController> _playerControllerFactory;
     private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
-    private readonly Func<Task> _backgroundYield;
     private readonly Dispatcher _dispatcher;
-    private readonly Action<Action> _uiInvoker;
     private readonly DispatcherTimer _filterDebounceTimer;
     private readonly IClipExporter _clipExporter;
     private readonly Func<string, string> _savePathPicker;
     private readonly IClipMediaSourceBuilder _exportMediaSourceBuilder;
-    private VideoPlayerController _playerController;
-    private CancellationTokenSource _selectionCts;
-    private readonly SeekScrubCoalescer _scrubCoalescer;
-    private bool _isSeeking;
-
-    // Identifies the current seek gesture.
-    // EndSeekAsync's slow tail (the accurate seek can queue behind in-flight scrubs) may complete after the user has already started a NEW drag; only the completion belonging to the latest gesture may clear _isSeeking, or the position sync would yank the thumb out from under the active drag.
-    private int _seekGeneration;
     private bool _isInitialized;
+    private bool _isDownloadingFFmpeg;
 
     // The source of dashcam roots: auto-discovery by default, or the user's last picked folders.
     // Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
@@ -60,15 +50,17 @@ public partial class MainWindowViewModel : ObservableObject
         IClipMediaSourceBuilder exportMediaSourceBuilder = null,
         Action<Action> uiInvoker = null)
     {
-        _playerControllerFactory = playerControllerFactory;
         _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
-        _backgroundYield = backgroundYield ?? (async () => await Dispatcher.Yield(DispatcherPriority.Background));
         _clipExporter = clipExporter ?? new ClipExporter(PackageManager.FindFFmpegDirectory);
         _savePathPicker = savePathPicker ?? PickSavePathWithDialog;
         _exportMediaSourceBuilder = exportMediaSourceBuilder ?? new FfconcatMediaSourceBuilder();
         _dispatcher = Dispatcher.CurrentDispatcher;
-        _uiInvoker = uiInvoker ?? InvokeOnDispatcher;
-        _scrubCoalescer = new SeekScrubCoalescer(ScrubToAsync);
+        Playback = new PlaybackViewModel(
+            playerControllerFactory,
+            backgroundYield ?? (async () => await Dispatcher.Yield(DispatcherPriority.Background)),
+            uiInvoker ?? InvokeOnDispatcher,
+            Error,
+            Cameras);
 
         // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth; the getters stay live, so only the (debounced) change notification is deferred.
         _filterDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
@@ -87,6 +79,9 @@ public partial class MainWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(HasError));
             }
         };
+
+        Playback.PropertyChanged += OnPlaybackPropertyChanged;
+        Playback.CurrentClipChanged += (_, clip) => SelectedClip = clip;
     }
 
     /// <summary>
@@ -109,32 +104,12 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public CameraViewsViewModel Cameras { get; } = new();
 
-    public bool ShowMainContent => !ShowAboutPage;
-
     /// <summary>
-    /// Ladder the speed stepper walks: fine increments around 1x, doubling above.
-    /// Flyleaf clamps Player.Speed to [0.125, 16], so 16x is the hard ceiling.
+    /// The player: loading the selected clip, transport, the seek bar and its markers, and speed.
     /// </summary>
-    public static IReadOnlyList<double> PlaybackSpeedSteps { get; } =
-    [
-        0.25,
-        0.5,
-        0.75,
-        1.0,
-        1.25,
-        1.5,
-        2.0,
-        4.0,
-        8.0,
-        16.0,
-    ];
+    public PlaybackViewModel Playback { get; }
 
-    /// <summary>Speed readout shown on the stepper, e.g. "1x" or "0.25x".</summary>
-    public string PlaybackSpeedText => $"{PlaybackSpeed:0.##}x";
-
-    public bool CanIncreaseSpeed => PlaybackSpeed < PlaybackSpeedSteps[^1];
-
-    public bool CanDecreaseSpeed => PlaybackSpeed > PlaybackSpeedSteps[0];
+    public bool ShowMainContent => !ShowAboutPage;
 
     public IReadOnlyList<CamClip> FilteredClips => _allClips
         .Where(MatchesFilter)
@@ -177,67 +152,20 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ClipCount));
     }
 
-    public string PositionText
-    {
-        get
-        {
-            var duration = _playerController?.Duration ?? TimeSpan.Zero;
-            var position = TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
-            return FormatTimeSpan(position);
-        }
-    }
-
-    public string DurationText => FormatTimeSpan(_playerController?.Duration ?? TimeSpan.Zero);
-
-    public bool CanSeek => _playerController?.IsMediaOpen == true && !IsLoading && _playerController.Duration > TimeSpan.Zero;
-
-    public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
-
-    public bool CanStop => IsPlaying || IsLoading;
-
-    public bool CanGoNext => _playerController?.CanGoNext == true;
-
-    public bool CanGoPrevious => _playerController?.CanGoPrevious == true;
-
-    // Segoe Fluent Icons: Pause (E769) / PlaySolid (F5B0).
-    // Rendered with SymbolThemeFontFamily.
-    public string PlayPauseIcon => IsPlaying ? "" : "";
-
     // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF sibling it can't draw over the Flyleaf video surface anyway.
     // While a selected clip loads, the hosts stay visible and simply show black until the first frame decodes, with no loading screen flashing mid-playback.
     public bool ShowStatusOverlay => (IsLoading && SelectedClip is null) || Error.IsVisible || HasNoClipSelected;
+
+    /// <summary>
+    /// True while anything blocks the video pane: a clip scan, the FFmpeg download, or the selected clip loading.
+    /// </summary>
+    public bool IsLoading => IsLoadingClips || _isDownloadingFFmpeg || Playback.IsLoading;
 
     public bool ShowVideoHosts => SelectedClip is not null && !Error.IsVisible;
 
     public bool HasError => Error.IsVisible;
 
     public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !Error.IsVisible;
-
-    // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
-    // Recomputed whenever the selection changes or the controller opens/replaces its media source; plain fields (not ObservableProperty) because they're derived, not independently settable.
-    private double? _eventPosition;
-    private IReadOnlyList<double> _chunkBoundaries = [];
-    private IReadOnlyList<double> _gapPositions = [];
-
-    /// <summary>The event moment as a 0..1 fraction of the clip timeline (0 when none; pair with <see cref="HasEventMarker"/>).</summary>
-    public double EventMarkerPosition => _eventPosition ?? 0d;
-
-    /// <summary>True when the selected clip has a locatable event moment to mark on the seek bar and jump to.</summary>
-    public bool HasEventMarker => _eventPosition.HasValue;
-
-    /// <summary>Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".</summary>
-    public string EventMarkerTooltip => SelectedClip?.Event is { } camEvent && HasEventMarker
-        ? $"{ClipDisplay.ReasonLabel(camEvent)} · {camEvent.Timestamp:t}"
-        : string.Empty;
-
-    /// <summary>Interior chunk-boundary fractions (i/Count for i in 1..Count-1); empty for fewer than two chunks.</summary>
-    public IReadOnlyList<double> ChunkBoundaries => _chunkBoundaries;
-
-    /// <summary>
-    /// Fractional seek-bar positions where the opened clip's media time skips over a wall-clock gap (deleted/corrupt/excluded chunks, or a Sentry idle period).
-    /// Empty until the selected clip's media source has actually been built and opened by the controller.
-    /// </summary>
-    public IReadOnlyList<double> GapPositions => _gapPositions;
 
     // --- Export selection (in/out marks on the seek bar, as 0..1 fractions like SeekPosition) ---
     // Plain fields + an explicit notify helper (not ObservableProperty) because the pair changes together under shared invariants (start < end) and several derived properties hang off both.
@@ -260,7 +188,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>True when both marks are set (a complete, exportable range).</summary>
     public bool HasSelection => _selectionStart.HasValue && _selectionEnd.HasValue;
 
-    public bool CanExportSelection => HasSelection && !IsExporting && CanSeek;
+    public bool CanExportSelection => HasSelection && !IsExporting && Playback.CanSeek;
 
     /// <summary>
     /// True while the trim panel is open.
@@ -305,7 +233,7 @@ public partial class MainWindowViewModel : ObservableObject
                 return string.Empty;
             }
 
-            var duration = _playerController?.Duration ?? TimeSpan.Zero;
+            var duration = Playback.Duration;
             return FormatTimeSpan(TimeSpan.FromSeconds((end - start) * duration.TotalSeconds));
         }
     }
@@ -325,57 +253,21 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
     [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
-    [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     private CamClip _selectedClip;
-
-    // The clip actually loaded in the player (drives the now-playing marker in the list).
-    // Distinct from SelectedClip so a marker can persist even when selection is elsewhere.
-    [ObservableProperty]
-    private CamClip _nowPlayingClip;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowMainContent))]
     private bool _showAboutPage;
 
+    // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanPlayPause))]
-    [NotifyPropertyChangedFor(nameof(CanStop))]
+    [NotifyPropertyChangedFor(nameof(IsLoading))]
     [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
     [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
     [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
-    [NotifyPropertyChangedFor(nameof(CanSeek))]
-    [NotifyPropertyChangedFor(nameof(CanExportSelection))]
-    [NotifyCanExecuteChangedFor(nameof(StepFrameBackwardCommand))]
-    [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
-    [NotifyCanExecuteChangedFor(nameof(MarkSelectionStartCommand))]
-    [NotifyCanExecuteChangedFor(nameof(MarkSelectionEndCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ToggleTrimmingCommand))]
-    [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
-    private bool _isLoading;
-
-    // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
-    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RefreshClipsCommand))]
     [NotifyCanExecuteChangedFor(nameof(OpenFolderCommand))]
     private bool _isLoadingClips;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PositionText))]
-    private double _seekPosition;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PlayPauseIcon))]
-    [NotifyPropertyChangedFor(nameof(CanPlayPause))]
-    [NotifyPropertyChangedFor(nameof(CanStop))]
-    private bool _isPlaying;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PlaybackSpeedText))]
-    [NotifyPropertyChangedFor(nameof(CanIncreaseSpeed))]
-    [NotifyPropertyChangedFor(nameof(CanDecreaseSpeed))]
-    [NotifyCanExecuteChangedFor(nameof(IncreaseSpeedCommand))]
-    [NotifyCanExecuteChangedFor(nameof(DecreaseSpeedCommand))]
-    private double _playbackSpeed = 1.0;
 
     public async Task InitializeAsync()
     {
@@ -405,36 +297,16 @@ public partial class MainWindowViewModel : ObservableObject
     public void Shutdown()
     {
         _filterDebounceTimer.Stop();
-        _selectionCts?.Cancel();
-        _selectionCts?.Dispose();
-        _selectionCts = null;
-
-        var controller = _playerController;
-        _playerController = null;
-
-        if (controller is null)
-            return;
-
-        controller.PropertyChanged -= PlayerControllerOnPropertyChanged;
-        controller.Dispose();
+        Playback.Shutdown();
     }
 
-    public void InitializePlayer()
-    {
-        if (_playerController is not null)
-            return;
-
-        _playerController = _playerControllerFactory();
-        _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
-        _playerController.PlaybackSpeed = PlaybackSpeed;
-    }
+    public void InitializePlayer() => Playback.InitializePlayer();
 
     public async Task LoadClipsAsync(IEnumerable<string> roots, TimeSpan minimumLoadingDuration = default)
     {
         Error.Clear();
         _allClips.Clear();
         SelectedClip = null;
-        IsLoading = true;
         IsLoadingClips = true;
 
         // Clear the list right away so a (re)scan visibly empties it and shows the loading bar before refilling.
@@ -466,7 +338,7 @@ public partial class MainWindowViewModel : ObservableObject
                 }
             }
 
-            _playerController?.LoadClips(_allClips);
+            Playback.SetPlaylist(_allClips);
 
             // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh (clear -> loading -> refill) instead of an imperceptible flicker.
             var remaining = minimumLoadingDuration - stopwatch.Elapsed;
@@ -477,7 +349,6 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            IsLoading = false;
             IsLoadingClips = false;
             OnPropertyChanged(nameof(FilteredClips));
             OnPropertyChanged(nameof(ClipCount));
@@ -546,9 +417,6 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasNoClipSelected));
         OnPropertyChanged(nameof(ShowStatusOverlay));
         OnPropertyChanged(nameof(ShowVideoHosts));
-        OnPropertyChanged(nameof(CanPlayPause));
-        OnPropertyChanged(nameof(CanGoNext));
-        OnPropertyChanged(nameof(CanGoPrevious));
     }
 
     // Gated like Refresh: LoadClipsAsync has no re-entrancy protection, so picking a folder while a scan is still running would interleave two loads and merge both roots into one clip list.
@@ -571,10 +439,7 @@ public partial class MainWindowViewModel : ObservableObject
                 folders.Length,
                 folders);
 
-            if (_playerController is not null)
-            {
-                await _playerController.StopAsync();
-            }
+            await Playback.StopPlayerAsync();
 
             _rootSource = () => folders;
             await LoadClipsAsync(folders);
@@ -590,68 +455,11 @@ public partial class MainWindowViewModel : ObservableObject
     {
         Log.Debug("Refreshing clips");
 
-        if (_playerController is not null)
-        {
-            await _playerController.StopAsync();
-        }
-
+        await Playback.StopPlayerAsync();
         await LoadClipsAsync(_rootSource(), TimeSpan.FromMilliseconds(400));
     }
 
     private bool CanRefreshClips => !IsLoadingClips;
-
-    [RelayCommand]
-    private async Task PlayPauseAsync()
-    {
-        if (_playerController is not null)
-        {
-            await _playerController.TogglePlayPauseAsync();
-        }
-    }
-
-    [RelayCommand]
-    private async Task StopAsync()
-    {
-        if (_playerController is null)
-            return;
-
-        // A selection that is still waiting to load would otherwise start playing right after the stop.
-        _selectionCts?.Cancel();
-
-        await _playerController.StopAsync();
-        IsLoading = false;
-        SeekPosition = 0;
-        NowPlayingClip = null;
-    }
-
-    [RelayCommand(CanExecute = nameof(CanSeek))]
-    private async Task StepFrameBackwardAsync()
-    {
-        if (_playerController is not null)
-        {
-            await _playerController.StepFrameAsync(forward: false);
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanSeek))]
-    private async Task StepFrameForwardAsync()
-    {
-        if (_playerController is not null)
-        {
-            await _playerController.StepFrameAsync(forward: true);
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(HasEventMarker))]
-    private async Task JumpToEventAsync()
-    {
-        if (!HasEventMarker)
-            return;
-
-        Log.Debug("Jumping to event moment. Position={EventMarkerPosition}", EventMarkerPosition);
-        SeekPosition = EventMarkerPosition;
-        await SeekToCurrentPositionAsync();
-    }
 
     /// <summary>
     /// Marks the selection start at the current playhead.
@@ -661,8 +469,8 @@ public partial class MainWindowViewModel : ObservableObject
     private void MarkSelectionStart()
     {
         IsTrimming = true;
-        _selectionStart = SeekPosition;
-        if (_selectionEnd is { } end && end <= SeekPosition)
+        _selectionStart = Playback.SeekPosition;
+        if (_selectionEnd is { } end && end <= Playback.SeekPosition)
         {
             _selectionEnd = null;
         }
@@ -675,8 +483,8 @@ public partial class MainWindowViewModel : ObservableObject
     private void MarkSelectionEnd()
     {
         IsTrimming = true;
-        _selectionEnd = SeekPosition;
-        if (_selectionStart is { } start && start >= SeekPosition)
+        _selectionEnd = Playback.SeekPosition;
+        if (_selectionStart is { } start && start >= Playback.SeekPosition)
         {
             _selectionStart = null;
         }
@@ -720,15 +528,15 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>True when either mark is set (drives the clear affordance).</summary>
     public bool HasAnySelectionMark => _selectionStart.HasValue || _selectionEnd.HasValue;
 
-    // Everything downstream of CanSeek: the mark/export commands gate on it alongside the frame-step commands.
+    // The trim commands gate on the player being seekable.
+    private bool CanSeek => Playback.CanSeek;
+
+    // Everything downstream of CanSeek: the mark/export commands gate on it.
     private void NotifyCanSeekChanged()
     {
-        OnPropertyChanged(nameof(CanSeek));
         OnPropertyChanged(nameof(CanExportSelection));
         OnPropertyChanged(nameof(SelectionDurationText)); // scales with Duration
         OnPropertyChanged(nameof(TrimHintText));
-        StepFrameBackwardCommand.NotifyCanExecuteChanged();
-        StepFrameForwardCommand.NotifyCanExecuteChanged();
         MarkSelectionStartCommand.NotifyCanExecuteChanged();
         MarkSelectionEndCommand.NotifyCanExecuteChanged();
         ToggleTrimmingCommand.NotifyCanExecuteChanged();
@@ -753,8 +561,8 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanExportSelection))]
     private async Task ExportSelectionAsync()
     {
-        var clip = _playerController?.CurrentClip;
-        var mediaSource = _playerController?.OpenedMediaSource;
+        var clip = Playback.CurrentClip;
+        var mediaSource = Playback.OpenedMediaSource;
         if (clip is null || mediaSource is null || mediaSource.Duration <= TimeSpan.Zero
             || _selectionStart is not { } startFraction || _selectionEnd is not { } endFraction)
         {
@@ -784,7 +592,7 @@ public partial class MainWindowViewModel : ObservableObject
         ClipMediaSource mediaSource;
         try
         {
-            mediaSource = _playerController?.CurrentClip == clip ? _playerController.OpenedMediaSource : null;
+            mediaSource = Playback.CurrentClip == clip ? Playback.OpenedMediaSource : null;
 
             // Building an unopened clip's source does real IO (probe every chunk, write ffconcat files) and can throw (drive unplugged, temp write fails).
             // Unlike ExportSelectionAsync, nothing downstream caught it, so the fault escaped to the dispatcher; surface a normal "Export Failed" dialog instead.
@@ -908,29 +716,9 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task PreviousAsync()
-    {
-        if (_playerController is null)
-            return;
-
-        await _playerController.PreviousAsync();
-        SelectedClip = _playerController.CurrentClip;
-    }
-
-    [RelayCommand]
-    private async Task NextAsync()
-    {
-        if (_playerController is null)
-            return;
-
-        await _playerController.NextAsync();
-        SelectedClip = _playerController.CurrentClip;
-    }
-
-    [RelayCommand]
     private async Task DownloadFFmpegAsync()
     {
-        IsLoading = true;
+        SetDownloadingFFmpeg(true);
         Error.Clear();
 
         try
@@ -955,65 +743,17 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            IsLoading = false;
+            SetDownloadingFFmpeg(false);
         }
     }
 
-    private async Task PlaySelectedClipAsync(CamClip clip, CancellationToken cancellationToken)
+    private void SetDownloadingFFmpeg(bool value)
     {
-        if (clip is null || _playerController is null)
-            return;
-
-        Error.Clear();
-        IsLoading = true;
-        await _backgroundYield();
-
-        // A newer selection superseded this one while we yielded, so drop it and let the latest win and the selection doesn't rubber-band backwards as earlier, slower loads complete.
-        if (cancellationToken.IsCancellationRequested || !ReferenceEquals(clip, SelectedClip))
-        {
-            // A newer selection's own load owns IsLoading now, but if the selection was cleared outright (deselect, or a filter dropping the clip), no load is in flight and nothing else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
-            if (SelectedClip is null)
-            {
-                IsLoading = false;
-            }
-
-            return;
-        }
-
-        try
-        {
-            await _playerController.GoToClipAsync(clip);
-
-            if (cancellationToken.IsCancellationRequested)
-                return;
-
-            // Auto-focus the camera that triggered the event (Full metadata mode).
-            if (clip.Event is not null)
-            {
-                Cameras.SelectedCameraView = Cameras.CameraIdToView(clip.Event.Camera);
-            }
-        }
-        catch (Exception ex)
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                // Same stuck-overlay guard as the pre-load early-return above.
-                if (SelectedClip is null)
-                {
-                    IsLoading = false;
-                }
-
-                return;
-            }
-
-            IsLoading = false;
-            Log.Error(
-                ex,
-                "Failed to play selected clip. ClipName={ClipName}; ClipPath={ClipPath}",
-                clip.Name,
-                clip.FullPath);
-            Error.Show("Playback Failed", $"Could not play clip: {clip.Name}\n\nError: {ex.Message}");
-        }
+        _isDownloadingFFmpeg = value;
+        OnPropertyChanged(nameof(IsLoading));
+        OnPropertyChanged(nameof(ShowStatusOverlay));
+        OnPropertyChanged(nameof(ShowVideoHosts));
+        OnPropertyChanged(nameof(HasNoClipSelected));
     }
 
     /// <summary>
@@ -1110,9 +850,9 @@ public partial class MainWindowViewModel : ObservableObject
                 return Run(() => Cameras.SelectCameraViewCommand.Execute(numberedOption.ViewId));
             }
 
-            if (key == Key.E && HasEventMarker)
+            if (key == Key.E && Playback.HasEventMarker)
             {
-                return JumpToEventAsync;
+                return () => Playback.JumpToEventCommand.ExecuteAsync(null);
             }
 
             if (key == Key.I && CanSeek)
@@ -1142,30 +882,29 @@ public partial class MainWindowViewModel : ObservableObject
         {
             if (key == Key.OemComma)
             {
-                return Run(DecreaseSpeed);
+                return Run(() => Playback.DecreaseSpeedCommand.Execute(null));
             }
 
             if (key == Key.OemPeriod)
             {
-                return Run(IncreaseSpeed);
+                return Run(() => Playback.IncreaseSpeedCommand.Execute(null));
             }
         }
 
-        var controller = _playerController;
-        if (controller is null)
+        if (!Playback.HasPlayer)
         {
             return null;
         }
 
         return key switch
         {
-            Key.Space => controller.TogglePlayPauseAsync,
-            Key.OemComma when modifiers == ModifierKeys.None && CanSeek => () => controller.StepFrameAsync(forward: false),
-            Key.OemPeriod when modifiers == ModifierKeys.None && CanSeek => () => controller.StepFrameAsync(forward: true),
-            Key.Left when modifiers == ModifierKeys.Control => CanGoPrevious ? PreviousAsync : Run(() => { }),
-            Key.Right when modifiers == ModifierKeys.Control => CanGoNext ? NextAsync : Run(() => { }),
-            Key.Left => () => SeekRelativeAsync(TimeSpan.FromSeconds(-5)),
-            Key.Right => () => SeekRelativeAsync(TimeSpan.FromSeconds(5)),
+            Key.Space => Playback.TogglePlayPauseAsync,
+            Key.OemComma when modifiers == ModifierKeys.None && CanSeek => () => Playback.StepFrameAsync(forward: false),
+            Key.OemPeriod when modifiers == ModifierKeys.None && CanSeek => () => Playback.StepFrameAsync(forward: true),
+            Key.Left when modifiers == ModifierKeys.Control => Playback.CanGoPrevious ? () => Playback.PreviousCommand.ExecuteAsync(null) : Run(() => { }),
+            Key.Right when modifiers == ModifierKeys.Control => Playback.CanGoNext ? () => Playback.NextCommand.ExecuteAsync(null) : Run(() => { }),
+            Key.Left => () => Playback.SeekRelativeAsync(TimeSpan.FromSeconds(-5)),
+            Key.Right => () => Playback.SeekRelativeAsync(TimeSpan.FromSeconds(5)),
             _ => null,
         };
 
@@ -1176,257 +915,32 @@ public partial class MainWindowViewModel : ObservableObject
         };
     }
 
-    private Task SeekRelativeAsync(TimeSpan offset)
+    private static string FormatTimeSpan(TimeSpan ts) => PlaybackViewModel.FormatTimeSpan(ts);
+
+    private void OnPlaybackPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
-        if (_playerController is not { } controller || !CanSeek)
+        switch (e.PropertyName)
         {
-            return Task.CompletedTask;
-        }
-
-        return controller.SeekByAsync(offset);
-    }
-
-    public void BeginSeek()
-    {
-        if (CanSeek)
-        {
-            _seekGeneration++;
-            _isSeeking = true;
-            _scrubCoalescer.Reset();
-
-            // Holds playback paused for the gesture, so each scrub is one cheap paused seek and the release resumes every camera together.
-            // The controller serializes this ahead of the first scrub seek, so it needs no await here.
-            _ = _playerController.BeginScrubAsync();
-        }
-    }
-
-    public async Task EndSeekAsync()
-    {
-        var generation = _seekGeneration;
-
-        if (_playerController is null || !CanSeek)
-        {
-            _isSeeking = false;
-            return;
-        }
-
-        // The gesture is over: drop any scrub value still queued in the coalescer.
-        // When the in-flight scrub completes it would otherwise re-issue that value as a keyframe seek AFTER the accurate seek below (both queue on the controller's serialized-operation lock in that order), leaving the playhead on a keyframe instead of the release point.
-        _scrubCoalescer.CancelPending();
-
-        // _isSeeking stays true until the release seek completes, so the position sync can't pull the thumb back while a scrub seek winds down.
-        // The release seek queues behind any in-flight scrub on the controller's serialized-operation lock, so it always lands last.
-        await _playerController.EndScrubAsync(CurrentSeekTargetPosition());
-
-        // Only the latest gesture's completion may end the seeking state: if the user has already grabbed the thumb again, this completion is stale and their new drag owns the flag.
-        if (generation == _seekGeneration)
-        {
-            _isSeeking = false;
-        }
-    }
-
-    /// <summary>
-    /// Called on every seek-bar value change.
-    /// While a seek gesture is active (<see cref="_isSeeking"/>, set by <see cref="BeginSeek"/> on mouse-down for clicks and drags alike), each value feeds the scrub coalescer so the video follows the thumb in near-real-time.
-    /// A plain click therefore issues one scrub seek too; the accurate seek from <see cref="EndSeekAsync"/> runs behind the same serialized lock and always lands last.
-    /// Value changes from playback position sync arrive with <see cref="_isSeeking"/> false and are ignored.
-    /// </summary>
-    public void OnSeekSliderValueChanged()
-    {
-        if (!_isSeeking)
-            return;
-
-        OnPropertyChanged(nameof(PositionText));
-
-        if (CanSeek)
-        {
-            _scrubCoalescer.OnDragValueChanged(CurrentSeekTargetPosition());
-        }
-    }
-
-    private async Task SeekToCurrentPositionAsync()
-    {
-        if (_playerController is null)
-            return;
-
-        var duration = _playerController.Duration;
-        if (duration.TotalSeconds > 0)
-        {
-            await _playerController.SeekAsync(CurrentSeekTargetPosition());
-        }
-    }
-
-    private Task ScrubToAsync(TimeSpan position) =>
-        _playerController?.ScrubSeekAsync(position) ?? Task.CompletedTask;
-
-    private TimeSpan CurrentSeekTargetPosition()
-    {
-        var duration = _playerController?.Duration ?? TimeSpan.Zero;
-        return TimeSpan.FromSeconds(SeekPosition * duration.TotalSeconds);
-    }
-
-    // Derives the seek-bar overlays for the selected clip: the event moment, the interior chunk-boundary ticks, and gap ticks (mapped onto the 0..1 seek axis).
-    // Nulls out cleanly when the selection is cleared or the clip has no usable event metadata.
-    //
-    // Prefers the controller's actually-opened ClipMediaSource when it belongs to this clip: that source has real probed durations and gap-aware wall-clock mapping (see ClipMediaSource.ToMediaTime), so its positions match what's actually playing.
-    // Selecting a clip is synchronous but opening its media is not, so immediately after selection (or for a clip that never opens, e.g. in tests with no controller) there is no opened source yet; a ClipTimeline estimate (uniform assumed chunk length) is used as a same-frame placeholder so the markers don't flash empty, and is superseded once OpenedMediaSource changes.
-    private void RecomputeSelectedClipTimeline()
-    {
-        var clip = SelectedClip;
-        if (clip is null)
-        {
-            _eventPosition = null;
-            _chunkBoundaries = [];
-            _gapPositions = [];
-            return;
-        }
-
-        var mediaSource = _playerController?.CurrentClip == clip ? _playerController?.OpenedMediaSource : null;
-
-        if (mediaSource is not null && mediaSource.Duration > TimeSpan.Zero)
-        {
-            RecomputeFromMediaSource(clip, mediaSource);
-        }
-        else
-        {
-            RecomputeFromEstimatedTimeline(clip);
-        }
-    }
-
-    private void RecomputeFromMediaSource(CamClip clip, ClipMediaSource mediaSource)
-    {
-        var durationSeconds = mediaSource.Duration.TotalSeconds;
-
-        _chunkBoundaries = mediaSource.ChunkStarts.Count < 2
-            ? []
-            : mediaSource.ChunkStarts.Skip(1).Select(start => start.TotalSeconds / durationSeconds).ToList();
-
-        _gapPositions = mediaSource.GapPositions
-            .Select(position => position.TotalSeconds / durationSeconds)
-            .ToList();
-
-        var camEvent = clip.Event;
-        if (camEvent is null || camEvent.Timestamp == default)
-        {
-            _eventPosition = null;
-            return;
-        }
-
-        // Fraction 0 is a real position: an event that fired on the first recorded frame (or one snapped forward to the start of the footage) still deserves its marker.
-        var mediaTime = mediaSource.ToMediaTime(camEvent.Timestamp);
-        var fraction = mediaTime?.TotalSeconds / durationSeconds;
-        _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
-    }
-
-    // Fallback used before the selected clip's media has actually been opened (or when it never will be, e.g. no controller in tests): the legacy uniform-chunk-length estimate.
-    // Carries no gap information, since gaps can only be known once the builder has probed real durations.
-    private void RecomputeFromEstimatedTimeline(CamClip clip)
-    {
-        var timeline = new ClipTimeline(clip.Chunks);
-        _chunkBoundaries = timeline.Count < 2
-            ? []
-            : Enumerable.Range(1, timeline.Count - 1).Select(i => (double)i / timeline.Count).ToList();
-        _gapPositions = [];
-
-        var camEvent = clip.Event;
-        if (camEvent is null || camEvent.Timestamp == default || clip.Chunks.Count == 0 || timeline.Duration <= TimeSpan.Zero)
-        {
-            _eventPosition = null;
-            return;
-        }
-
-        // The event landing at or after the start and no later than the modeled end is markable (exactly 0 = the event fired on the first recorded frame); clock skew (fraction < 0) or an event past the estimate (> 1) yields no marker.
-        var fraction = (camEvent.Timestamp - clip.Chunks[0].Timestamp).TotalSeconds / timeline.Duration.TotalSeconds;
-        _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
-    }
-
-    private void UpdateSeekPositionFromController()
-    {
-        if (_playerController is null || _isSeeking)
-            return;
-
-        var duration = _playerController.Duration;
-        SeekPosition = duration.TotalSeconds > 0
-            ? Math.Clamp(_playerController.Position.TotalSeconds / duration.TotalSeconds, 0, 1)
-            : 0;
-    }
-
-    private void PlayerControllerOnPropertyChanged(object sender, PropertyChangedEventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(e.PropertyName))
-            return;
-
-        RunOnUiThread(() => HandlePlayerControllerPropertyChanged(e.PropertyName));
-    }
-
-    private void HandlePlayerControllerPropertyChanged(string propertyName)
-    {
-        if (_playerController is null)
-            return;
-
-        switch (propertyName)
-        {
-            case nameof(VideoPlayerController.IsLoading):
-                IsLoading = _playerController.IsLoading;
+            case nameof(PlaybackViewModel.IsLoading):
+                OnPropertyChanged(nameof(IsLoading));
+                OnPropertyChanged(nameof(ShowStatusOverlay));
+                OnPropertyChanged(nameof(ShowVideoHosts));
+                OnPropertyChanged(nameof(HasNoClipSelected));
                 break;
 
-            case nameof(VideoPlayerController.IsPlaying):
-                IsPlaying = _playerController.IsPlaying;
-                break;
-
-            case nameof(VideoPlayerController.Duration):
-                UpdateSeekPositionFromController();
-                OnPropertyChanged(nameof(DurationText));
-                OnPropertyChanged(nameof(PositionText));
+            case nameof(PlaybackViewModel.CanSeek):
                 NotifyCanSeekChanged();
                 break;
 
-            case nameof(VideoPlayerController.Position):
-                UpdateSeekPositionFromController();
-                break;
-
-            case nameof(VideoPlayerController.OpenedMediaSource):
-                // The controller finished (re)building the media source for the selected clip (or one under recovery from a corrupt chunk) -- refresh the gap-aware overlays now that real probed durations/timestamps are available.
+            case nameof(PlaybackViewModel.OpenedMediaSource):
                 // A rebuild can reshape the timeline (chunks excluded during recovery), so in/out fractions marked against the old timeline no longer point at the same footage.
                 if (HasAnySelectionMark)
                 {
                     ClearSelection();
                 }
 
-                RecomputeSelectedClipTimeline();
-                OnPropertyChanged(nameof(EventMarkerPosition));
-                OnPropertyChanged(nameof(HasEventMarker));
-                OnPropertyChanged(nameof(EventMarkerTooltip));
-                OnPropertyChanged(nameof(ChunkBoundaries));
-                OnPropertyChanged(nameof(GapPositions));
-                JumpToEventCommand.NotifyCanExecuteChanged();
-                break;
-
-            case nameof(VideoPlayerController.ErrorMessage):
-                if (_playerController.ErrorMessage is not null)
-                {
-                    Error.Show("Playback Error", _playerController.ErrorMessage);
-                }
-
-                break;
-
-            case nameof(VideoPlayerController.CurrentClip):
-                SelectedClip = _playerController.CurrentClip;
-                NowPlayingClip = _playerController.CurrentClip;
-                RefreshClipState();
-                break;
-
-            case nameof(VideoPlayerController.IsMediaOpen):
-                NotifyCanSeekChanged();
                 break;
         }
-    }
-
-    internal static string FormatTimeSpan(TimeSpan ts)
-    {
-        return ts.TotalHours >= 1
-            ? ts.ToString(@"h\:mm\:ss")
-            : ts.ToString(@"m\:ss");
     }
 
     private void ShowFFmpegMissingError()
@@ -1515,12 +1029,12 @@ public partial class MainWindowViewModel : ObservableObject
 
         // Flyleaf keeps the current clip's camera files open; Windows can't recycle a folder whose files are still locked, so stop and close the players before deleting it.
         var isCurrent = ReferenceEquals(SelectedClip, clip)
-            || ReferenceEquals(NowPlayingClip, clip)
-            || _playerController?.CurrentClip == clip;
-        if (isCurrent && _playerController is not null)
+            || ReferenceEquals(Playback.NowPlayingClip, clip)
+            || Playback.CurrentClip == clip;
+        if (isCurrent && Playback.HasPlayer)
         {
-            await _playerController.StopAsync();
-            SeekPosition = 0;
+            await Playback.StopPlayerAsync();
+            Playback.SeekPosition = 0;
         }
 
         try
@@ -1537,11 +1051,11 @@ public partial class MainWindowViewModel : ObservableObject
 
         // Drop it from the sidebar list and keep the player's Next/Previous playlist in sync.
         _allClips.Remove(clip);
-        _playerController?.RemoveClip(clip);
+        Playback.RemoveFromPlaylist(clip);
 
-        if (ReferenceEquals(NowPlayingClip, clip))
+        if (ReferenceEquals(Playback.NowPlayingClip, clip))
         {
-            NowPlayingClip = null;
+            Playback.NowPlayingClip = null;
         }
 
         if (ReferenceEquals(SelectedClip, clip))
@@ -1569,8 +1083,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static bool CanShowOnMap(CamClip clip) => clip?.Event is not null && ClipDisplay.HasLocation(clip.Event);
 
-    private void RunOnUiThread(Action action) => _uiInvoker(action);
-
     private void InvokeOnDispatcher(Action action)
     {
         if (_dispatcher.CheckAccess())
@@ -1590,51 +1102,6 @@ public partial class MainWindowViewModel : ObservableObject
         // In/out marks are fractions of the previous clip's timeline; they mean nothing on the new one, and a trim panel guiding a cut of the old clip would now be lying.
         CancelTrim();
 
-        RecomputeSelectedClipTimeline();
-        OnPropertyChanged(nameof(EventMarkerPosition));
-        OnPropertyChanged(nameof(HasEventMarker));
-        OnPropertyChanged(nameof(EventMarkerTooltip));
-        OnPropertyChanged(nameof(ChunkBoundaries));
-        OnPropertyChanged(nameof(GapPositions));
-        JumpToEventCommand.NotifyCanExecuteChanged();
-
-        // Cancel any in-flight selection load so quickly arrowing through the list doesn't open every clip in turn (which would also drag the selection backwards until the queue drained).
-        _selectionCts?.Cancel();
-        _selectionCts?.Dispose();
-        _selectionCts = null;
-
-        if (value is not null)
-        {
-            _selectionCts = new CancellationTokenSource();
-
-            // Show the now-playing badge on the newly clicked clip right away, instead of only once its media finishes opening.
-            NowPlayingClip = value;
-
-            Log.Debug(
-                "Selected clip changed. ClipName={ClipName}; ClipPath={ClipPath}",
-                value.Name,
-                value.FullPath);
-            _ = PlaySelectedClipAsync(value, _selectionCts.Token);
-        }
+        Playback.Select(value);
     }
-
-    partial void OnPlaybackSpeedChanged(double value)
-    {
-        if (_playerController is not null)
-        {
-            Log.Information("Playback speed changed. Speed={PlaybackSpeed}", value);
-            _playerController.PlaybackSpeed = value;
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanIncreaseSpeed))]
-    private void IncreaseSpeed() =>
-        PlaybackSpeed = PlaybackSpeedSteps.FirstOrDefault(step => step > PlaybackSpeed, PlaybackSpeedSteps[^1]);
-
-    [RelayCommand(CanExecute = nameof(CanDecreaseSpeed))]
-    private void DecreaseSpeed() =>
-        PlaybackSpeed = PlaybackSpeedSteps.LastOrDefault(step => step < PlaybackSpeed, PlaybackSpeedSteps[0]);
-
-    [RelayCommand]
-    private void ResetSpeed() => PlaybackSpeed = 1.0;
 }

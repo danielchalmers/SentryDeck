@@ -141,7 +141,7 @@
                             -->
                             <ItemsControl Focusable="False"
                                           IsHitTestVisible="False"
-                                          ItemsSource="{Binding Data.ChunkBoundaries, Source={StaticResource VmProxy}}">
+                                          ItemsSource="{Binding Data.Playback.ChunkBoundaries, Source={StaticResource VmProxy}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <Grid />
@@ -177,7 +177,7 @@
                             -->
                             <ItemsControl Focusable="False"
                                           IsHitTestVisible="False"
-                                          ItemsSource="{Binding Data.GapPositions, Source={StaticResource VmProxy}}">
+                                          ItemsSource="{Binding Data.Playback.GapPositions, Source={StaticResource VmProxy}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <Grid />
@@ -210,8 +210,8 @@
                                     VerticalAlignment="Center"
                                     CornerRadius="1.5"
                                     IsHitTestVisible="False"
-                                    ToolTip="{Binding Data.EventMarkerTooltip, Source={StaticResource VmProxy}}"
-                                    Visibility="{Binding Data.HasEventMarker, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                    ToolTip="{Binding Data.Playback.EventMarkerTooltip, Source={StaticResource VmProxy}}"
+                                    Visibility="{Binding Data.Playback.HasEventMarker, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
                                 <Border.Style>
                                     <!--  Reason color via DynamicResource (keyed by ReasonKey) so the marker re-colors on a live OS theme switch.  -->
                                     <Style TargetType="Border">
@@ -238,7 +238,7 @@
                                 </Border.Style>
                                 <Border.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
-                                        <Binding Path="Data.EventMarkerPosition"
+                                        <Binding Path="Data.Playback.EventMarkerPosition"
                                                  Source="{StaticResource VmProxy}" />
                                         <Binding ElementName="SeekRail"
                                                  Path="ActualWidth" />
@@ -768,7 +768,7 @@
                                             <Border.Visibility>
                                                 <MultiBinding Converter="{local:NowPlayingConverter}">
                                                     <Binding />
-                                                    <Binding Path="Data.NowPlayingClip"
+                                                    <Binding Path="Data.Playback.NowPlayingClip"
                                                              Source="{StaticResource VmProxy}" />
                                                 </MultiBinding>
                                             </Border.Visibility>
@@ -1450,21 +1450,21 @@
                         <StackPanel Grid.Column="0"
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal">
-                            <Button Command="{Binding PreviousCommand}"
+                            <Button Command="{Binding Playback.PreviousCommand}"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Previous clip"
-                                    IsEnabled="{Binding CanGoPrevious}"
+                                    IsEnabled="{Binding Playback.CanGoPrevious}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Previous clip (Ctrl+Left)">
                                 <TextBlock Text="&#xE892;"
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
 
-                            <Button Command="{Binding StepFrameBackwardCommand}"
+                            <Button Command="{Binding Playback.StepFrameBackwardCommand}"
                                     Margin="10,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Previous frame"
-                                    IsEnabled="{Binding CanSeek}"
+                                    IsEnabled="{Binding Playback.CanSeek}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Previous frame (,)">
                                 <TextBlock Text="&#xE76B;"
@@ -1472,8 +1472,8 @@
                             </Button>
 
                             <Button x:Name="PlayPauseButton"
-                                    Content="{Binding PlayPauseIcon}"
-                                    Command="{Binding PlayPauseCommand}"
+                                    Content="{Binding Playback.PlayPauseIcon}"
+                                    Command="{Binding Playback.PlayPauseCommand}"
                                     Width="56"
                                     Height="40"
                                     Margin="10,0"
@@ -1481,36 +1481,36 @@
                                     FontFamily="{DynamicResource SymbolThemeFontFamily}"
                                     FontSize="20"
                                     AutomationProperties.Name="Play or pause"
-                                    IsEnabled="{Binding CanPlayPause}"
+                                    IsEnabled="{Binding Playback.CanPlayPause}"
                                     Style="{StaticResource AccentButtonStyle}"
                                     ToolTip="Play/Pause (Space)" />
 
-                            <Button Command="{Binding StepFrameForwardCommand}"
+                            <Button Command="{Binding Playback.StepFrameForwardCommand}"
                                     Margin="0,0,10,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Next frame"
-                                    IsEnabled="{Binding CanSeek}"
+                                    IsEnabled="{Binding Playback.CanSeek}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Next frame (.)">
                                 <TextBlock Text="&#xE76C;"
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
 
-                            <Button Command="{Binding NextCommand}"
+                            <Button Command="{Binding Playback.NextCommand}"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Next clip"
-                                    IsEnabled="{Binding CanGoNext}"
+                                    IsEnabled="{Binding Playback.CanGoNext}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Next clip (Ctrl+Right)">
                                 <TextBlock Text="&#xE893;"
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
 
-                            <Button Command="{Binding StopCommand}"
+                            <Button Command="{Binding Playback.StopCommand}"
                                     Margin="10,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Stop"
-                                    IsEnabled="{Binding CanStop}"
+                                    IsEnabled="{Binding Playback.CanStop}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Stop">
                                 <TextBlock Text="&#xE71A;"
@@ -1533,11 +1533,11 @@
                                        Fill="{DynamicResource DividerStrokeColorDefaultBrush}" />
 
                             <!--  Jump straight to the moment the incident happened  -->
-                            <Button Command="{Binding JumpToEventCommand}"
+                            <Button Command="{Binding Playback.JumpToEventCommand}"
                                     Margin="10,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Jump to event"
-                                    IsEnabled="{Binding HasEventMarker}"
+                                    IsEnabled="{Binding Playback.HasEventMarker}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Jump to the moment the event fired (E)">
                                 <StackPanel Orientation="Horizontal">
@@ -1570,25 +1570,25 @@
                                 Margin="16,0"
                                 VerticalAlignment="Center"
                                 AutomationProperties.Name="Seek"
-                                IsEnabled="{Binding CanSeek}"
+                                IsEnabled="{Binding Playback.CanSeek}"
                                 Maximum="1"
                                 Minimum="0"
                                 PreviewMouseDown="SeekSlider_PreviewMouseDown"
                                 PreviewMouseUp="SeekSlider_PreviewMouseUp"
                                 Style="{StaticResource SeekSlider}"
                                 ValueChanged="SeekSlider_ValueChanged"
-                                Value="{Binding SeekPosition, Mode=TwoWay}" />
+                                Value="{Binding Playback.SeekPosition, Mode=TwoWay}" />
 
                         <!--  Time readout  -->
                         <TextBlock Grid.Column="3"
                                    VerticalAlignment="Center"
                                    FontFamily="Consolas"
                                    FontSize="13">
-                            <Run Text="{Binding PositionText, Mode=OneWay}"
+                            <Run Text="{Binding Playback.PositionText, Mode=OneWay}"
                                  Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             <Run Text=" / "
                                  Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                            <Run Text="{Binding DurationText, Mode=OneWay}"
+                            <Run Text="{Binding Playback.DurationText, Mode=OneWay}"
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </TextBlock>
 
@@ -1598,7 +1598,7 @@
                                     Margin="16,0,0,0"
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal">
-                            <Button Command="{Binding DecreaseSpeedCommand}"
+                            <Button Command="{Binding Playback.DecreaseSpeedCommand}"
                                     AutomationProperties.Name="Slower"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Slower (Shift+,)">
@@ -1607,7 +1607,7 @@
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
                             <Button MinWidth="72"
-                                    Command="{Binding ResetSpeedCommand}"
+                                    Command="{Binding Playback.ResetSpeedCommand}"
                                     AutomationProperties.Name="Playback speed"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Playback speed — click to reset to 1x">
@@ -1616,11 +1616,11 @@
                                                FontSize="15"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                                Style="{StaticResource AppGlyphInButton}" />
-                                    <TextBlock Text="{Binding PlaybackSpeedText}"
+                                    <TextBlock Text="{Binding Playback.PlaybackSpeedText}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding IncreaseSpeedCommand}"
+                            <Button Command="{Binding Playback.IncreaseSpeedCommand}"
                                     AutomationProperties.Name="Faster"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Faster (Shift+.)">

@@ -162,19 +162,19 @@ public partial class MainWindow : Window
 
     private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        _viewModel.BeginSeek();
+        _viewModel.Playback.BeginSeek();
     }
 
     private async void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        await _viewModel.EndSeekAsync();
+        await _viewModel.Playback.EndSeekAsync();
     }
 
     // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation, whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for the one-off value jump a plain click makes.
     // PreviewMouseDown has already called BeginSeek by the time this fires, so even a plain click issues one keyframe scrub seek here, which is harmless since the accurate mouse-up seek runs behind the same serialized lock and lands last.
     private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        _viewModel.OnSeekSliderValueChanged();
+        _viewModel.Playback.OnSeekSliderValueChanged();
     }
 
     private void CamerasOnPropertyChanged(object sender, PropertyChangedEventArgs e)

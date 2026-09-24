@@ -173,7 +173,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         vm.HasNoClipSelected.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ShowVideoHosts.ShouldBeFalse();
-        vm.PlayPauseIcon.ShouldBe(""); // Segoe Fluent Icons PlaySolid
+        vm.Playback.PlayPauseIcon.ShouldBe(""); // Segoe Fluent Icons PlaySolid
     }
 
     [Theory]
@@ -384,7 +384,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.IsLoading = true;
+        vm.Playback.IsLoading = true;
 
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ShowVideoHosts.ShouldBeFalse();
@@ -419,33 +419,33 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void CanPlayPause_RequiresClipOrPlayback_AndNotLoading()
     {
         var vm = CreateViewModel();
-        vm.CanPlayPause.ShouldBeFalse();
+        vm.Playback.CanPlayPause.ShouldBeFalse();
 
         vm.SelectedClip = TestClips.Create(1)[0];
-        vm.CanPlayPause.ShouldBeTrue();
+        vm.Playback.CanPlayPause.ShouldBeTrue();
 
-        vm.IsLoading = true;
-        vm.CanPlayPause.ShouldBeFalse();
+        vm.Playback.IsLoading = true;
+        vm.Playback.CanPlayPause.ShouldBeFalse();
 
         // Even with no selected clip, an in-flight playback keeps the toggle live.
-        vm.IsLoading = false;
+        vm.Playback.IsLoading = false;
         vm.SelectedClip = null;
-        vm.IsPlaying = true;
-        vm.CanPlayPause.ShouldBeTrue();
+        vm.Playback.IsPlaying = true;
+        vm.Playback.CanPlayPause.ShouldBeTrue();
     }
 
     [Fact]
     public void CanStop_WhenPlayingOrLoading()
     {
         var vm = CreateViewModel();
-        vm.CanStop.ShouldBeFalse();
+        vm.Playback.CanStop.ShouldBeFalse();
 
-        vm.IsPlaying = true;
-        vm.CanStop.ShouldBeTrue();
+        vm.Playback.IsPlaying = true;
+        vm.Playback.CanStop.ShouldBeTrue();
 
-        vm.IsPlaying = false;
-        vm.IsLoading = true;
-        vm.CanStop.ShouldBeTrue();
+        vm.Playback.IsPlaying = false;
+        vm.Playback.IsLoading = true;
+        vm.Playback.CanStop.ShouldBeTrue();
     }
 
     [Theory]
@@ -455,9 +455,9 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.IsPlaying = isPlaying;
+        vm.Playback.IsPlaying = isPlaying;
 
-        vm.PlayPauseIcon.ShouldBe(expectedIcon);
+        vm.Playback.PlayPauseIcon.ShouldBe(expectedIcon);
     }
 
     [Fact]

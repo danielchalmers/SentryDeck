@@ -279,12 +279,12 @@ public sealed partial class MainWindowViewModelTests
 
         var target = vm.FilteredClips[0];
         vm.SelectedClip = target; // sets NowPlayingClip too (see OnSelectedClipChanged)
-        vm.NowPlayingClip.ShouldBe(target);
+        vm.Playback.NowPlayingClip.ShouldBe(target);
 
         await vm.DeleteClipCommand.ExecuteAsync(target);
 
         vm.SelectedClip.ShouldBeNull();
-        vm.NowPlayingClip.ShouldBeNull();
+        vm.Playback.NowPlayingClip.ShouldBeNull();
         vm.FilteredClips.ShouldNotContain(target);
     }
 
@@ -336,13 +336,13 @@ public sealed partial class MainWindowViewModelTests
         var closesWhenRecycled = -1;
         vm.ConfirmDeleteClip = _ => true;
         vm.RecycleClipFolder = _ => closesWhenRecycled = front.Count("close");
-        vm.SeekPosition = 0.5;
+        vm.Playback.SeekPosition = 0.5;
 
         await vm.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
 
         // Windows can't recycle a folder whose files are still locked, so playback must already be stopped when the shell operation runs -- not merely by the time delete returns.
         closesWhenRecycled.ShouldBeGreaterThan(closesBeforeDelete);
-        vm.SeekPosition.ShouldBe(0);
+        vm.Playback.SeekPosition.ShouldBe(0);
     }
 
     [Fact]
@@ -359,7 +359,7 @@ public sealed partial class MainWindowViewModelTests
 
         // Next/Previous walk the controller's playlist, so a deleted clip left behind in it would navigate straight back to a folder that no longer exists.
         controller.Playlist.Clips.ShouldNotContain(clip);
-        vm.NowPlayingClip.ShouldBeNull();
+        vm.Playback.NowPlayingClip.ShouldBeNull();
         vm.SelectedClip.ShouldBeNull();
     }
 

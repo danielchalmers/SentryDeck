@@ -14,24 +14,24 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModelWithController(out var controller, out _);
         controller.Duration = TimeSpan.FromMinutes(2);
 
-        vm.SeekPosition = 0.5;
+        vm.Playback.SeekPosition = 0.5;
 
-        vm.PositionText.ShouldBe("1:00");
-        vm.DurationText.ShouldBe("2:00");
+        vm.Playback.PositionText.ShouldBe("1:00");
+        vm.Playback.DurationText.ShouldBe("2:00");
     }
 
     [Fact]
     public void CanSeek_RequiresOpenMediaDurationAndNotLoading()
     {
         var vm = CreateViewModelWithController(out var controller, out _);
-        vm.CanSeek.ShouldBeFalse(); // no media open yet
+        vm.Playback.CanSeek.ShouldBeFalse(); // no media open yet
 
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
-        vm.CanSeek.ShouldBeTrue();
+        vm.Playback.CanSeek.ShouldBeTrue();
 
-        vm.IsLoading = true;
-        vm.CanSeek.ShouldBeFalse();
+        vm.Playback.IsLoading = true;
+        vm.Playback.CanSeek.ShouldBeFalse();
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public sealed partial class MainWindowViewModelTests
 
         controller.Position = TimeSpan.FromSeconds(30);
 
-        vm.SeekPosition.ShouldBe(0.25, 0.0001);
+        vm.Playback.SeekPosition.ShouldBe(0.25, 0.0001);
     }
 
     [Fact]
@@ -52,13 +52,13 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(2);
         controller.IsMediaOpen = true;
 
-        vm.BeginSeek();
+        vm.Playback.BeginSeek();
         controller.Position = TimeSpan.FromSeconds(60); // user is dragging: ignore controller updates
-        vm.SeekPosition.ShouldBe(0.0);
+        vm.Playback.SeekPosition.ShouldBe(0.0);
 
-        await vm.EndSeekAsync();
+        await vm.Playback.EndSeekAsync();
         controller.Position = TimeSpan.FromSeconds(30); // updates resume after the drag
-        vm.SeekPosition.ShouldBe(0.25, 0.0001);
+        vm.Playback.SeekPosition.ShouldBe(0.25, 0.0001);
     }
 
     // Synchronous (no async/await in the test body itself -- see RunPinnedToTestThread).
@@ -68,14 +68,14 @@ public sealed partial class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 1); // 60s clip (see TestClipFiles)
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
-        vm.BeginSeek();
+        vm.Playback.BeginSeek();
 
         // Simulate a drag: each slider value change while dragging should scrub-seek (fast/keyframe).
-        vm.SeekPosition = 0.2; // 12s of 60s
-        vm.OnSeekSliderValueChanged();
+        vm.Playback.SeekPosition = 0.2; // 12s of 60s
+        vm.Playback.OnSeekSliderValueChanged();
 
-        vm.SeekPosition = 0.5; // 30s
-        vm.OnSeekSliderValueChanged();
+        vm.Playback.SeekPosition = 0.5; // 30s
+        vm.Playback.OnSeekSliderValueChanged();
 
         front.Seeks.ShouldContain((TimeSpan.FromSeconds(12), false));
         front.Seeks.ShouldContain((TimeSpan.FromSeconds(30), false));
@@ -84,9 +84,9 @@ public sealed partial class MainWindowViewModelTests
         front.Seeks.ShouldAllBe(seek => !seek.Accurate);
 
         // Release at 0.75 (45s): EndSeekAsync must issue exactly one ACCURATE seek at the release position.
-        vm.SeekPosition = 0.75;
+        vm.Playback.SeekPosition = 0.75;
 
-        RunPinnedToTestThread(vm.EndSeekAsync);
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
 
         front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(45), true));
     }
@@ -98,28 +98,28 @@ public sealed partial class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 1); // 60s clip
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
 
-        vm.BeginSeek();
-        vm.SeekPosition = 0.5;
+        vm.Playback.BeginSeek();
+        vm.Playback.SeekPosition = 0.5;
 
         // While gesture #1's accurate release seek is executing, the user grabs the thumb again and starts a new drag.
         // Gesture #1's completion is then stale: it must NOT clear the active drag's seeking state, or the position sync would yank the thumb mid-drag.
         front.SeekCallback = () =>
         {
             front.SeekCallback = null;
-            vm.BeginSeek();
-            vm.SeekPosition = 0.25;
+            vm.Playback.BeginSeek();
+            vm.Playback.SeekPosition = 0.25;
         };
 
-        RunPinnedToTestThread(vm.EndSeekAsync);
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
 
         // A controller position sync arriving during drag #2 must still be ignored.
         front.RaisePositionChanged(TimeSpan.FromSeconds(50));
-        vm.SeekPosition.ShouldBe(0.25);
+        vm.Playback.SeekPosition.ShouldBe(0.25);
 
         // The active gesture still ends normally and re-enables position sync.
-        RunPinnedToTestThread(vm.EndSeekAsync);
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
         front.RaisePositionChanged(TimeSpan.FromSeconds(30));
-        vm.SeekPosition.ShouldBe(0.5, 0.0001);
+        vm.Playback.SeekPosition.ShouldBe(0.5, 0.0001);
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed partial class MainWindowViewModelTests
 
         // Playback position advances on its own (not a drag): SeekPosition updates via the controller -> UpdateSeekPositionFromController path, which does not go through OnSeekSliderValueChanged, so no scrub seek should ever be issued.
         controller.Position = TimeSpan.FromSeconds(10);
-        vm.OnSeekSliderValueChanged(); // the view raises ValueChanged for programmatic changes too
+        vm.Playback.OnSeekSliderValueChanged(); // the view raises ValueChanged for programmatic changes too
 
         front.Seeks.Count.ShouldBe(seeksBefore);
     }
@@ -147,8 +147,8 @@ public sealed partial class MainWindowViewModelTests
 
         controller.IsLoading = false;
         controller.IsPlaying = true;
-        vm.IsPlaying.ShouldBeTrue();
-        vm.PlayPauseIcon.ShouldBe(""); // Pause
+        vm.Playback.IsPlaying.ShouldBeTrue();
+        vm.Playback.PlayPauseIcon.ShouldBe(""); // Pause
     }
 
     [Fact]
@@ -170,8 +170,8 @@ public sealed partial class MainWindowViewModelTests
         controller.LoadClips(TestClips.Create(3)); // set the playlist directly (synchronous, on the test thread)
 
         // Playlist loaded, nothing playing yet: can advance, can't go back.
-        vm.CanGoNext.ShouldBeTrue();
-        vm.CanGoPrevious.ShouldBeFalse();
+        vm.Playback.CanGoNext.ShouldBeTrue();
+        vm.Playback.CanGoPrevious.ShouldBeFalse();
     }
 
     [Fact]
@@ -215,7 +215,7 @@ public sealed partial class MainWindowViewModelTests
         vm.InitializePlayer();
 
         vm.SelectedClip = clipFiles.Clip;
-        RunPinnedToTestThread(() => vm.StopCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
         loadGate.SetResult();
         RunPinnedToTestThread(controller.WhenIdleAsync);
 

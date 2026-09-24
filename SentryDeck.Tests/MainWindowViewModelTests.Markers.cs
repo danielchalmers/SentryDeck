@@ -16,9 +16,9 @@ public sealed partial class MainWindowViewModelTests
         // 10 one-minute chunks (600s modeled); event at 9m30s in -> 0.95.
         vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
 
-        vm.HasEventMarker.ShouldBeTrue();
-        vm.EventMarkerPosition.ShouldBe(0.95, 0.0001);
-        vm.EventMarkerTooltip.ShouldStartWith("Honk · ");
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.EventMarkerPosition.ShouldBe(0.95, 0.0001);
+        vm.Playback.EventMarkerTooltip.ShouldStartWith("Honk · ");
     }
 
     [Fact]
@@ -28,9 +28,9 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = ClipWithChunks(3);
 
-        vm.HasEventMarker.ShouldBeFalse();
-        vm.EventMarkerPosition.ShouldBe(0);
-        vm.EventMarkerTooltip.ShouldBeEmpty();
+        vm.Playback.HasEventMarker.ShouldBeFalse();
+        vm.Playback.EventMarkerPosition.ShouldBe(0);
+        vm.Playback.EventMarkerTooltip.ShouldBeEmpty();
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "Default TS", new DateTime(2025, 1, 1, 12, 0, 0), chunks, camEvent);
 
-        vm.HasEventMarker.ShouldBeFalse();
+        vm.Playback.HasEventMarker.ShouldBeFalse();
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public sealed partial class MainWindowViewModelTests
         // Event fired on the first recorded frame (timestamp == first chunk's timestamp): fraction is exactly 0, which is a real position, not clock skew.
         vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.Zero);
 
-        vm.HasEventMarker.ShouldBeTrue();
-        vm.EventMarkerPosition.ShouldBe(0);
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.EventMarkerPosition.ShouldBe(0);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed partial class MainWindowViewModelTests
         // Clock skew: event five minutes before the first chunk -> fraction <= 0, no marker.
         vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromMinutes(-5));
 
-        vm.HasEventMarker.ShouldBeFalse();
+        vm.Playback.HasEventMarker.ShouldBeFalse();
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed partial class MainWindowViewModelTests
         // 3 chunks = 180s modeled; an event at 200s is past the estimated end (fraction > 1).
         vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(200));
 
-        vm.HasEventMarker.ShouldBeFalse();
+        vm.Playback.HasEventMarker.ShouldBeFalse();
     }
 
     [Fact]
@@ -87,9 +87,9 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "No Chunks", new DateTime(2025, 1, 1, 12, 0, 0), [], camEvent);
 
-        vm.HasEventMarker.ShouldBeFalse();
-        vm.EventMarkerPosition.ShouldBe(0);
-        vm.ChunkBoundaries.ShouldBeEmpty();
+        vm.Playback.HasEventMarker.ShouldBeFalse();
+        vm.Playback.EventMarkerPosition.ShouldBe(0);
+        vm.Playback.ChunkBoundaries.ShouldBeEmpty();
     }
 
     [Fact]
@@ -99,9 +99,9 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = ClipWithChunks(3);
 
-        vm.ChunkBoundaries.Count.ShouldBe(2);
-        vm.ChunkBoundaries[0].ShouldBe(1.0 / 3, 0.0001);
-        vm.ChunkBoundaries[1].ShouldBe(2.0 / 3, 0.0001);
+        vm.Playback.ChunkBoundaries.Count.ShouldBe(2);
+        vm.Playback.ChunkBoundaries[0].ShouldBe(1.0 / 3, 0.0001);
+        vm.Playback.ChunkBoundaries[1].ShouldBe(2.0 / 3, 0.0001);
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = ClipWithChunks(1);
 
-        vm.ChunkBoundaries.ShouldBeEmpty();
+        vm.Playback.ChunkBoundaries.ShouldBeEmpty();
     }
 
     // --- Gap-aware markers: once the controller has actually opened the clip's media, event/gap positions come from the real ClipMediaSource (probed durations + wall-clock mapping) rather than the uniform-chunk-length estimate used before the media opens. ---
@@ -124,7 +124,7 @@ public sealed partial class MainWindowViewModelTests
 
         vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(90));
 
-        vm.GapPositions.ShouldBeEmpty();
+        vm.Playback.GapPositions.ShouldBeEmpty();
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed partial class MainWindowViewModelTests
         vm.SelectedClip = clip;
 
         // Two included chunks of 60s each = 120s total; the single gap sits at media time 60s.
-        vm.GapPositions.ShouldBe([60.0 / 120], 0.0001);
+        vm.Playback.GapPositions.ShouldBe([60.0 / 120], 0.0001);
     }
 
     [Fact]
@@ -157,11 +157,11 @@ public sealed partial class MainWindowViewModelTests
         var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
         vm.SelectedClip = clip;
 
-        vm.HasEventMarker.ShouldBeTrue();
-        vm.EventMarkerPosition.ShouldBe(70.0 / 120, 0.0001);
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.EventMarkerPosition.ShouldBe(70.0 / 120, 0.0001);
 
         // Sanity check that this genuinely differs from what the naive linear/estimated model (ignoring the gap) would have produced, so the test would fail if gap-awareness regressed.
-        Math.Abs(vm.EventMarkerPosition - (130.0 / 180)).ShouldBeGreaterThan(0.01);
+        Math.Abs(vm.Playback.EventMarkerPosition - (130.0 / 180)).ShouldBeGreaterThan(0.01);
     }
 
     [Fact]
@@ -169,24 +169,24 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
         vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
-        vm.HasEventMarker.ShouldBeTrue();
+        vm.Playback.HasEventMarker.ShouldBeTrue();
 
         vm.SelectedClip = null;
 
-        vm.HasEventMarker.ShouldBeFalse();
-        vm.EventMarkerPosition.ShouldBe(0);
-        vm.ChunkBoundaries.ShouldBeEmpty();
+        vm.Playback.HasEventMarker.ShouldBeFalse();
+        vm.Playback.EventMarkerPosition.ShouldBe(0);
+        vm.Playback.ChunkBoundaries.ShouldBeEmpty();
     }
 
     [Fact]
     public void JumpToEvent_CanExecute_FollowsHasEventMarker()
     {
         var vm = CreateViewModel();
-        vm.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
+        vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
 
         vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
 
-        vm.JumpToEventCommand.CanExecute(null).ShouldBeTrue();
+        vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeTrue();
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public sealed partial class MainWindowViewModelTests
         handled.ShouldBeTrue();
         front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(90));
         controller.Position.ShouldBe(TimeSpan.FromSeconds(90));
-        vm.SeekPosition.ShouldBe(0.5, 0.0001);
+        vm.Playback.SeekPosition.ShouldBe(0.5, 0.0001);
     }
 
     [Fact]
@@ -228,12 +228,12 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
         var changed = new List<string>();
-        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        vm.Playback.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
         vm.SelectedClip = ClipWithChunksAndEvent(5, TimeSpan.FromSeconds(250));
 
-        changed.ShouldContain(nameof(MainWindowViewModel.EventMarkerPosition));
-        changed.ShouldContain(nameof(MainWindowViewModel.HasEventMarker));
-        changed.ShouldContain(nameof(MainWindowViewModel.ChunkBoundaries));
+        changed.ShouldContain(nameof(PlaybackViewModel.EventMarkerPosition));
+        changed.ShouldContain(nameof(PlaybackViewModel.HasEventMarker));
+        changed.ShouldContain(nameof(PlaybackViewModel.ChunkBoundaries));
     }
 }

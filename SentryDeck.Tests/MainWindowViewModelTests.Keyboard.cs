@@ -107,10 +107,10 @@ public sealed partial class MainWindowViewModelTests
         var closesAfterOpen = front.Count("close");
         vm.SelectedClip = clipFiles.Clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
 
-        RunPinnedToTestThread(() => vm.StopCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
 
         // Stop is the only thing that takes the now-playing badge off the clip list; leaving it set would mark a clip as playing with nothing loaded.
-        vm.NowPlayingClip.ShouldBeNull();
+        vm.Playback.NowPlayingClip.ShouldBeNull();
         front.Count("close").ShouldBeGreaterThan(closesAfterOpen);
     }
 
@@ -162,7 +162,7 @@ public sealed partial class MainWindowViewModelTests
         // The superseded load is dropped on its way out, and the loading state it finds is no longer its own to clear -- doing so would strand the newer clip's open with no progress indication at all.
         await Wait.UntilAsync(() => vm.Cameras.SelectedCameraView == CameraNames.Back);
         vm.IsLoading.ShouldBeTrue();
-        vm.NowPlayingClip.ShouldBe(winner);
+        vm.Playback.NowPlayingClip.ShouldBe(winner);
         vm.SelectedClip.ShouldBe(winner);
     }
 
