@@ -758,7 +758,11 @@ public partial class MainWindowViewModel : ObservableObject
         if (_playerController is null)
             return;
 
+        // A selection that is still waiting to load would otherwise start playing right after the stop.
+        _selectionCts?.Cancel();
+
         await _playerController.StopAsync();
+        IsLoading = false;
         SeekPosition = 0;
         NowPlayingClip = null;
     }

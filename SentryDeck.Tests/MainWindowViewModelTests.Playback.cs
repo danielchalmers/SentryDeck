@@ -201,4 +201,26 @@ public sealed partial class MainWindowViewModelTests
         // Opening an incident on the angle that triggered it is the whole point of the metadata.
         vm.SelectedCameraView.ShouldBe(CameraNames.Back);
     }
+
+    [Fact]
+    public void StopCommand_WhileASelectionIsWaitingToLoad_KeepsItFromPlaying()
+    {
+        // Selecting a clip yields to the UI before loading it; a stop in that window used to be undone by the load starting right after.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([clipFiles.Clip]);
+        var loadGate = new TaskCompletionSource();
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => loadGate.Task);
+        vm.InitializePlayer();
+
+        vm.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(() => vm.StopCommand.ExecuteAsync(null));
+        loadGate.SetResult();
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.OpenedPaths.ShouldBeEmpty();
+        controller.IsPlaying.ShouldBeFalse();
+        vm.IsLoading.ShouldBeFalse();
+    }
 }
