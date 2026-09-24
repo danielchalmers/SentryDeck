@@ -440,4 +440,26 @@ public sealed partial class MainWindowViewModelTests
 
         controller.PlaybackSpeed.ShouldBe(4.0);
     }
+
+    [Fact]
+    public void TrimMarks_WhenRecoveryRebuildsTheClipsMedia_AreDropped()
+    {
+        // Recovery from a corrupt chunk excludes footage and shrinks the timeline, so fractions marked against the old timeline would point at different moments.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
+        RunPinnedToTestThread(controller.PauseAsync);
+        vm.Playback.SeekPosition = 0.2;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.4;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.HasSelection.ShouldBeTrue();
+
+        // Ending 90s into 180s of footage makes recovery exclude the middle chunk and reopen a 120s timeline.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.Duration.ShouldBe(TimeSpan.FromMinutes(2));
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
+    }
 }

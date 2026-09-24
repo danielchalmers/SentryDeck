@@ -223,4 +223,27 @@ public sealed partial class MainWindowViewModelTests
         controller.IsPlaying.ShouldBeFalse();
         vm.IsLoading.ShouldBeFalse();
     }
+
+    [Fact]
+    public void NextCommand_MovesTheListSelectionToTheNextClip()
+    {
+        // The player reports clip changes back to the clip list; without that the list would keep highlighting the clip it left.
+        using var first = TestClipFiles.Create(chunkCount: 1);
+        using var second = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([first.Clip, second.Clip]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = first.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Library.SelectedClip.ShouldBe(second.Clip);
+        vm.Playback.NowPlayingClip.ShouldBe(second.Clip);
+        controller.CurrentClip.ShouldBe(second.Clip);
+        front.Count("open").ShouldBe(2);
+    }
 }

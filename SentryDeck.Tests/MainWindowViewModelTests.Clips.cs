@@ -374,4 +374,33 @@ public sealed partial class MainWindowViewModelTests
 
         vm.Library.FilteredClips.ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task LoadClipsAsync_WhileTheScanRuns_ShowsTheLoadingOverlay()
+    {
+        // Loading is shared by the scan, the FFmpeg download, and clip loading; the overlay has to follow the scan even though playback isn't loading anything.
+        using var scanGate = new ManualResetEventSlim();
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ =>
+        {
+            scanGate.Wait();
+            return TestClips.Create(2);
+        });
+        var changed = new List<string>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        var load = vm.Library.LoadClipsAsync(["root"]);
+
+        vm.IsLoading.ShouldBeTrue();
+        vm.ShowStatusOverlay.ShouldBeTrue();
+        vm.HasNoClipSelected.ShouldBeFalse();
+        changed.ShouldContain(nameof(MainWindowViewModel.IsLoading));
+        changed.ShouldContain(nameof(MainWindowViewModel.ShowStatusOverlay));
+
+        scanGate.Set();
+        await load;
+
+        vm.IsLoading.ShouldBeFalse();
+        vm.HasNoClipSelected.ShouldBeTrue();
+        vm.Library.ClipCount.ShouldBe(2);
+    }
 }
