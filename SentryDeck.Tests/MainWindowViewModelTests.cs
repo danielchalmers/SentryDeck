@@ -131,7 +131,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
             savePathPicker: savePathPicker,
             uiInvoker: uiInvoker)
         {
-            RevealInExplorer = _ => { },
+            Trim = { RevealInExplorer = _ => { } },
         };
         vm.InitializePlayer();
         return (vm, built, front);
@@ -520,7 +520,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         handled.ShouldBeFalse();
         vm.Cameras.SelectedCameraView.ShouldBe(cameraViewBefore); // no camera switch behind the About page
-        vm.IsTrimming.ShouldBeFalse();
+        vm.Trim.IsTrimming.ShouldBeFalse();
         vm.ShowAboutPage.ShouldBeTrue(); // the page stays open
     }
 

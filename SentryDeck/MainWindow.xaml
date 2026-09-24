@@ -75,10 +75,10 @@
                                     CornerRadius="2"
                                     IsHitTestVisible="False"
                                     Opacity="0.3"
-                                    Visibility="{Binding Data.HasSelection, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                    Visibility="{Binding Data.Trim.HasSelection, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
                                 <Border.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
-                                        <Binding Path="Data.SelectionStartPosition"
+                                        <Binding Path="Data.Trim.SelectionStartPosition"
                                                  Source="{StaticResource VmProxy}" />
                                         <Binding ElementName="SeekRail"
                                                  Path="ActualWidth" />
@@ -86,9 +86,9 @@
                                 </Border.Margin>
                                 <Border.Width>
                                     <MultiBinding Converter="{local:SelectionWidthConverter}">
-                                        <Binding Path="Data.SelectionStartPosition"
+                                        <Binding Path="Data.Trim.SelectionStartPosition"
                                                  Source="{StaticResource VmProxy}" />
-                                        <Binding Path="Data.SelectionEndPosition"
+                                        <Binding Path="Data.Trim.SelectionEndPosition"
                                                  Source="{StaticResource VmProxy}" />
                                         <Binding ElementName="SeekRail"
                                                  Path="ActualWidth" />
@@ -104,10 +104,10 @@
                                        IsHitTestVisible="False"
                                        RadiusX="1"
                                        RadiusY="1"
-                                       Visibility="{Binding Data.HasSelectionStart, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                       Visibility="{Binding Data.Trim.HasSelectionStart, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
                                 <Rectangle.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
-                                        <Binding Path="Data.SelectionStartPosition"
+                                        <Binding Path="Data.Trim.SelectionStartPosition"
                                                  Source="{StaticResource VmProxy}" />
                                         <Binding ElementName="SeekRail"
                                                  Path="ActualWidth" />
@@ -123,10 +123,10 @@
                                        IsHitTestVisible="False"
                                        RadiusX="1"
                                        RadiusY="1"
-                                       Visibility="{Binding Data.HasSelectionEnd, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
+                                       Visibility="{Binding Data.Trim.HasSelectionEnd, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
                                 <Rectangle.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
-                                        <Binding Path="Data.SelectionEndPosition"
+                                        <Binding Path="Data.Trim.SelectionEndPosition"
                                                  Source="{StaticResource VmProxy}" />
                                         <Binding ElementName="SeekRail"
                                                  Path="ActualWidth" />
@@ -505,7 +505,7 @@
             </MenuItem>
             <!--  ±30s of front-camera footage around the event moment, stream-copied (no re-encode).  -->
             <MenuItem Header="Save event clip…"
-                      Command="{Binding PlacementTarget.Tag.SaveEventClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Trim.SaveEventClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xE792;" Style="{StaticResource AppGlyph}" />
@@ -1341,7 +1341,7 @@
                             Background="{DynamicResource LayerFillColorDefaultBrush}"
                             BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                             BorderThickness="0,1,0,1"
-                            Visibility="{Binding IsTrimming, Converter={local:BoolToVisibilityConverter}}">
+                            Visibility="{Binding Trim.IsTrimming, Converter={local:BoolToVisibilityConverter}}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -1367,7 +1367,7 @@
                             </StackPanel>
 
                             <Button Grid.Column="1"
-                                    Command="{Binding MarkSelectionStartCommand}"
+                                    Command="{Binding Trim.MarkSelectionStartCommand}"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Set start"
                                     Style="{StaticResource DefaultButtonStyle}"
@@ -1384,7 +1384,7 @@
                             </Button>
 
                             <Button Grid.Column="2"
-                                    Command="{Binding MarkSelectionEndCommand}"
+                                    Command="{Binding Trim.MarkSelectionEndCommand}"
                                     Margin="8,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Set end"
@@ -1403,14 +1403,14 @@
 
                             <!--  Live guidance: which step is next, then the selected length.  -->
                             <TextBlock Grid.Column="3"
-                                       Text="{Binding TrimHintText}"
+                                       Text="{Binding Trim.TrimHintText}"
                                        Margin="16,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                        TextTrimming="CharacterEllipsis" />
 
                             <Button Grid.Column="4"
-                                    Command="{Binding ExportSelectionCommand}"
+                                    Command="{Binding Trim.ExportSelectionCommand}"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Export trimmed clip"
                                     Style="{StaticResource AccentButtonStyle}"
@@ -1425,7 +1425,7 @@
 
                             <Button Grid.Column="5"
                                     Content="Cancel"
-                                    Command="{Binding CancelTrimCommand}"
+                                    Command="{Binding Trim.CancelTrimCommand}"
                                     Margin="8,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Cancel trim"
@@ -1549,7 +1549,7 @@
                             </Button>
 
                             <!--  Opens the trim panel (above this bar) for cutting a shareable MP4.  -->
-                            <Button Command="{Binding ToggleTrimmingCommand}"
+                            <Button Command="{Binding Trim.ToggleTrimmingCommand}"
                                     Margin="6,0,0,0"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Trim clip"

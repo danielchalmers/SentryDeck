@@ -16,18 +16,18 @@ public sealed partial class MainWindowViewModelTests
         controller.IsMediaOpen = true;
 
         vm.Playback.SeekPosition = 0.3;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
 
-        vm.HasSelectionStart.ShouldBeTrue();
-        vm.SelectionStartPosition.ShouldBe(0.3);
-        vm.HasSelection.ShouldBeFalse(); // no end yet
+        vm.Trim.HasSelectionStart.ShouldBeTrue();
+        vm.Trim.SelectionStartPosition.ShouldBe(0.3);
+        vm.Trim.HasSelection.ShouldBeFalse(); // no end yet
 
         vm.Playback.SeekPosition = 0.7;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
-        vm.HasSelection.ShouldBeTrue();
-        vm.SelectionEndPosition.ShouldBe(0.7);
-        vm.CanExportSelection.ShouldBeTrue();
+        vm.Trim.HasSelection.ShouldBeTrue();
+        vm.Trim.SelectionEndPosition.ShouldBe(0.7);
+        vm.Trim.CanExportSelection.ShouldBeTrue();
     }
 
     [Fact]
@@ -38,21 +38,21 @@ public sealed partial class MainWindowViewModelTests
         controller.IsMediaOpen = true;
 
         vm.Playback.SeekPosition = 0.3;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
         vm.Playback.SeekPosition = 0.7;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
         // A start at/past the end invalidates the end...
         vm.Playback.SeekPosition = 0.9;
-        vm.MarkSelectionStartCommand.Execute(null);
-        vm.SelectionStartPosition.ShouldBe(0.9);
-        vm.HasSelectionEnd.ShouldBeFalse();
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.SelectionStartPosition.ShouldBe(0.9);
+        vm.Trim.HasSelectionEnd.ShouldBeFalse();
 
         // ...and an end at/before the start invalidates the start.
         vm.Playback.SeekPosition = 0.1;
-        vm.MarkSelectionEndCommand.Execute(null);
-        vm.SelectionEndPosition.ShouldBe(0.1);
-        vm.HasSelectionStart.ShouldBeFalse();
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.SelectionEndPosition.ShouldBe(0.1);
+        vm.Trim.HasSelectionStart.ShouldBeFalse();
     }
 
     [Fact]
@@ -62,16 +62,16 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.ClearSelectionCommand.CanExecute(null).ShouldBeFalse(); // nothing to clear yet
+        vm.Trim.ClearSelectionCommand.CanExecute(null).ShouldBeFalse(); // nothing to clear yet
 
         vm.Playback.SeekPosition = 0.2;
-        vm.MarkSelectionStartCommand.Execute(null);
-        vm.HasAnySelectionMark.ShouldBeTrue();
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.HasAnySelectionMark.ShouldBeTrue();
 
-        vm.ClearSelectionCommand.Execute(null);
+        vm.Trim.ClearSelectionCommand.Execute(null);
 
-        vm.HasAnySelectionMark.ShouldBeFalse();
-        vm.HasSelection.ShouldBeFalse();
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
+        vm.Trim.HasSelection.ShouldBeFalse();
     }
 
     [Fact]
@@ -82,11 +82,11 @@ public sealed partial class MainWindowViewModelTests
         controller.IsMediaOpen = true;
 
         vm.Playback.SeekPosition = 0.2;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
 
         vm.Library.SelectedClip = TestClips.Create(1)[0];
 
-        vm.HasAnySelectionMark.ShouldBeFalse();
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
     }
 
     [Fact]
@@ -100,15 +100,15 @@ public sealed partial class MainWindowViewModelTests
         controller.IsMediaOpen = true;
 
         var trimCanExecuteChanged = false;
-        vm.ToggleTrimmingCommand.CanExecuteChanged += (_, _) => trimCanExecuteChanged = true;
+        vm.Trim.ToggleTrimmingCommand.CanExecuteChanged += (_, _) => trimCanExecuteChanged = true;
 
         vm.Playback.IsLoading = false;
 
         vm.Playback.CanSeek.ShouldBeTrue();
         trimCanExecuteChanged.ShouldBeTrue();
-        vm.ToggleTrimmingCommand.CanExecute(null).ShouldBeTrue();
-        vm.MarkSelectionStartCommand.CanExecute(null).ShouldBeTrue();
-        vm.MarkSelectionEndCommand.CanExecute(null).ShouldBeTrue();
+        vm.Trim.ToggleTrimmingCommand.CanExecute(null).ShouldBeTrue();
+        vm.Trim.MarkSelectionStartCommand.CanExecute(null).ShouldBeTrue();
+        vm.Trim.MarkSelectionEndCommand.CanExecute(null).ShouldBeTrue();
     }
 
     [Fact]
@@ -118,12 +118,12 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.IsTrimming.ShouldBeFalse();
+        vm.Trim.IsTrimming.ShouldBeFalse();
 
         vm.Playback.SeekPosition = 0.3;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
 
-        vm.IsTrimming.ShouldBeTrue();
+        vm.Trim.IsTrimming.ShouldBeTrue();
     }
 
     [Fact]
@@ -133,17 +133,17 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.ToggleTrimmingCommand.Execute(null);
-        vm.IsTrimming.ShouldBeTrue();
-        vm.HasAnySelectionMark.ShouldBeFalse();
+        vm.Trim.ToggleTrimmingCommand.Execute(null);
+        vm.Trim.IsTrimming.ShouldBeTrue();
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
 
         vm.Playback.SeekPosition = 0.3;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
 
-        vm.ToggleTrimmingCommand.Execute(null); // acts as cancel while open
+        vm.Trim.ToggleTrimmingCommand.Execute(null); // acts as cancel while open
 
-        vm.IsTrimming.ShouldBeFalse();
-        vm.HasAnySelectionMark.ShouldBeFalse();
+        vm.Trim.IsTrimming.ShouldBeFalse();
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
     }
 
     [Fact]
@@ -154,14 +154,14 @@ public sealed partial class MainWindowViewModelTests
         controller.IsMediaOpen = true;
 
         vm.Playback.SeekPosition = 0.3;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
         vm.Playback.SeekPosition = 0.7;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
-        vm.CancelTrimCommand.Execute(null);
+        vm.Trim.CancelTrimCommand.Execute(null);
 
-        vm.IsTrimming.ShouldBeFalse();
-        vm.HasAnySelectionMark.ShouldBeFalse();
+        vm.Trim.IsTrimming.ShouldBeFalse();
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
     }
 
     [Fact]
@@ -171,10 +171,10 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(1);
         controller.IsMediaOpen = true;
 
-        vm.ToggleTrimmingCommand.Execute(null);
+        vm.Trim.ToggleTrimmingCommand.Execute(null);
         vm.Library.SelectedClip = TestClips.Create(1)[0];
 
-        vm.IsTrimming.ShouldBeFalse();
+        vm.Trim.IsTrimming.ShouldBeFalse();
     }
 
     [Fact]
@@ -184,18 +184,18 @@ public sealed partial class MainWindowViewModelTests
         controller.Duration = TimeSpan.FromMinutes(2);
         controller.IsMediaOpen = true;
 
-        vm.TrimHintText.ShouldContain("set the start");
+        vm.Trim.TrimHintText.ShouldContain("set the start");
 
         vm.Playback.SeekPosition = 0.25;
-        vm.MarkSelectionStartCommand.Execute(null);
-        vm.TrimHintText.ShouldContain("set the end");
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.TrimHintText.ShouldContain("set the end");
 
         vm.Playback.SeekPosition = 0.75;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
         // Half of a 2:00 clip is selected.
-        vm.SelectionDurationText.ShouldBe("1:00");
-        vm.TrimHintText.ShouldBe("1:00 selected — ready to export.");
+        vm.Trim.SelectionDurationText.ShouldBe("1:00");
+        vm.Trim.TrimHintText.ShouldBe("1:00 selected — ready to export.");
     }
 
     [Fact]
@@ -203,9 +203,9 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.MarkSelectionStartCommand.CanExecute(null).ShouldBeFalse();
-        vm.MarkSelectionEndCommand.CanExecute(null).ShouldBeFalse();
-        vm.ExportSelectionCommand.CanExecute(null).ShouldBeFalse();
+        vm.Trim.MarkSelectionStartCommand.CanExecute(null).ShouldBeFalse();
+        vm.Trim.MarkSelectionEndCommand.CanExecute(null).ShouldBeFalse();
+        vm.Trim.ExportSelectionCommand.CanExecute(null).ShouldBeFalse();
     }
 
     // Synchronous/blocking for the same thread-affinity reason as the drag-sequence test above (see RunPinnedToTestThread): the fake exporter and save picker complete synchronously.
@@ -218,11 +218,11 @@ public sealed partial class MainWindowViewModelTests
 
         vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
         vm.Playback.SeekPosition = 0.25;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
         vm.Playback.SeekPosition = 0.75;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
-        RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
 
         var request = exporter.Requests.ShouldHaveSingleItem();
         request.Clip.ShouldBe(clipFiles.Clip);
@@ -230,7 +230,7 @@ public sealed partial class MainWindowViewModelTests
         request.Start.ShouldBe(TimeSpan.FromSeconds(15));
         request.End.ShouldBe(TimeSpan.FromSeconds(45));
         request.OutputPath.ShouldBe(@"C:\out\clip.mp4");
-        vm.IsExporting.ShouldBeFalse();
+        vm.Trim.IsExporting.ShouldBeFalse();
     }
 
     [Fact]
@@ -241,11 +241,11 @@ public sealed partial class MainWindowViewModelTests
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => null);
 
         vm.Playback.SeekPosition = 0.25;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
         vm.Playback.SeekPosition = 0.75;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
-        RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
 
         exporter.Requests.ShouldBeEmpty();
         vm.Error.IsVisible.ShouldBeFalse();
@@ -259,16 +259,16 @@ public sealed partial class MainWindowViewModelTests
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
 
         vm.Playback.SeekPosition = 0.25;
-        vm.MarkSelectionStartCommand.Execute(null);
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
         vm.Playback.SeekPosition = 0.75;
-        vm.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
 
-        RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
 
         vm.Error.IsVisible.ShouldBeTrue();
         vm.Error.Title.ShouldBe("Export Failed");
         vm.Error.Details.ShouldContain("ffmpeg exploded");
-        vm.IsExporting.ShouldBeFalse();
+        vm.Trim.IsExporting.ShouldBeFalse();
     }
 
     [Fact]
@@ -284,10 +284,10 @@ public sealed partial class MainWindowViewModelTests
             savePathPicker: _ => @"C:\out\event.mp4",
             exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
         {
-            RevealInExplorer = _ => { },
+            Trim = { RevealInExplorer = _ => { } },
         };
 
-        await vm.SaveEventClipCommand.ExecuteAsync(clip);
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
 
         var request = exporter.Requests.ShouldHaveSingleItem();
         request.Camera.ShouldBe(CameraNames.Front);
@@ -308,10 +308,10 @@ public sealed partial class MainWindowViewModelTests
             savePathPicker: _ => @"C:\out\event.mp4",
             exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
         {
-            RevealInExplorer = _ => { },
+            Trim = { RevealInExplorer = _ => { } },
         };
 
-        await vm.SaveEventClipCommand.ExecuteAsync(clip);
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
 
         var request = exporter.Requests.ShouldHaveSingleItem();
         request.Start.ShouldBe(TimeSpan.Zero);
@@ -331,15 +331,15 @@ public sealed partial class MainWindowViewModelTests
             savePathPicker: _ => @"C:\out\event.mp4",
             exportMediaSourceBuilder: new ThrowingClipMediaSourceBuilder(new IOException("drive gone")))
         {
-            RevealInExplorer = _ => { },
+            Trim = { RevealInExplorer = _ => { } },
         };
 
-        await vm.SaveEventClipCommand.ExecuteAsync(clip);
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
 
         vm.Error.IsVisible.ShouldBeTrue();
         vm.Error.Title.ShouldBe("Export Failed");
         exporter.Requests.ShouldBeEmpty();
-        vm.IsExporting.ShouldBeFalse();
+        vm.Trim.IsExporting.ShouldBeFalse();
     }
 
     private sealed class ThrowingClipMediaSourceBuilder(Exception exception) : IClipMediaSourceBuilder
@@ -352,9 +352,9 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.SaveEventClipCommand.CanExecute(ClipWithChunks(1)).ShouldBeFalse(); // no event
-        vm.SaveEventClipCommand.CanExecute(ClipWithEvent("clip", "sentry_aware_object_detection", "Bellevue")).ShouldBeFalse(); // event without timestamp
-        vm.SaveEventClipCommand.CanExecute(ClipWithChunksAndEvent(1, TimeSpan.FromSeconds(10))).ShouldBeTrue();
+        vm.Trim.SaveEventClipCommand.CanExecute(ClipWithChunks(1)).ShouldBeFalse(); // no event
+        vm.Trim.SaveEventClipCommand.CanExecute(ClipWithEvent("clip", "sentry_aware_object_detection", "Bellevue")).ShouldBeFalse(); // event without timestamp
+        vm.Trim.SaveEventClipCommand.CanExecute(ClipWithChunksAndEvent(1, TimeSpan.FromSeconds(10))).ShouldBeTrue();
     }
 
     [Fact]
