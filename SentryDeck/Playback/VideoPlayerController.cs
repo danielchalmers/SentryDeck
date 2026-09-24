@@ -179,6 +179,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return RunOperationAsync(_session, "Playback error", ResumeCoreAsync);
         }
 
+        // The clip is still opening and plays as soon as it's ready; restarting the open would only throw that work away.
+        if (_session?.Clip == clip && IsLoading)
+        {
+            return Task.CompletedTask;
+        }
+
         // Nothing usable is open for this clip (stopped, or the open failed), so start it from scratch.
         return OpenClipAsync(clip);
     }

@@ -354,6 +354,26 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task PlayAsync_WhileTheClipIsStillOpening_DoesNotRestartTheOpen()
+    {
+        using var rig = new Rig();
+        var gate = new TaskCompletionSource();
+        rig.Front.OpenGate = gate;
+        rig.Controller.LoadClips([rig.Clip]);
+        rig.Controller.Playlist.MoveTo(0);
+        await Wait.UntilAsync(() => rig.Front.OpenedPaths.Count == 1);
+
+        await rig.Controller.PlayAsync();
+        rig.Front.OpenGate = null;
+        gate.SetResult();
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Front.OpenedPaths.Count.ShouldBe(1);
+        rig.FakeBuilder.BuildCount.ShouldBe(1);
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task StopAsync_WhenOneCameraFailsToClose_StillClosesTheRestAndResets()
     {
         using var rig = new Rig(back: new FakeCameraPlayer { ThrowOnClose = true });
