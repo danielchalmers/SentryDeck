@@ -111,4 +111,92 @@ public sealed class CamDiscoveryResilienceTests
 
         CamClip.Map(temp.Path).ShouldNotBeNull();
     }
+
+    [Fact]
+    public void FindFiles_NumberedCopySuffix_IsTheSameCameraMarkedAsACopy()
+    {
+        // Copying or merging a drive leaves "-2" twins beside the originals; they used to become bogus cameras named "front-2".
+        using var temp = new TempDirectory();
+        Touch(temp.Path, "2023-02-23_14-14-48-front.mp4");
+        Touch(temp.Path, "2023-02-23_14-14-48-front-2.mp4");
+        Touch(temp.Path, "2023-02-23_14-14-48-left_repeater-2.mp4");
+
+        var files = CamFile.FindFiles(temp.Path).ToList();
+
+        files.Select(file => (file.Camera, file.CopyNumber)).ShouldBe(
+            [(CameraNames.Front, 0), (CameraNames.Front, 2), (CameraNames.LeftRepeater, 2)],
+            ignoreOrder: true);
+    }
+
+    [Theory]
+    [InlineData("._2023-02-23_14-14-48-front.mp4")] // macOS resource fork left by copying through a Mac
+    [InlineData("x-2023-02-23_14-14-48-front.mp4")]
+    [InlineData("2023-02-23_14-14-48-front.mp4.tmp.mp4")]
+    public void FindFiles_NameWithExtraText_IsIgnored(string name)
+    {
+        using var temp = new TempDirectory();
+        Touch(temp.Path, name);
+
+        CamFile.FindFiles(temp.Path).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void FindFiles_UppercaseName_ParsesTheCanonicalCamera()
+    {
+        using var temp = new TempDirectory();
+        Touch(temp.Path, "2023-02-23_14-14-48-FRONT.MP4");
+
+        CamFile.FindFiles(temp.Path).ShouldHaveSingleItem().Camera.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void Map_MacResourceForkBesideTheRealFile_KeepsTheRealFile()
+    {
+        // On NTFS the "._" twin enumerates first, so keep-first used to hand the player a 4 KB metadata file and the chunk was dropped as unreadable.
+        using var temp = new TempDirectory();
+        File.WriteAllBytes(Path.Combine(temp.Path, "._2023-02-23_14-14-48-front.mp4"), new byte[4096]);
+        Touch(temp.Path, "2023-02-23_14-14-48-front.mp4");
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        Path.GetFileName(chunk.Files[CameraNames.Front].FullPath).ShouldBe("2023-02-23_14-14-48-front.mp4");
+    }
+
+    [Fact]
+    public void Map_OriginalAndNumberedCopy_PrefersTheOriginal()
+    {
+        using var temp = new TempDirectory();
+        File.WriteAllBytes(Path.Combine(temp.Path, "2023-02-23_14-14-48-front-2.mp4"), [1]);
+        File.WriteAllBytes(Path.Combine(temp.Path, "2023-02-23_14-14-48-front.mp4"), [1]);
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        chunk.Files.Keys.ShouldBe([CameraNames.Front]);
+        chunk.Files[CameraNames.Front].CopyNumber.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Map_EmptyOriginalWithANonEmptyCopy_UsesTheCopy()
+    {
+        using var temp = new TempDirectory();
+        Touch(temp.Path, "2023-02-23_14-14-48-front.mp4");
+        File.WriteAllBytes(Path.Combine(temp.Path, "2023-02-23_14-14-48-front-2.mp4"), [1]);
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        chunk.Files[CameraNames.Front].CopyNumber.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Map_OnlyANumberedCopyOfTheFront_StillKeepsTheChunk()
+    {
+        using var temp = new TempDirectory();
+        File.WriteAllBytes(Path.Combine(temp.Path, "2023-02-23_14-14-48-front-2.mp4"), [1]);
+        File.WriteAllBytes(Path.Combine(temp.Path, "2023-02-23_14-14-48-back.mp4"), [1]);
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        chunk.Files.Keys.ShouldBe([CameraNames.Front, CameraNames.Back], ignoreOrder: true);
+    }
+
 }

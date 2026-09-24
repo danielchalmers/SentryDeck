@@ -23,11 +23,17 @@ public partial record class CamFile
     /// </summary>
     public string Camera { get; private init; }
 
-    public CamFile(string path, DateTime timestamp, string camera)
+    /// <summary>
+    /// Zero for an original recording; N for a numbered copy such as <c>...-front-2.mp4</c>, which appears when a drive's contents are copied or merged onto another.
+    /// </summary>
+    public int CopyNumber { get; private init; }
+
+    public CamFile(string path, DateTime timestamp, string camera, int copyNumber = 0)
     {
         FullPath = Path.GetFullPath(path);
         Timestamp = timestamp;
         Camera = camera;
+        CopyNumber = copyNumber;
     }
 
     /// <summary>
@@ -59,11 +65,14 @@ public partial record class CamFile
         }
 
         // Canonicalize legacy aliases (e.g. rear_view -> back) so old and new clips share one camera vocabulary.
-        // The capture stays greedy on purpose: an unrecognized suffix (a future camera) is kept as-is rather than dropped.
-        var camera = CameraNames.Canonicalize(match.Groups["camera"].Value);
-        return new CamFile(path, timestamp, camera);
+        // An unrecognized camera name (a future camera) is kept as-is rather than dropped.
+        var camera = CameraNames.Canonicalize(match.Groups["camera"].Value.ToLowerInvariant());
+        var copyNumber = match.Groups["copy"].Success ? int.Parse(match.Groups["copy"].Value, CultureInfo.InvariantCulture) : 0;
+        return new CamFile(path, timestamp, camera, copyNumber);
     }
 
-    [GeneratedRegex(@"(?<date>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})-(?<camera>.+)\.mp4")]
+    // Anchored on both ends: an unanchored match picked up macOS "._" resource-fork files and names like "x.mp4.tmp.mp4", and on NTFS the "._" twin sorts first and displaced the real video.
+    // The camera is a plain identifier followed by an optional "-N" copy suffix, so "front-2.mp4" is a copy of front rather than a camera called "front-2".
+    [GeneratedRegex(@"^(?<date>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})-(?<camera>[a-z][a-z0-9_]*?)(?:-(?<copy>\d{1,3}))?\.mp4$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileNameRegex();
 }

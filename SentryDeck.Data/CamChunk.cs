@@ -23,26 +23,48 @@ public record class CamChunk
         Files = BuildFileMap(files);
     }
 
-    // Keyed by camera name, keeping the first file for each camera.
-    // A duplicate suffix at one timestamp (two files mapping to the same camera, e.g. after a rear_view -> back alias) would otherwise make ToDictionary throw -- and since CamClip.TryMap swallows that, the WHOLE clip folder would be silently dropped.
-    // Keep-first + log instead so one stray file can't lose a clip.
+    // Keyed by camera name, one file per camera.
+    // Several files can claim one camera at a timestamp: numbered copies ("front-2.mp4") left by copying a drive, or a rear_view -> back alias collision.
+    // An unguarded ToDictionary would throw, and since CamClip.TryMap swallows that, the WHOLE clip folder would be silently dropped.
+    // The original wins, unless it's empty and a copy isn't; ties keep enumeration order.
     private static IReadOnlyDictionary<string, CamFile> BuildFileMap(IEnumerable<CamFile> files)
     {
         var map = new Dictionary<string, CamFile>();
 
-        foreach (var file in files)
+        foreach (var group in files.GroupBy(file => file.Camera))
         {
-            if (!map.TryAdd(file.Camera, file))
+            var candidates = group
+                .OrderBy(file => IsEmpty(file) ? 1 : 0)
+                .ThenBy(file => file.CopyNumber)
+                .ToList();
+
+            map[group.Key] = candidates[0];
+
+            if (candidates.Count > 1)
             {
-                Log.Warning(
-                    "Duplicate camera file at one timestamp; keeping the first and ignoring the rest. Camera={Camera}; Timestamp={Timestamp}; Ignored={IgnoredPath}",
-                    file.Camera,
-                    file.Timestamp,
-                    file.FullPath);
+                Log.Debug(
+                    "Several files for one camera at one timestamp; using one and ignoring the rest. Camera={Camera}; Timestamp={Timestamp}; Using={UsedPath}; Ignored={IgnoredPaths}",
+                    group.Key,
+                    candidates[0].Timestamp,
+                    candidates[0].FullPath,
+                    candidates.Skip(1).Select(file => file.FullPath).ToArray());
             }
         }
 
         return map;
+    }
+
+    private static bool IsEmpty(CamFile file)
+    {
+        try
+        {
+            var info = new FileInfo(file.FullPath);
+            return info.Exists && info.Length == 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
