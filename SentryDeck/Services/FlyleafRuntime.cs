@@ -41,6 +41,7 @@ public sealed class FlyleafRuntime
                 LogLevel = FlyleafLib.LogLevel.Warn,
                 LogOutput = ":debug",
                 UIRefresh = true,
+                UIRefreshInterval = 100,
             });
 
             _isStarted = true;

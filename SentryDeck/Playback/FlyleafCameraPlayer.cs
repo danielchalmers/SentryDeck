@@ -232,6 +232,10 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             {
                 AutoPlay = false,
                 SeekAccurate = true,
+
+                // The default only publishes CurTime when the whole second changes, so the seek bar stepped once a second and end-of-clip checks worked from a position up to a second stale.
+                // The engine's refresh tick publishes every player's time in one batched UI update instead.
+                UICurTime = UIRefreshType.PerUIRefreshInterval,
             },
             Video =
             {
