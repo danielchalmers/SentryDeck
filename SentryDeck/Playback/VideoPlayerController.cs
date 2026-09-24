@@ -54,6 +54,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private readonly IClipMediaSourceBuilder _mediaSourceBuilder;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private Session _session;
+    private QueuedSeek _queuedSeek;
     private bool _isScrubbing;
     private bool _resumeAfterScrub;
     private bool _isDisposed;
@@ -205,15 +206,22 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// Seeks every camera to <paramref name="position"/>, landing exactly on the frame at that time.
     /// Playback resumes afterwards if it was running.
     /// </summary>
-    public Task SeekAsync(TimeSpan position) =>
-        RunOperationAsync(_session, "Seek error", _ => RepositionAsync(position, accurate: true));
+    public Task SeekAsync(TimeSpan position) => QueueSeek(position, accurate: true);
+
+    /// <summary>
+    /// Seeks relative to where playback is headed: a seek still waiting to run counts as the starting point, so holding an arrow key moves five seconds per press instead of collapsing onto the stale on-screen position.
+    /// </summary>
+    public Task SeekByAsync(TimeSpan offset)
+    {
+        var origin = _queuedSeek is { } queued && ReferenceEquals(queued.Session, _session) ? queued.Target : Position;
+        return QueueSeek(Clamp(origin + offset, TimeSpan.Zero, Duration), accurate: true);
+    }
 
     /// <summary>
     /// Like <see cref="SeekAsync"/> but jumps to the nearest keyframe, which is far cheaper.
     /// Intended to be called repeatedly while the seek bar thumb is being dragged, so the video keeps up in near-real-time.
     /// </summary>
-    public Task ScrubSeekAsync(TimeSpan position) =>
-        RunOperationAsync(_session, "Seek error", _ => RepositionAsync(position, accurate: false));
+    public Task ScrubSeekAsync(TimeSpan position) => QueueSeek(position, accurate: false);
 
     /// <summary>
     /// Starts a scrub gesture: playback is held paused until <see cref="EndScrubAsync"/> so each scrub seek is one cheap paused seek rather than a pause, seek, and resume.
@@ -547,6 +555,41 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         token.ThrowIfCancellationRequested();
         await PlayAllAsync();
+    }
+
+    /// <summary>
+    /// Queues a reposition, or retargets one that is already queued and hasn't started.
+    /// Each reposition pauses, seeks, and resumes every camera, so a burst of requests (a held arrow key) would otherwise replay one by one for seconds after the keys stop.
+    /// </summary>
+    private Task QueueSeek(TimeSpan target, bool accurate)
+    {
+        if (_queuedSeek is { } queued && ReferenceEquals(queued.Session, _session))
+        {
+            queued.Target = target;
+            queued.Accurate |= accurate;
+            return queued.Completion;
+        }
+
+        var seek = new QueuedSeek(_session, target, accurate);
+        _queuedSeek = seek;
+        seek.Completion = RunOperationAsync(_session, "Seek error", _ =>
+        {
+            // From here on a new request queues a fresh seek instead of retargeting this one.
+            if (ReferenceEquals(_queuedSeek, seek))
+            {
+                _queuedSeek = null;
+            }
+
+            return RepositionAsync(seek.Target, seek.Accurate);
+        });
+
+        if (ReferenceEquals(_queuedSeek, seek) && seek.Completion.IsCompleted)
+        {
+            // The operation was skipped outright (no session, or it was replaced), so nothing will clear the slot.
+            _queuedSeek = null;
+        }
+
+        return seek.Completion;
     }
 
     /// <summary>
@@ -920,6 +963,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return max;
 
         return value;
+    }
+
+    private sealed class QueuedSeek(Session session, TimeSpan target, bool accurate)
+    {
+        public Session Session { get; } = session;
+
+        public TimeSpan Target { get; set; } = target;
+
+        public bool Accurate { get; set; } = accurate;
+
+        public Task Completion { get; set; }
     }
 
     /// <summary>

@@ -1288,8 +1288,7 @@ public partial class MainWindowViewModel : ObservableObject
                 }
                 else if (CanSeek)
                 {
-                    var position = _playerController.Position - TimeSpan.FromSeconds(5);
-                    await _playerController.SeekAsync(position < TimeSpan.Zero ? TimeSpan.Zero : position);
+                    await _playerController.SeekByAsync(TimeSpan.FromSeconds(-5));
                 }
 
                 return true;
@@ -1302,9 +1301,7 @@ public partial class MainWindowViewModel : ObservableObject
                 }
                 else if (CanSeek)
                 {
-                    var duration = _playerController.Duration;
-                    var position = _playerController.Position + TimeSpan.FromSeconds(5);
-                    await _playerController.SeekAsync(position > duration ? duration : position);
+                    await _playerController.SeekByAsync(TimeSpan.FromSeconds(5));
                 }
 
                 return true;

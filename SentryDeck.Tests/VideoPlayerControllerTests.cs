@@ -437,6 +437,63 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task SeekAsync_BurstQueuedBehindBusyOperation_RunsOnlyTheLatest()
+    {
+        // A held arrow key or fast clicks queue many seeks; each one pauses, seeks, and resumes every camera, so replaying them all would keep the video jumping for seconds after the input stops.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        var gate = new TaskCompletionSource();
+        rig.Front.PlayGate = gate;
+        var busy = rig.Controller.PlayAsync();
+
+        var seeks = new[] { 10, 20, 30 }.Select(seconds => rig.Controller.SeekAsync(TimeSpan.FromSeconds(seconds))).ToList();
+        rig.Front.PlayGate = null;
+        gate.SetResult();
+        await busy;
+        await Task.WhenAll(seeks);
+
+        rig.Front.Seeks.Select(seek => seek.Position).ShouldBe([TimeSpan.FromSeconds(30)]);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task SeekByAsync_BurstQueuedBehindBusyOperation_AddsEveryOffset()
+    {
+        // Coalescing must not swallow presses: three +5s requests queued together still move 15s, measured from where the queued seek was headed.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        await rig.Controller.SeekAsync(TimeSpan.FromSeconds(20));
+        var gate = new TaskCompletionSource();
+        rig.Front.PlayGate = gate;
+        var busy = rig.Controller.PlayAsync();
+
+        var seeks = Enumerable.Range(0, 3).Select(_ => rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5))).ToList();
+        rig.Front.PlayGate = null;
+        gate.SetResult();
+        await busy;
+        await Task.WhenAll(seeks);
+
+        rig.Front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(35));
+        rig.Front.Seeks.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task SeekByAsync_PastEitherEnd_ClampsToTheClip()
+    {
+        using var rig = new Rig(chunkCount: 1);
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+
+        await rig.Controller.SeekByAsync(TimeSpan.FromSeconds(-5));
+        rig.Controller.Position.ShouldBe(TimeSpan.Zero);
+
+        await rig.Controller.SeekByAsync(TimeSpan.FromMinutes(5));
+        rig.Controller.Position.ShouldBe(ChunkDuration);
+    }
+
+    [Fact]
     public async Task ScrubGesture_WhilePlaying_HoldsPausedThenResumesAtTheReleasePoint()
     {
         using var rig = new Rig();
