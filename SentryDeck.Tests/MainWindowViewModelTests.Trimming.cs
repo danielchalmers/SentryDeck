@@ -248,7 +248,7 @@ public sealed partial class MainWindowViewModelTests
         RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
 
         exporter.Requests.ShouldBeEmpty();
-        vm.ShowErrorOverlay.ShouldBeFalse();
+        vm.Error.IsVisible.ShouldBeFalse();
     }
 
     [Fact]
@@ -265,9 +265,9 @@ public sealed partial class MainWindowViewModelTests
 
         RunPinnedToTestThread(() => vm.ExportSelectionCommand.ExecuteAsync(null));
 
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Export Failed");
-        vm.ErrorDetails.ShouldContain("ffmpeg exploded");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Export Failed");
+        vm.Error.Details.ShouldContain("ffmpeg exploded");
         vm.IsExporting.ShouldBeFalse();
     }
 
@@ -336,8 +336,8 @@ public sealed partial class MainWindowViewModelTests
 
         await vm.SaveEventClipCommand.ExecuteAsync(clip);
 
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Export Failed");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Export Failed");
         exporter.Requests.ShouldBeEmpty();
         vm.IsExporting.ShouldBeFalse();
     }

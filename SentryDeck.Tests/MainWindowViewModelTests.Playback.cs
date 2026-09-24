@@ -158,9 +158,9 @@ public sealed partial class MainWindowViewModelTests
 
         controller.ErrorMessage = "decode failed";
 
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Playback Error");
-        vm.ErrorDetails.ShouldBe("decode failed");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Playback Error");
+        vm.Error.Details.ShouldBe("decode failed");
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public sealed partial class MainWindowViewModelTests
         // The clip is intentionally NOT in the controller's playlist, so GoToClipAsync is a deterministic no-op; this verifies only that selection triggers the auto-play loading state.
         // Opening media is VideoPlayerController's own job.
         vm.IsLoading.ShouldBeTrue();
-        vm.ShowErrorOverlay.ShouldBeFalse();
+        vm.Error.IsVisible.ShouldBeFalse();
     }
 
     [Fact]

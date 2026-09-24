@@ -395,7 +395,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.ShowErrorOverlay = true;
+        vm.Error.IsVisible = true;
 
         vm.HasError.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
@@ -541,18 +541,18 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void DismissError_ClearsErrorState()
     {
         var vm = CreateViewModel();
-        vm.ShowErrorOverlay = true;
-        vm.ShowFFmpegDownloadButton = true;
-        vm.CanDismissError = false;
-        vm.ErrorTitle = "Boom";
-        vm.ErrorDetails = "Something went wrong";
+        vm.Error.IsVisible = true;
+        vm.Error.ShowFFmpegDownloadButton = true;
+        vm.Error.CanDismiss = false;
+        vm.Error.Title = "Boom";
+        vm.Error.Details = "Something went wrong";
 
-        vm.DismissErrorCommand.Execute(null);
+        vm.Error.DismissCommand.Execute(null);
 
-        vm.ShowErrorOverlay.ShouldBeFalse();
-        vm.ShowFFmpegDownloadButton.ShouldBeFalse();
-        vm.CanDismissError.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBeNull();
-        vm.ErrorDetails.ShouldBeNull();
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Error.ShowFFmpegDownloadButton.ShouldBeFalse();
+        vm.Error.CanDismiss.ShouldBeTrue();
+        vm.Error.Title.ShouldBeNull();
+        vm.Error.Details.ShouldBeNull();
     }
 }

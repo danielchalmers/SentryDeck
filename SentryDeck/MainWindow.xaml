@@ -1247,7 +1247,7 @@
                             </StackPanel>
 
                             <!--  Error / first-run empty state  -->
-                            <StackPanel Visibility="{Binding ShowErrorOverlay, Converter={local:BoolToVisibilityConverter}}">
+                            <StackPanel Visibility="{Binding Error.IsVisible, Converter={local:BoolToVisibilityConverter}}">
                                 <Border Width="64"
                                         Height="64"
                                         Margin="0,0,0,16"
@@ -1257,7 +1257,7 @@
                                         <Style TargetType="Border">
                                             <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsEmptyState}"
+                                                <DataTrigger Binding="{Binding Error.IsEmptyState}"
                                                              Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
                                                 </DataTrigger>
@@ -1271,7 +1271,7 @@
                                                 <Setter Property="Text" Value="&#xE783;" />
                                                 <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsEmptyState}"
+                                                    <DataTrigger Binding="{Binding Error.IsEmptyState}"
                                                                  Value="True">
                                                         <Setter Property="Text" Value="&#xE8B7;" />
                                                         <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -1281,7 +1281,7 @@
                                         </TextBlock.Style>
                                     </TextBlock>
                                 </Border>
-                                <TextBlock Text="{Binding ErrorTitle}"
+                                <TextBlock Text="{Binding Error.Title}"
                                            Margin="0,0,0,8"
                                            HorizontalAlignment="Center"
                                            TextAlignment="Center">
@@ -1290,7 +1290,7 @@
                                                BasedOn="{StaticResource AppSubtitle}">
                                             <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsEmptyState}"
+                                                <DataTrigger Binding="{Binding Error.IsEmptyState}"
                                                              Value="True">
                                                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                                 </DataTrigger>
@@ -1298,7 +1298,7 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <TextBlock Text="{Binding ErrorDetails}"
+                                <TextBlock Text="{Binding Error.Details}"
                                            MaxWidth="380"
                                            HorizontalAlignment="Center"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
@@ -1311,21 +1311,21 @@
                                         Padding="24,8"
                                         HorizontalAlignment="Center"
                                         Style="{StaticResource AccentButtonStyle}"
-                                        Visibility="{Binding IsEmptyState, Converter={local:BoolToVisibilityConverter}}" />
+                                        Visibility="{Binding Error.IsEmptyState, Converter={local:BoolToVisibilityConverter}}" />
                                 <Button Content="Download FFmpeg"
                                         Command="{Binding DownloadFFmpegCommand}"
                                         Margin="0,20,0,0"
                                         Padding="24,8"
                                         HorizontalAlignment="Center"
                                         Style="{StaticResource AccentButtonStyle}"
-                                        Visibility="{Binding ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}" />
+                                        Visibility="{Binding Error.ShowFFmpegDownloadButton, Converter={local:BoolToVisibilityConverter}}" />
                                 <Button Content="Dismiss"
-                                        Command="{Binding DismissErrorCommand}"
+                                        Command="{Binding Error.DismissCommand}"
                                         Margin="0,12,0,0"
                                         Padding="24,8"
                                         HorizontalAlignment="Center"
                                         Style="{StaticResource DefaultButtonStyle}"
-                                        Visibility="{Binding CanDismissError, Converter={local:BoolToVisibilityConverter}}" />
+                                        Visibility="{Binding Error.CanDismiss, Converter={local:BoolToVisibilityConverter}}" />
                             </StackPanel>
                         </StackPanel>
                     </Border>

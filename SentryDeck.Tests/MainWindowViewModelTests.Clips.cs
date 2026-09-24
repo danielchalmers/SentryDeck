@@ -148,10 +148,10 @@ public sealed partial class MainWindowViewModelTests
         await vm.LoadClipsAsync([]);
 
         // First run with no USB drive attached: a friendly prompt the user can dismiss to reach the rest of the app, not a scary error they're stuck behind.
-        vm.ErrorTitle.ShouldBe("No dashcam footage yet");
-        vm.IsEmptyState.ShouldBeTrue();
-        vm.CanDismissError.ShouldBeTrue();
-        vm.ShowErrorOverlay.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("No dashcam footage yet");
+        vm.Error.IsEmptyState.ShouldBeTrue();
+        vm.Error.CanDismiss.ShouldBeTrue();
+        vm.Error.IsVisible.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
         vm.ClipCount.ShouldBe(0);
     }
@@ -164,10 +164,10 @@ public sealed partial class MainWindowViewModelTests
         await vm.LoadClipsAsync([@"D:\TeslaCam"]);
 
         // A permissions problem gets its own title and remedy; it isn't the empty state.
-        vm.ErrorTitle.ShouldBe("Access Denied");
-        vm.ErrorDetails.ShouldContain(@"D:\TeslaCam");
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.IsEmptyState.ShouldBeFalse();
+        vm.Error.Title.ShouldBe("Access Denied");
+        vm.Error.Details.ShouldContain(@"D:\TeslaCam");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.IsEmptyState.ShouldBeFalse();
     }
 
     [Fact]
@@ -178,9 +178,9 @@ public sealed partial class MainWindowViewModelTests
         await vm.LoadClipsAsync([@"E:\TeslaCam"]);
 
         // Both halves matter for a bug report: which folder failed, and what the failure was.
-        vm.ErrorTitle.ShouldBe("Error Loading Clips");
-        vm.ErrorDetails.ShouldContain(@"E:\TeslaCam");
-        vm.ErrorDetails.ShouldContain("the drive was removed");
+        vm.Error.Title.ShouldBe("Error Loading Clips");
+        vm.Error.Details.ShouldContain(@"E:\TeslaCam");
+        vm.Error.Details.ShouldContain("the drive was removed");
     }
 
     [Fact]
@@ -203,8 +203,8 @@ public sealed partial class MainWindowViewModelTests
 
         // Scanning is per-root: one unreadable drive reports itself but must not cost the user the library on the drive that is still plugged in.
         vm.ClipCount.ShouldBe(2);
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Error Loading Clips");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Error Loading Clips");
     }
 
     // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
@@ -318,8 +318,8 @@ public sealed partial class MainWindowViewModelTests
         var target = vm.FilteredClips[0];
         await vm.DeleteClipCommand.ExecuteAsync(target);
 
-        vm.ShowErrorOverlay.ShouldBeTrue();
-        vm.ErrorTitle.ShouldBe("Delete Failed");
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Delete Failed");
         vm.ClipCount.ShouldBe(2);
         vm.FilteredClips.ShouldContain(target);
     }

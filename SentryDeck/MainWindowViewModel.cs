@@ -96,12 +96,28 @@ public partial class MainWindowViewModel : ObservableObject
         _filterDebounceTimer.Tick += OnFilterDebounceTick;
 
         SyncCameraViewSelection();
+
+        Error.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ErrorOverlayViewModel.IsVisible))
+            {
+                OnPropertyChanged(nameof(ShowStatusOverlay));
+                OnPropertyChanged(nameof(ShowVideoHosts));
+                OnPropertyChanged(nameof(HasNoClipSelected));
+                OnPropertyChanged(nameof(HasError));
+            }
+        };
     }
 
     /// <summary>
     /// Raised when the view should move keyboard focus to the clip search box.
     /// </summary>
     public event EventHandler SearchBoxFocusRequested;
+
+    /// <summary>
+    /// The notice over the video area; every feature reports errors through it.
+    /// </summary>
+    public ErrorOverlayViewModel Error { get; } = new();
 
     public bool ShowMainContent => !ShowAboutPage;
 
@@ -225,13 +241,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF sibling it can't draw over the Flyleaf video surface anyway.
     // While a selected clip loads, the hosts stay visible and simply show black until the first frame decodes, with no loading screen flashing mid-playback.
-    public bool ShowStatusOverlay => (IsLoading && SelectedClip is null) || ShowErrorOverlay || HasNoClipSelected;
+    public bool ShowStatusOverlay => (IsLoading && SelectedClip is null) || Error.IsVisible || HasNoClipSelected;
 
-    public bool ShowVideoHosts => SelectedClip is not null && !ShowErrorOverlay;
+    public bool ShowVideoHosts => SelectedClip is not null && !Error.IsVisible;
 
-    public bool HasError => ShowErrorOverlay;
+    public bool HasError => Error.IsVisible;
 
-    public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !ShowErrorOverlay;
+    public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !Error.IsVisible;
 
     public bool IsGridViewSelected => SelectedCameraView == GridCameraView;
 
@@ -373,29 +389,6 @@ public partial class MainWindowViewModel : ObservableObject
     // Distinct from SelectedClip so a marker can persist even when selection is elsewhere.
     [ObservableProperty]
     private CamClip _nowPlayingClip;
-
-    [ObservableProperty]
-    private string _errorTitle;
-
-    [ObservableProperty]
-    private string _errorDetails;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
-    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
-    [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
-    [NotifyPropertyChangedFor(nameof(HasError))]
-    private bool _showErrorOverlay;
-
-    [ObservableProperty]
-    private bool _canDismissError = true;
-
-    // True when the overlay is a friendly first-run/empty prompt rather than a genuine error.
-    [ObservableProperty]
-    private bool _isEmptyState;
-
-    [ObservableProperty]
-    private bool _showFFmpegDownloadButton;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowMainContent))]
@@ -554,7 +547,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public async Task LoadClipsAsync(IEnumerable<string> roots, TimeSpan minimumLoadingDuration = default)
     {
-        ClearError();
+        Error.Clear();
         _allClips.Clear();
         SelectedClip = null;
         IsLoading = true;
@@ -574,7 +567,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (!result.HadRoots)
             {
-                ShowError(
+                Error.Show(
                     "No dashcam footage yet",
                     "Point Sentry Deck at your TeslaCam folder to get started. Recorded USB drives are found automatically.",
                     canDismiss: true,
@@ -585,7 +578,7 @@ public partial class MainWindowViewModel : ObservableObject
                 _allClips.AddRange(result.Clips);
                 foreach (var error in result.Errors)
                 {
-                    ShowError(error.Title, error.Details);
+                    Error.Show(error.Title, error.Details);
                 }
             }
 
@@ -916,14 +909,14 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to build media source for event clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
-            ShowError("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
+            Error.Show("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
             return;
         }
 
         var eventTime = mediaSource.Duration > TimeSpan.Zero ? mediaSource.ToMediaTime(clip.Event.Timestamp) : null;
         if (eventTime is null)
         {
-            ShowError("Export Failed", "The event moment isn't within this clip's saved footage.");
+            Error.Show("Export Failed", "The event moment isn't within this clip's saved footage.");
             return;
         }
 
@@ -973,7 +966,7 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Export failed. Clip={ClipName}; Camera={Camera}; Output={Output}", clip.Name, camera, outputPath);
-            ShowError("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
+            Error.Show("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
         }
         finally
         {
@@ -1057,7 +1050,7 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task DownloadFFmpegAsync()
     {
         IsLoading = true;
-        ClearError();
+        Error.Clear();
 
         try
         {
@@ -1076,8 +1069,8 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to download FFmpeg");
-            ShowError("Download Failed", $"Failed to download FFmpeg: {ex.Message}");
-            ShowFFmpegDownloadButton = true;
+            Error.Show("Download Failed", $"Failed to download FFmpeg: {ex.Message}");
+            Error.ShowFFmpegDownloadButton = true;
         }
         finally
         {
@@ -1090,7 +1083,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (clip is null || _playerController is null)
             return;
 
-        ClearError();
+        Error.Clear();
         IsLoading = true;
         await _backgroundYield();
 
@@ -1138,7 +1131,7 @@ public partial class MainWindowViewModel : ObservableObject
                 "Failed to play selected clip. ClipName={ClipName}; ClipPath={ClipPath}",
                 clip.Name,
                 clip.FullPath);
-            ShowError("Playback Failed", $"Could not play clip: {clip.Name}\n\nError: {ex.Message}");
+            Error.Show("Playback Failed", $"Could not play clip: {clip.Name}\n\nError: {ex.Message}");
         }
     }
 
@@ -1531,7 +1524,7 @@ public partial class MainWindowViewModel : ObservableObject
             case nameof(VideoPlayerController.ErrorMessage):
                 if (_playerController.ErrorMessage is not null)
                 {
-                    ShowError("Playback Error", _playerController.ErrorMessage);
+                    Error.Show("Playback Error", _playerController.ErrorMessage);
                 }
 
                 break;
@@ -1572,36 +1565,11 @@ public partial class MainWindowViewModel : ObservableObject
             : version.ToString(2);
     }
 
-    private void ShowError(string title, string details, bool canDismiss = true, bool isEmptyState = false)
-    {
-        ErrorTitle = title;
-        ErrorDetails = details;
-        CanDismissError = canDismiss;
-        IsEmptyState = isEmptyState;
-        ShowErrorOverlay = true;
-    }
-
-    private void ClearError()
-    {
-        ShowErrorOverlay = false;
-        ShowFFmpegDownloadButton = false;
-        CanDismissError = true;
-        IsEmptyState = false;
-        ErrorTitle = null;
-        ErrorDetails = null;
-    }
-
-    [RelayCommand]
-    private void DismissError()
-    {
-        ClearError();
-    }
-
     private void ShowFFmpegMissingError()
     {
         Log.Debug("Showing FFmpeg missing prompt");
-        ShowFFmpegDownloadButton = true;
-        ShowError("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
+        Error.ShowFFmpegDownloadButton = true;
+        Error.Show("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
     }
 
     [RelayCommand]
@@ -1669,7 +1637,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (!Directory.Exists(clip.FullPath))
         {
-            ShowError("Clip Folder Not Found", $"Could not find folder:\n{clip.FullPath}");
+            Error.Show("Clip Folder Not Found", $"Could not find folder:\n{clip.FullPath}");
             return;
         }
 
@@ -1737,7 +1705,7 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to delete clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
-            ShowError("Delete Failed", $"Could not delete clip: {clip.Name}\n\nError: {ex.Message}");
+            Error.Show("Delete Failed", $"Could not delete clip: {clip.Name}\n\nError: {ex.Message}");
             return;
         }
 
