@@ -14,7 +14,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
 
         // 10 one-minute chunks (600s modeled); event at 9m30s in -> 0.95.
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
 
         vm.Playback.HasEventMarker.ShouldBeTrue();
         vm.Playback.EventMarkerPosition.ShouldBe(0.95, 0.0001);
@@ -26,7 +26,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithChunks(3);
+        vm.Library.SelectedClip = ClipWithChunks(3);
 
         vm.Playback.HasEventMarker.ShouldBeFalse();
         vm.Playback.EventMarkerPosition.ShouldBe(0);
@@ -40,7 +40,7 @@ public sealed partial class MainWindowViewModelTests
         var chunks = ClipWithChunks(3).Chunks;
         var camEvent = new CamEvent { Reason = "user_interaction_honk" }; // Timestamp == default
 
-        vm.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "Default TS", new DateTime(2025, 1, 1, 12, 0, 0), chunks, camEvent);
+        vm.Library.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "Default TS", new DateTime(2025, 1, 1, 12, 0, 0), chunks, camEvent);
 
         vm.Playback.HasEventMarker.ShouldBeFalse();
     }
@@ -51,7 +51,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
 
         // Event fired on the first recorded frame (timestamp == first chunk's timestamp): fraction is exactly 0, which is a real position, not clock skew.
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.Zero);
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.Zero);
 
         vm.Playback.HasEventMarker.ShouldBeTrue();
         vm.Playback.EventMarkerPosition.ShouldBe(0);
@@ -63,7 +63,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
 
         // Clock skew: event five minutes before the first chunk -> fraction <= 0, no marker.
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromMinutes(-5));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromMinutes(-5));
 
         vm.Playback.HasEventMarker.ShouldBeFalse();
     }
@@ -74,7 +74,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
 
         // 3 chunks = 180s modeled; an event at 200s is past the estimated end (fraction > 1).
-        vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(200));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(200));
 
         vm.Playback.HasEventMarker.ShouldBeFalse();
     }
@@ -85,7 +85,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
         var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = new DateTime(2025, 1, 1, 12, 5, 0) };
 
-        vm.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "No Chunks", new DateTime(2025, 1, 1, 12, 0, 0), [], camEvent);
+        vm.Library.SelectedClip = new CamClip(System.IO.Path.GetTempPath(), "No Chunks", new DateTime(2025, 1, 1, 12, 0, 0), [], camEvent);
 
         vm.Playback.HasEventMarker.ShouldBeFalse();
         vm.Playback.EventMarkerPosition.ShouldBe(0);
@@ -97,7 +97,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithChunks(3);
+        vm.Library.SelectedClip = ClipWithChunks(3);
 
         vm.Playback.ChunkBoundaries.Count.ShouldBe(2);
         vm.Playback.ChunkBoundaries[0].ShouldBe(1.0 / 3, 0.0001);
@@ -109,7 +109,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithChunks(1);
+        vm.Library.SelectedClip = ClipWithChunks(1);
 
         vm.Playback.ChunkBoundaries.ShouldBeEmpty();
     }
@@ -122,7 +122,7 @@ public sealed partial class MainWindowViewModelTests
         // No controller at all: RecomputeSelectedClipTimeline can only fall back to the estimate, which carries no gap information.
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(90));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(3, TimeSpan.FromSeconds(90));
 
         vm.Playback.GapPositions.ShouldBeEmpty();
     }
@@ -137,7 +137,7 @@ public sealed partial class MainWindowViewModelTests
         var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent: null);
 
         var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
-        vm.SelectedClip = clip;
+        vm.Library.SelectedClip = clip;
 
         // Two included chunks of 60s each = 120s total; the single gap sits at media time 60s.
         vm.Playback.GapPositions.ShouldBe([60.0 / 120], 0.0001);
@@ -155,7 +155,7 @@ public sealed partial class MainWindowViewModelTests
         var clip = new CamClip(clipFiles.Clip.FullPath, clipFiles.Clip.Name, clipFiles.Clip.Timestamp, chunks, camEvent);
 
         var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
-        vm.SelectedClip = clip;
+        vm.Library.SelectedClip = clip;
 
         vm.Playback.HasEventMarker.ShouldBeTrue();
         vm.Playback.EventMarkerPosition.ShouldBe(70.0 / 120, 0.0001);
@@ -168,10 +168,10 @@ public sealed partial class MainWindowViewModelTests
     public void ClearingSelection_ResetsEventMarkerAndChunks()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
         vm.Playback.HasEventMarker.ShouldBeTrue();
 
-        vm.SelectedClip = null;
+        vm.Library.SelectedClip = null;
 
         vm.Playback.HasEventMarker.ShouldBeFalse();
         vm.Playback.EventMarkerPosition.ShouldBe(0);
@@ -184,7 +184,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = CreateViewModel();
         vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
 
-        vm.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
 
         vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeTrue();
     }
@@ -201,7 +201,7 @@ public sealed partial class MainWindowViewModelTests
             clipFiles.Clip.Chunks,
             new CamEvent { Timestamp = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30) });
         var (vm, controller, front) = CreateViewModelWithOpenedClip(clip);
-        vm.SelectedClip = clip;
+        vm.Library.SelectedClip = clip;
 
         var handled = vm.HandleKeyDown(Key.E, ModifierKeys.None);
         RunPinnedToTestThread(controller.WhenIdleAsync);
@@ -216,7 +216,7 @@ public sealed partial class MainWindowViewModelTests
     public async Task EventShortcut_Ignored_WhenNoMarker()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithChunks(3); // no event
+        vm.Library.SelectedClip = ClipWithChunks(3); // no event
 
         var handled = await vm.HandleKeyDownAsync(Key.E, ModifierKeys.None);
 
@@ -230,7 +230,7 @@ public sealed partial class MainWindowViewModelTests
         var changed = new List<string>();
         vm.Playback.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-        vm.SelectedClip = ClipWithChunksAndEvent(5, TimeSpan.FromSeconds(250));
+        vm.Library.SelectedClip = ClipWithChunksAndEvent(5, TimeSpan.FromSeconds(250));
 
         changed.ShouldContain(nameof(PlaybackViewModel.EventMarkerPosition));
         changed.ShouldContain(nameof(PlaybackViewModel.HasEventMarker));

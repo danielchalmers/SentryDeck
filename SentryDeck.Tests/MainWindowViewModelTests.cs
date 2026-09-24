@@ -241,7 +241,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
         vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
             [
@@ -266,7 +266,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+        vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
         vm.Cameras.CameraViewOptions.Count.ShouldBe(5);
         vm.Cameras.CameraViewOptions.ShouldAllBe(option => option.ViewId != CameraNames.LeftPillar);
@@ -279,10 +279,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void SwitchingToClipWithoutTheWatchedCamera_FallsBackToFront()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
         vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.RightPillar);
 
-        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+        vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
         vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
     }
@@ -291,10 +291,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void SwitchingClips_KeepsTheWatchedCamera_WhenTheNewClipHasIt()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
         vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
 
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
         vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
         vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.LeftPillar);
@@ -312,7 +312,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void CameraIdToView_MapsDocumentedEventCameraIds(int cameraId, string expectedView)
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
         vm.Cameras.CameraIdToView(cameraId).ShouldBe(expectedView);
     }
@@ -321,7 +321,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public void CameraIdToView_FallsBackToFront_WhenTheClipLacksThatCamera()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
+        vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
         vm.Cameras.CameraIdToView(5).ShouldBe(CameraNames.Front);
         vm.Cameras.CameraIdToView(7).ShouldBe(CameraNames.Back);
@@ -331,7 +331,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     public async Task NumberKeys_SelectTilesByStripPosition_IncludingPillars()
     {
         var vm = CreateViewModel();
-        vm.SelectedClip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = ClipWithCameras(SixCameras);
 
         (await vm.HandleKeyDownAsync(Key.D6, ModifierKeys.None)).ShouldBeTrue();
         vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
@@ -408,7 +408,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
 
-        vm.SelectedClip = TestClips.Create(1)[0];
+        vm.Library.SelectedClip = TestClips.Create(1)[0];
 
         vm.HasNoClipSelected.ShouldBeFalse();
         vm.ShowStatusOverlay.ShouldBeFalse();
@@ -421,7 +421,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         var vm = CreateViewModel();
         vm.Playback.CanPlayPause.ShouldBeFalse();
 
-        vm.SelectedClip = TestClips.Create(1)[0];
+        vm.Library.SelectedClip = TestClips.Create(1)[0];
         vm.Playback.CanPlayPause.ShouldBeTrue();
 
         vm.Playback.IsLoading = true;
@@ -429,7 +429,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
 
         // Even with no selected clip, an in-flight playback keeps the toggle live.
         vm.Playback.IsLoading = false;
-        vm.SelectedClip = null;
+        vm.Library.SelectedClip = null;
         vm.Playback.IsPlaying = true;
         vm.Playback.CanPlayPause.ShouldBeTrue();
     }

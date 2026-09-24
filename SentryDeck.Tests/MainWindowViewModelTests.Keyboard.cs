@@ -105,7 +105,7 @@ public sealed partial class MainWindowViewModelTests
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
         var closesAfterOpen = front.Count("close");
-        vm.SelectedClip = clipFiles.Clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
+        vm.Library.SelectedClip = clipFiles.Clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
 
         RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
 
@@ -127,12 +127,12 @@ public sealed partial class MainWindowViewModelTests
             backgroundYield: () => yieldGate.Task);
         vm.InitializePlayer();
 
-        vm.SelectedClip = ClipWithChunks(1);
+        vm.Library.SelectedClip = ClipWithChunks(1);
         vm.IsLoading.ShouldBeTrue();
 
         // Clear the selection before the yield resumes (Ctrl+click deselect, or a search filter dropping the clip).
         // The superseded load must not leave IsLoading stuck true forever.
-        vm.SelectedClip = null;
+        vm.Library.SelectedClip = null;
         yieldGate.SetResult();
 
         await Wait.UntilAsync(() => !vm.IsLoading);
@@ -153,8 +153,8 @@ public sealed partial class MainWindowViewModelTests
 
         var superseded = ClipWithCameras(SixCameras);
         var winner = ClipWithCamerasAndEventCamera(eventCamera: 7, SixCameras);
-        vm.SelectedClip = superseded;
-        vm.SelectedClip = winner;
+        vm.Library.SelectedClip = superseded;
+        vm.Library.SelectedClip = winner;
 
         yieldGate.SetResult();
 
@@ -163,7 +163,7 @@ public sealed partial class MainWindowViewModelTests
         await Wait.UntilAsync(() => vm.Cameras.SelectedCameraView == CameraNames.Back);
         vm.IsLoading.ShouldBeTrue();
         vm.Playback.NowPlayingClip.ShouldBe(winner);
-        vm.SelectedClip.ShouldBe(winner);
+        vm.Library.SelectedClip.ShouldBe(winner);
     }
 
     [Fact]
@@ -172,12 +172,12 @@ public sealed partial class MainWindowViewModelTests
         // Both commands funnel into LoadClipsAsync, which has no re-entrancy protection: a second load started mid-scan would interleave with the first and merge both roots' clips.
         var vm = CreateViewModel();
 
-        vm.OpenFolderCommand.CanExecute(null).ShouldBeTrue();
-        vm.RefreshClipsCommand.CanExecute(null).ShouldBeTrue();
+        vm.Library.OpenFolderCommand.CanExecute(null).ShouldBeTrue();
+        vm.Library.RefreshClipsCommand.CanExecute(null).ShouldBeTrue();
 
-        vm.IsLoadingClips = true;
+        vm.Library.IsLoadingClips = true;
 
-        vm.OpenFolderCommand.CanExecute(null).ShouldBeFalse();
-        vm.RefreshClipsCommand.CanExecute(null).ShouldBeFalse();
+        vm.Library.OpenFolderCommand.CanExecute(null).ShouldBeFalse();
+        vm.Library.RefreshClipsCommand.CanExecute(null).ShouldBeFalse();
     }
 }

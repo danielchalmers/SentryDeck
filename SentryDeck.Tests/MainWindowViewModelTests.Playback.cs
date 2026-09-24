@@ -180,7 +180,7 @@ public sealed partial class MainWindowViewModelTests
         var clip = TestClips.Create(1)[0];
         var vm = CreateViewModelWithController(out _, out _);
 
-        vm.SelectedClip = clip;
+        vm.Library.SelectedClip = clip;
 
         // Selecting a clip runs OnSelectedClipChanged -> PlaySelectedClipAsync, which sets IsLoading=true (synchronously, before the awaited yield) and calls the controller.
         // The clip is intentionally NOT in the controller's playlist, so GoToClipAsync is a deterministic no-op; this verifies only that selection triggers the auto-play loading state.
@@ -196,7 +196,7 @@ public sealed partial class MainWindowViewModelTests
 
         // Camera id 7 is the rear camera.
         // As in SelectingClip_TriggersPlaybackLoading, the clip is deliberately not in the controller's playlist, so GoToClipAsync early-returns and the rest of the selection load runs inline on this thread.
-        vm.SelectedClip = ClipWithCamerasAndEventCamera(eventCamera: 7, SixCameras);
+        vm.Library.SelectedClip = ClipWithCamerasAndEventCamera(eventCamera: 7, SixCameras);
 
         // Opening an incident on the angle that triggered it is the whole point of the metadata.
         vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Back);
@@ -214,7 +214,7 @@ public sealed partial class MainWindowViewModelTests
         var vm = new MainWindowViewModel(() => controller, backgroundYield: () => loadGate.Task);
         vm.InitializePlayer();
 
-        vm.SelectedClip = clipFiles.Clip;
+        vm.Library.SelectedClip = clipFiles.Clip;
         RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
         loadGate.SetResult();
         RunPinnedToTestThread(controller.WhenIdleAsync);

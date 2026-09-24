@@ -19,20 +19,13 @@ namespace SentryDeck;
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
-    private readonly List<CamClip> _allClips = [];
     private readonly FlyleafRuntime _flyleafRuntime = new();
-    private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
     private readonly Dispatcher _dispatcher;
-    private readonly DispatcherTimer _filterDebounceTimer;
     private readonly IClipExporter _clipExporter;
     private readonly Func<string, string> _savePathPicker;
     private readonly IClipMediaSourceBuilder _exportMediaSourceBuilder;
     private bool _isInitialized;
     private bool _isDownloadingFFmpeg;
-
-    // The source of dashcam roots: auto-discovery by default, or the user's last picked folders.
-    // Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
-    private Func<IEnumerable<string>> _rootSource = CamStorage.FindCommonRoots;
 
     /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param> <param name="clipLoader">Maps a dashcam root to its clips.
     /// Defaults to scanning the filesystem; overridable for tests.</param> <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive.
@@ -50,7 +43,6 @@ public partial class MainWindowViewModel : ObservableObject
         IClipMediaSourceBuilder exportMediaSourceBuilder = null,
         Action<Action> uiInvoker = null)
     {
-        _clipLoader = clipLoader ?? (root => CamStorage.Map(root).Clips);
         _clipExporter = clipExporter ?? new ClipExporter(PackageManager.FindFFmpegDirectory);
         _savePathPicker = savePathPicker ?? PickSavePathWithDialog;
         _exportMediaSourceBuilder = exportMediaSourceBuilder ?? new FfconcatMediaSourceBuilder();
@@ -61,13 +53,11 @@ public partial class MainWindowViewModel : ObservableObject
             uiInvoker ?? InvokeOnDispatcher,
             Error,
             Cameras);
-
-        // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth; the getters stay live, so only the (debounced) change notification is deferred.
-        _filterDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
-        {
-            Interval = TimeSpan.FromMilliseconds(150),
-        };
-        _filterDebounceTimer.Tick += OnFilterDebounceTick;
+        Library = new ClipLibraryViewModel(
+            clipLoader ?? (root => CamStorage.Map(root).Clips),
+            Playback,
+            Error,
+            _dispatcher);
 
         Error.PropertyChanged += (_, e) =>
         {
@@ -81,7 +71,8 @@ public partial class MainWindowViewModel : ObservableObject
         };
 
         Playback.PropertyChanged += OnPlaybackPropertyChanged;
-        Playback.CurrentClipChanged += (_, clip) => SelectedClip = clip;
+        Playback.CurrentClipChanged += (_, clip) => Library.SelectedClip = clip;
+        Library.PropertyChanged += OnLibraryPropertyChanged;
     }
 
     /// <summary>
@@ -109,63 +100,27 @@ public partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public PlaybackViewModel Playback { get; }
 
+    /// <summary>
+    /// The clip list: scanning, search, the selected clip, and per-clip actions.
+    /// </summary>
+    public ClipLibraryViewModel Library { get; }
+
     public bool ShowMainContent => !ShowAboutPage;
-
-    public IReadOnlyList<CamClip> FilteredClips => _allClips
-        .Where(MatchesFilter)
-        .OrderByDescending(c => c.Timestamp)
-        .ThenBy(c => c.Name)
-        .ToList();
-
-    /// <summary>Number of clips currently shown (drives the sidebar count).</summary>
-    public int ClipCount => FilteredClips.Count;
-
-    /// <summary>True when the search box has text (drives the clear button).</summary>
-    public bool HasFilterText => !string.IsNullOrEmpty(FilterText);
-
-    // Matches the clip name, path, event city, and friendly event reason (e.g. "sentry", "honk", "saved").
-    private bool MatchesFilter(CamClip clip)
-    {
-        if (string.IsNullOrWhiteSpace(FilterText))
-        {
-            return true;
-        }
-
-        var term = FilterText;
-        return clip.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-            || clip.FullPath.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-            || (clip.Event?.City?.Contains(term, StringComparison.CurrentCultureIgnoreCase) ?? false)
-            || ClipDisplay.ReasonLabel(clip.Event).Contains(term, StringComparison.CurrentCultureIgnoreCase);
-    }
-
-    // Restart the debounce on each keystroke; the list is rebound once typing settles.
-    partial void OnFilterTextChanged(string value)
-    {
-        _filterDebounceTimer.Stop();
-        _filterDebounceTimer.Start();
-    }
-
-    private void OnFilterDebounceTick(object sender, EventArgs e)
-    {
-        _filterDebounceTimer.Stop();
-        OnPropertyChanged(nameof(FilteredClips));
-        OnPropertyChanged(nameof(ClipCount));
-    }
 
     // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF sibling it can't draw over the Flyleaf video surface anyway.
     // While a selected clip loads, the hosts stay visible and simply show black until the first frame decodes, with no loading screen flashing mid-playback.
-    public bool ShowStatusOverlay => (IsLoading && SelectedClip is null) || Error.IsVisible || HasNoClipSelected;
+    public bool ShowStatusOverlay => (IsLoading && Library.SelectedClip is null) || Error.IsVisible || HasNoClipSelected;
 
     /// <summary>
     /// True while anything blocks the video pane: a clip scan, the FFmpeg download, or the selected clip loading.
     /// </summary>
-    public bool IsLoading => IsLoadingClips || _isDownloadingFFmpeg || Playback.IsLoading;
+    public bool IsLoading => Library.IsLoadingClips || _isDownloadingFFmpeg || Playback.IsLoading;
 
-    public bool ShowVideoHosts => SelectedClip is not null && !Error.IsVisible;
+    public bool ShowVideoHosts => Library.SelectedClip is not null && !Error.IsVisible;
 
     public bool HasError => Error.IsVisible;
 
-    public bool HasNoClipSelected => SelectedClip is null && !IsLoading && !Error.IsVisible;
+    public bool HasNoClipSelected => Library.SelectedClip is null && !IsLoading && !Error.IsVisible;
 
     // --- Export selection (in/out marks on the seek bar, as 0..1 fractions like SeekPosition) ---
     // Plain fields + an explicit notify helper (not ObservableProperty) because the pair changes together under shared invariants (start < end) and several derived properties hang off both.
@@ -244,30 +199,9 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SaveEventClipCommand))]
     private bool _isExporting;
 
-    // FilteredClips/ClipCount are refreshed on a short debounce (see OnFilterTextChanged) rather than per keystroke; HasFilterText stays immediate so the search box's clear affordance is responsive.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasFilterText))]
-    private string _filterText = string.Empty;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
-    [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
-    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
-    private CamClip _selectedClip;
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowMainContent))]
     private bool _showAboutPage;
-
-    // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLoading))]
-    [NotifyPropertyChangedFor(nameof(ShowStatusOverlay))]
-    [NotifyPropertyChangedFor(nameof(ShowVideoHosts))]
-    [NotifyPropertyChangedFor(nameof(HasNoClipSelected))]
-    [NotifyCanExecuteChangedFor(nameof(RefreshClipsCommand))]
-    [NotifyCanExecuteChangedFor(nameof(OpenFolderCommand))]
-    private bool _isLoadingClips;
 
     public async Task InitializeAsync()
     {
@@ -286,7 +220,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_flyleafRuntime.TryStart())
         {
             InitializePlayer();
-            await LoadClipsAsync(_rootSource());
+            await Library.ReloadAsync();
         }
         else
         {
@@ -296,170 +230,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void Shutdown()
     {
-        _filterDebounceTimer.Stop();
+        Library.Shutdown();
         Playback.Shutdown();
     }
 
     public void InitializePlayer() => Playback.InitializePlayer();
-
-    public async Task LoadClipsAsync(IEnumerable<string> roots, TimeSpan minimumLoadingDuration = default)
-    {
-        Error.Clear();
-        _allClips.Clear();
-        SelectedClip = null;
-        IsLoadingClips = true;
-
-        // Clear the list right away so a (re)scan visibly empties it and shows the loading bar before refilling.
-        OnPropertyChanged(nameof(FilteredClips));
-        OnPropertyChanged(nameof(ClipCount));
-        RefreshClipState();
-
-        var stopwatch = Stopwatch.StartNew();
-
-        try
-        {
-            // Scan the disk off the UI thread; the continuation resumes on it via the WPF SynchronizationContext, so all view-model state below is mutated on the UI thread.
-            var result = await Task.Run(() => ScanRoots(roots));
-
-            if (!result.HadRoots)
-            {
-                Error.Show(
-                    "No dashcam footage yet",
-                    "Point Sentry Deck at your TeslaCam folder to get started. Recorded USB drives are found automatically.",
-                    canDismiss: true,
-                    isEmptyState: true);
-            }
-            else
-            {
-                _allClips.AddRange(result.Clips);
-                foreach (var error in result.Errors)
-                {
-                    Error.Show(error.Title, error.Details);
-                }
-            }
-
-            Playback.SetPlaylist(_allClips);
-
-            // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh (clear -> loading -> refill) instead of an imperceptible flicker.
-            var remaining = minimumLoadingDuration - stopwatch.Elapsed;
-            if (remaining > TimeSpan.Zero)
-            {
-                await Task.Delay(remaining);
-            }
-        }
-        finally
-        {
-            IsLoadingClips = false;
-            OnPropertyChanged(nameof(FilteredClips));
-            OnPropertyChanged(nameof(ClipCount));
-            RefreshClipState();
-        }
-    }
-
-    private ScanResult ScanRoots(IEnumerable<string> roots)
-    {
-        var rootList = roots?.Where(root => !string.IsNullOrWhiteSpace(root)).ToList() ?? [];
-        if (rootList.Count == 0)
-        {
-            Log.Information("No dashcam roots found");
-            return new ScanResult([], [], HadRoots: false);
-        }
-
-        Log.Information("Loading dashcam clips. RootCount={RootCount}; Roots={Roots}", rootList.Count, rootList);
-        var totalStopwatch = Stopwatch.StartNew();
-        var clips = new List<CamClip>();
-        var errors = new List<ClipLoadError>();
-
-        foreach (var root in rootList)
-        {
-            var rootStopwatch = Stopwatch.StartNew();
-            Log.Debug("Scanning dashcam root. Root={Root}", root);
-
-            try
-            {
-                var rootClips = _clipLoader(root);
-                clips.AddRange(rootClips);
-                Log.Information(
-                    "Scanned dashcam root. Root={Root}; ClipCount={ClipCount}; ElapsedMs={ElapsedMs}",
-                    root,
-                    rootClips.Count,
-                    rootStopwatch.ElapsedMilliseconds);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                Log.Error(ex, "Access denied while loading dashcam root. Root={Root}", root);
-                errors.Add(new ClipLoadError("Access Denied", $"Cannot access folder: {root}\n\nCheck that you have permission to read this location."));
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to load dashcam root. Root={Root}", root);
-                errors.Add(new ClipLoadError("Error Loading Clips", $"Failed to load clips from:\n{root}\n\nError: {ex.Message}"));
-            }
-        }
-
-        Log.Information(
-            "Finished loading dashcam clips. ClipCount={ClipCount}; RootCount={RootCount}; FailedRootCount={FailedRootCount}; ElapsedMs={ElapsedMs}",
-            clips.Count,
-            rootList.Count,
-            errors.Count,
-            totalStopwatch.ElapsedMilliseconds);
-        return new ScanResult(clips, errors, HadRoots: true);
-    }
-
-    private sealed record ScanResult(IReadOnlyList<CamClip> Clips, IReadOnlyList<ClipLoadError> Errors, bool HadRoots);
-
-    private sealed record ClipLoadError(string Title, string Details);
-
-    private void RefreshClipState()
-    {
-        // FilteredClips is intentionally NOT raised here: this runs on every clip change, and re-notifying the unchanged list rebuilds the ListBox and retriggers its fade (flicker).
-        // The list is notified explicitly only when it actually changes (load + FilterText).
-        OnPropertyChanged(nameof(HasNoClipSelected));
-        OnPropertyChanged(nameof(ShowStatusOverlay));
-        OnPropertyChanged(nameof(ShowVideoHosts));
-    }
-
-    // Gated like Refresh: LoadClipsAsync has no re-entrancy protection, so picking a folder while a scan is still running would interleave two loads and merge both roots into one clip list.
-    [RelayCommand(CanExecute = nameof(CanRefreshClips))]
-    private async Task OpenFolderAsync()
-    {
-        Log.Debug("Opening folder picker");
-
-        var dialog = new OpenFolderDialog
-        {
-            Multiselect = true,
-            Title = "Select a folder containing Tesla dashcam footage (TeslaCam folder)",
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            var folders = dialog.FolderNames;
-            Log.Information(
-                "User selected dashcam folders. FolderCount={FolderCount}; Folders={Folders}",
-                folders.Length,
-                folders);
-
-            await Playback.StopPlayerAsync();
-
-            _rootSource = () => folders;
-            await LoadClipsAsync(folders);
-        }
-        else
-        {
-            Log.Debug("Folder picker canceled");
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanRefreshClips))]
-    private async Task RefreshClipsAsync()
-    {
-        Log.Debug("Refreshing clips");
-
-        await Playback.StopPlayerAsync();
-        await LoadClipsAsync(_rootSource(), TimeSpan.FromMilliseconds(400));
-    }
-
-    private bool CanRefreshClips => !IsLoadingClips;
 
     /// <summary>
     /// Marks the selection start at the current playhead.
@@ -684,25 +459,6 @@ public partial class MainWindowViewModel : ObservableObject
     internal Action<string> RevealInExplorer { get; set; } = path =>
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
 
-    /// <summary>
-    /// Asks the user to confirm sending a clip to the Recycle Bin.
-    /// Returns true to proceed.
-    /// Overridable for tests; defaults to a yes/no message box.
-    /// </summary>
-    internal Func<CamClip, bool> ConfirmDeleteClip { get; set; } = clip =>
-        MessageBox.Show(
-            $"Move this clip to the Recycle Bin?\n\n{clip.Name}\n{clip.FullPath}",
-            "Delete clip",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning) == MessageBoxResult.Yes;
-
-    /// <summary>
-    /// Sends a clip folder to the Windows Recycle Bin (recoverable).
-    /// Overridable for tests; defaults to the shell recycle operation, which surfaces its own error dialog if a file is in use.
-    /// </summary>
-    internal Action<string> RecycleClipFolder { get; set; } = path =>
-        FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-
     private static string FormatTimeSpanForFileName(TimeSpan ts) => FormatTimeSpan(ts).Replace(':', '.');
 
     private static string SanitizeFileName(string name)
@@ -728,7 +484,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (_flyleafRuntime.TryStart())
             {
                 InitializePlayer();
-                await LoadClipsAsync(_rootSource());
+                await Library.ReloadAsync();
             }
             else
             {
@@ -956,133 +712,6 @@ public partial class MainWindowViewModel : ObservableObject
         ShowAboutPage = !ShowAboutPage;
     }
 
-    [RelayCommand]
-    private void ClearFilter()
-    {
-        FilterText = string.Empty;
-    }
-
-    private static bool CanUseClip(CamClip clip)
-    {
-        return clip is not null;
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUseClip))]
-    private void OpenClipFolder(CamClip clip)
-    {
-        if (clip is null)
-        {
-            return;
-        }
-
-        if (!Directory.Exists(clip.FullPath))
-        {
-            Error.Show("Clip Folder Not Found", $"Could not find folder:\n{clip.FullPath}");
-            return;
-        }
-
-        Process.Start(new ProcessStartInfo(clip.FullPath)
-        {
-            UseShellExecute = true,
-        });
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUseClip))]
-    private void CopyClipPath(CamClip clip)
-    {
-        if (clip is not null)
-        {
-            Clipboard.SetText(clip.FullPath);
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUseClip))]
-    private void CopyClipName(CamClip clip)
-    {
-        if (clip is not null)
-        {
-            Clipboard.SetText(clip.Name);
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUseClip))]
-    private void CopyTimestamp(CamClip clip)
-    {
-        if (clip is not null)
-        {
-            // Invariant (24-hour, culture-stable) so the copied value matches the clip name and is paste-searchable, unlike the ambiguous AM/PM current-culture rendering.
-            Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.InvariantCulture));
-        }
-    }
-
-    /// <summary>
-    /// Sends the clip's folder to the Recycle Bin so the timeline can be tidied without leaving the app.
-    /// Confirms first, then, if the clip is the one currently open, stops playback so Flyleaf releases its file handles before the shell tries to recycle the (otherwise locked) folder.
-    /// </summary>
-    [RelayCommand(CanExecute = nameof(CanUseClip))]
-    private async Task DeleteClipAsync(CamClip clip)
-    {
-        if (clip is null || !ConfirmDeleteClip(clip))
-        {
-            return;
-        }
-
-        // Flyleaf keeps the current clip's camera files open; Windows can't recycle a folder whose files are still locked, so stop and close the players before deleting it.
-        var isCurrent = ReferenceEquals(SelectedClip, clip)
-            || ReferenceEquals(Playback.NowPlayingClip, clip)
-            || Playback.CurrentClip == clip;
-        if (isCurrent && Playback.HasPlayer)
-        {
-            await Playback.StopPlayerAsync();
-            Playback.SeekPosition = 0;
-        }
-
-        try
-        {
-            Log.Information("Deleting clip to Recycle Bin. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
-            await Task.Run(() => RecycleClipFolder(clip.FullPath));
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to delete clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
-            Error.Show("Delete Failed", $"Could not delete clip: {clip.Name}\n\nError: {ex.Message}");
-            return;
-        }
-
-        // Drop it from the sidebar list and keep the player's Next/Previous playlist in sync.
-        _allClips.Remove(clip);
-        Playback.RemoveFromPlaylist(clip);
-
-        if (ReferenceEquals(Playback.NowPlayingClip, clip))
-        {
-            Playback.NowPlayingClip = null;
-        }
-
-        if (ReferenceEquals(SelectedClip, clip))
-        {
-            SelectedClip = null;
-        }
-
-        OnPropertyChanged(nameof(FilteredClips));
-        OnPropertyChanged(nameof(ClipCount));
-        RefreshClipState();
-    }
-
-    [RelayCommand(CanExecute = nameof(CanShowOnMap))]
-    private void ShowOnMap(CamClip clip)
-    {
-        if (clip?.Event is null || !ClipDisplay.HasLocation(clip.Event))
-        {
-            return;
-        }
-
-        var lat = clip.Event.EstLat.ToString(CultureInfo.InvariantCulture);
-        var lon = clip.Event.EstLon.ToString(CultureInfo.InvariantCulture);
-        Process.Start(new ProcessStartInfo($"https://www.google.com/maps?q={lat},{lon}") { UseShellExecute = true });
-    }
-
-    private static bool CanShowOnMap(CamClip clip) => clip?.Event is not null && ClipDisplay.HasLocation(clip.Event);
-
     private void InvokeOnDispatcher(Action action)
     {
         if (_dispatcher.CheckAccess())
@@ -1095,7 +724,27 @@ public partial class MainWindowViewModel : ObservableObject
         _dispatcher.BeginInvoke(action);
     }
 
-    partial void OnSelectedClipChanged(CamClip value)
+    private void OnLibraryPropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(ClipLibraryViewModel.SelectedClip):
+                OnSelectedClipChanged(Library.SelectedClip);
+                OnPropertyChanged(nameof(HasNoClipSelected));
+                OnPropertyChanged(nameof(ShowStatusOverlay));
+                OnPropertyChanged(nameof(ShowVideoHosts));
+                break;
+
+            case nameof(ClipLibraryViewModel.IsLoadingClips):
+                OnPropertyChanged(nameof(IsLoading));
+                OnPropertyChanged(nameof(ShowStatusOverlay));
+                OnPropertyChanged(nameof(ShowVideoHosts));
+                OnPropertyChanged(nameof(HasNoClipSelected));
+                break;
+        }
+    }
+
+    private void OnSelectedClipChanged(CamClip value)
     {
         Cameras.ShowCamerasOf(value);
 

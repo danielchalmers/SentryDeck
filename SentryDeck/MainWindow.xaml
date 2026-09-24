@@ -217,19 +217,19 @@
                                     <Style TargetType="Border">
                                         <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="sentry">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
                                             </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="honk">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
                                             </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="alert">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                             </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="saved">
                                                 <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                             </DataTrigger>
@@ -480,7 +480,7 @@
 
         <!--  Day-grouped clip view; grouping lives in XAML via the shared VmProxy above.  -->
         <CollectionViewSource x:Key="GroupedClips"
-                              Source="{Binding Data.FilteredClips, Source={StaticResource VmProxy}}">
+                              Source="{Binding Data.Library.FilteredClips, Source={StaticResource VmProxy}}">
             <CollectionViewSource.GroupDescriptions>
                 <PropertyGroupDescription Converter="{local:DateOnlyConverter}"
                                           PropertyName="Timestamp" />
@@ -490,14 +490,14 @@
         <!--  Shared clip context menu (Tag on the item = the view-model).  -->
         <ContextMenu x:Key="ClipContextMenu">
             <MenuItem Header="Open clip folder"
-                      Command="{Binding PlacementTarget.Tag.OpenClipFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Library.OpenClipFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xE8B7;" Style="{StaticResource AppGlyph}" />
                 </MenuItem.Icon>
             </MenuItem>
             <MenuItem Header="Show on map"
-                      Command="{Binding PlacementTarget.Tag.ShowOnMapCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Library.ShowOnMapCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xECAF;" Style="{StaticResource AppGlyph}" />
@@ -513,21 +513,21 @@
             </MenuItem>
             <Separator />
             <MenuItem Header="Copy clip name"
-                      Command="{Binding PlacementTarget.Tag.CopyClipNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Library.CopyClipNameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xE8C8;" Style="{StaticResource AppGlyph}" />
                 </MenuItem.Icon>
             </MenuItem>
             <MenuItem Header="Copy timestamp"
-                      Command="{Binding PlacementTarget.Tag.CopyTimestampCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Library.CopyTimestampCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xE8C8;" Style="{StaticResource AppGlyph}" />
                 </MenuItem.Icon>
             </MenuItem>
             <MenuItem Header="Copy folder path"
-                      Command="{Binding PlacementTarget.Tag.CopyClipPathCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Library.CopyClipPathCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xE8C8;" Style="{StaticResource AppGlyph}" />
@@ -536,7 +536,7 @@
             <Separator />
             <!--  Moves the whole clip folder to the Windows Recycle Bin (recoverable) so the timeline can be tidied in place.  -->
             <MenuItem Header="Delete to Recycle Bin"
-                      Command="{Binding PlacementTarget.Tag.DeleteClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      Command="{Binding PlacementTarget.Tag.Library.DeleteClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
                     <TextBlock Text="&#xE74D;" Style="{StaticResource AppGlyph}" />
@@ -607,7 +607,7 @@
 
                         <Grid Grid.Column="1">
                             <TextBox x:Name="SearchBox"
-                                     Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                                     Text="{Binding Library.FilterText, UpdateSourceTrigger=PropertyChanged}"
                                      Padding="10,8,8,8"
                                      VerticalContentAlignment="Center"
                                      FontSize="14"
@@ -625,7 +625,7 @@
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Visibility" Value="Hidden" />
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding FilterText}"
+                                            <DataTrigger Binding="{Binding Library.FilterText}"
                                                          Value="">
                                                 <Setter Property="Visibility" Value="Visible" />
                                             </DataTrigger>
@@ -649,7 +649,7 @@
                          PreviewMouseLeftButtonUp="ClipListBox_PreviewMouseLeftButtonUp"
                          PreviewMouseRightButtonDown="ClipListBox_PreviewMouseRightButtonDown"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         SelectedItem="{Binding SelectedClip, Mode=TwoWay}"
+                         SelectedItem="{Binding Library.SelectedClip, Mode=TwoWay}"
                          VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                          VirtualizingPanel.VirtualizationMode="Recycling">
                     <ListBox.GroupStyle>
@@ -862,9 +862,9 @@
                             <Style.Triggers>
                                 <MultiDataTrigger>
                                     <MultiDataTrigger.Conditions>
-                                        <Condition Binding="{Binding ClipCount}" Value="0" />
-                                        <Condition Binding="{Binding IsLoadingClips}" Value="False" />
-                                        <Condition Binding="{Binding HasFilterText}" Value="True" />
+                                        <Condition Binding="{Binding Library.ClipCount}" Value="0" />
+                                        <Condition Binding="{Binding Library.IsLoadingClips}" Value="False" />
+                                        <Condition Binding="{Binding Library.HasFilterText}" Value="True" />
                                     </MultiDataTrigger.Conditions>
                                     <Setter Property="Visibility" Value="Visible" />
                                 </MultiDataTrigger>
@@ -893,7 +893,7 @@
                              Background="Transparent"
                              BorderThickness="0"
                              IsIndeterminate="True"
-                             Visibility="{Binding IsLoadingClips, Converter={local:BoolToVisibilityConverter}}" />
+                             Visibility="{Binding Library.IsLoadingClips, Converter={local:BoolToVisibilityConverter}}" />
 
                 <!--  Utility action bar (single row, divided from the list)  -->
                 <Border Grid.Row="2"
@@ -910,7 +910,7 @@
                         </Grid.ColumnDefinitions>
 
                         <Button Grid.Column="0"
-                                Command="{Binding OpenFolderCommand}"
+                                Command="{Binding Library.OpenFolderCommand}"
                                 HorizontalContentAlignment="Left"
                                 AutomationProperties.Name="Select folder"
                                 Style="{StaticResource PressScaleButton}">
@@ -924,7 +924,7 @@
                         </Button>
 
                         <Button Grid.Column="2"
-                                Command="{Binding RefreshClipsCommand}"
+                                Command="{Binding Library.RefreshClipsCommand}"
                                 AutomationProperties.Name="Rescan folder"
                                 Style="{StaticResource SubtleIconButton}"
                                 ToolTip="Rescan the current folder for clips">
@@ -1306,7 +1306,7 @@
                                            TextAlignment="Center"
                                            TextWrapping="Wrap" />
                                 <Button Content="Select folder"
-                                        Command="{Binding OpenFolderCommand}"
+                                        Command="{Binding Library.OpenFolderCommand}"
                                         Margin="0,20,0,0"
                                         Padding="24,8"
                                         HorizontalAlignment="Center"

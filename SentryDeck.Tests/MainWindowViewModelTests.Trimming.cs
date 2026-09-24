@@ -84,7 +84,7 @@ public sealed partial class MainWindowViewModelTests
         vm.Playback.SeekPosition = 0.2;
         vm.MarkSelectionStartCommand.Execute(null);
 
-        vm.SelectedClip = TestClips.Create(1)[0];
+        vm.Library.SelectedClip = TestClips.Create(1)[0];
 
         vm.HasAnySelectionMark.ShouldBeFalse();
     }
@@ -172,7 +172,7 @@ public sealed partial class MainWindowViewModelTests
         controller.IsMediaOpen = true;
 
         vm.ToggleTrimmingCommand.Execute(null);
-        vm.SelectedClip = TestClips.Create(1)[0];
+        vm.Library.SelectedClip = TestClips.Create(1)[0];
 
         vm.IsTrimming.ShouldBeFalse();
     }
