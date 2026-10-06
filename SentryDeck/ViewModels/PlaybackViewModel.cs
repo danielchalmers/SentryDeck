@@ -106,7 +106,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
     public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
 
-    public bool CanStop => IsPlaying || IsLoading;
+    // A paused or finished clip still holds its files open, so Stop must stay available to let go of them without resuming first.
+    public bool CanStop => IsPlaying || IsLoading || _playerController?.IsMediaOpen == true;
 
     public bool CanGoNext => _playerController?.CanGoNext == true;
 
@@ -720,6 +721,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 break;
 
             case nameof(VideoPlayerController.IsMediaOpen):
+                OnPropertyChanged(nameof(CanStop));
                 NotifyCanSeekChanged();
                 break;
         }

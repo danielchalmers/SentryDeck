@@ -312,6 +312,38 @@ public sealed partial class MainWindowViewModelTests
         vm.Playback.CanSeek.ShouldBeTrue();
     }
 
+    [Fact]
+    public void StopButton_WhilePaused_StaysEnabledUntilTheClipIsStopped()
+    {
+        // A paused clip still holds its files open, and Stop is how the user lets go of them without playing on first.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+        vm.Playback.IsPlaying.ShouldBeFalse();
+        vm.Playback.CanStop.ShouldBeTrue();
+
+        var changed = new List<string>();
+        vm.Playback.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        // Nothing else the button watches changes when a paused clip stops, so it only greys out if this is announced.
+        changed.ShouldContain(nameof(PlaybackViewModel.CanStop));
+        vm.Playback.CanStop.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void StopButton_AfterTheClipPlaysToTheEnd_StaysEnabled()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+
+        front.RaiseEnded(TimeSpan.FromSeconds(60));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Playback.IsPlaying.ShouldBeFalse();
+        vm.Playback.CanStop.ShouldBeTrue();
+    }
+
     // Selects the clip through the list and waits until the player has it open and playing.
     // The view-model's handlers run inline on whichever thread the controller raises them, because the open finishes on a thread-pool continuation.
     private MainWindowViewModel CreateViewModelPlayingClip(CamClip clip, out VideoPlayerController controller, out FakeCameraPlayer front)
