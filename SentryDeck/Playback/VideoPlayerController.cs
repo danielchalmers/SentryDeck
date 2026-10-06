@@ -70,6 +70,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private Session _session;
     private QueuedSeek _queuedSeek;
+    private QueuedSeek _runningSeek;
     private bool _isScrubbing;
     private bool _resumeAfterScrub;
     private bool _isDisposed;
@@ -238,13 +239,19 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     public Task SeekAsync(TimeSpan position) => QueueSeek(position, accurate: true);
 
     /// <summary>
-    /// Seeks relative to where playback is headed: a seek still waiting to run counts as the starting point, so holding an arrow key moves five seconds per press instead of collapsing onto the stale on-screen position.
+    /// Seeks relative to where playback is headed: a seek still waiting to run or still landing counts as the starting point, so holding an arrow key moves five seconds per press instead of collapsing onto the stale on-screen position.
     /// </summary>
     public Task SeekByAsync(TimeSpan offset)
     {
-        var origin = _queuedSeek is { } queued && ReferenceEquals(queued.Session, _session) ? queued.Target : Position;
+        var origin = PendingSeekOf(_queuedSeek) ?? PendingSeekOf(_runningSeek) ?? Position;
         return QueueSeek(Clamp(origin + offset, TimeSpan.Zero, Duration), accurate: true);
     }
+
+    /// <summary>
+    /// Where <paramref name="seek"/> is headed, when it belongs to the open clip.
+    /// </summary>
+    private TimeSpan? PendingSeekOf(QueuedSeek seek) =>
+        seek is not null && ReferenceEquals(seek.Session, _session) ? seek.Target : null;
 
     /// <summary>
     /// Like <see cref="SeekAsync"/> but jumps to the nearest keyframe, which is far cheaper.
@@ -626,7 +633,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var seek = new QueuedSeek(_session, target, accurate);
         _queuedSeek = seek;
-        seek.Completion = RunOperationAsync(_session, "Seek error", _ =>
+        seek.Completion = RunOperationAsync(_session, "Seek error", async _ =>
         {
             // From here on a new request queues a fresh seek instead of retargeting this one.
             if (ReferenceEquals(_queuedSeek, seek))
@@ -634,7 +641,16 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 _queuedSeek = null;
             }
 
-            return RepositionAsync(seek.Target, seek.Accurate);
+            // Relative seeks start from this target until it lands, because Position only moves once every camera has landed and a held key repeats sooner than that.
+            _runningSeek = seek;
+            try
+            {
+                await RepositionAsync(seek.Target, seek.Accurate);
+            }
+            finally
+            {
+                _runningSeek = null;
+            }
         });
 
         if (ReferenceEquals(_queuedSeek, seek) && seek.Completion.IsCompleted)

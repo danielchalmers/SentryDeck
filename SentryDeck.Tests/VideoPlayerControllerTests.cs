@@ -660,6 +660,43 @@ public sealed partial class VideoPlayerControllerTests
         rig.Front.Seeks.Count.ShouldBe(2);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SeekByAsync_RepeatsArrivingWhileEachSeekRuns_MoveFiveSecondsPerPress(bool playing)
+    {
+        // A held arrow key repeats faster than a seek lands, so each repeat arrives while the seek before it is still running.
+        // The readout only moves once every camera has landed, so measuring those repeats from it lost about a third of a held key's steps.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        await rig.Controller.SeekAsync(TimeSpan.FromSeconds(20));
+        if (playing)
+        {
+            await rig.Controller.PlayAsync();
+        }
+
+        const int presses = 6;
+        var pressed = 1;
+        var lastPress = new TaskCompletionSource<Task>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Front.SeekCallback = () =>
+        {
+            var press = rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5));
+            if (++pressed == presses)
+            {
+                rig.Front.SeekCallback = null;
+                lastPress.SetResult(press);
+            }
+        };
+
+        await rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5));
+        await await lastPress.Task;
+
+        rig.Front.Seeks.Select(seek => seek.Position.TotalSeconds).ShouldBe([20, 25, 30, 35, 40, 45, 50]);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(50));
+        rig.Controller.IsPlaying.ShouldBe(playing);
+    }
+
     [Fact]
     public async Task SeekByAsync_PastEitherEnd_ClampsToTheClip()
     {
