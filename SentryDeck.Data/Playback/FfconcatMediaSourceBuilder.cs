@@ -125,11 +125,6 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
         return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp);
     }
 
-    /// <summary>
-    /// Tesla writes chunks of about a minute; a header claiming far more is corrupt, and trusting it would stretch the clip's timeline by hours of footage that isn't there.
-    /// </summary>
-    private static readonly TimeSpan MaxPlausibleChunkDuration = TimeSpan.FromMinutes(10);
-
     private static TimeSpan? ProbeFrontChunkDuration(CamChunk chunk)
     {
         if (!chunk.Files.TryGetValue(CameraNames.Front, out var frontFile))
@@ -140,8 +135,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
             return null;
         }
 
-        var probed = Mp4DurationReader.TryReadDuration(frontFile.FullPath);
-        if (probed is { } duration && duration > TimeSpan.Zero && duration <= MaxPlausibleChunkDuration)
+        if (Mp4DurationReader.TryReadChunkDuration(frontFile.FullPath) is { } duration)
         {
             return duration;
         }
@@ -155,7 +149,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
     private static bool IsProbeable(string path)
     {
-        return Mp4DurationReader.TryReadDuration(path) is { } duration && duration > TimeSpan.Zero && duration <= MaxPlausibleChunkDuration;
+        return Mp4DurationReader.TryReadChunkDuration(path) is not null;
     }
 
     private static void WritePlaylist(string path, IReadOnlyList<(string FilePath, TimeSpan Duration)> entries)

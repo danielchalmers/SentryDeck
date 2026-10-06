@@ -364,6 +364,22 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
         frontContent.ShouldContain(clipFiles.GetFfconcatPath(2, CameraNames.Front));
     }
 
+    [Fact]
+    public void Build_TruncatedFrontWithAReadableNumberedCopy_PlaysTheCopy()
+    {
+        // A single-chunk clip used to fail with "No front camera footage found." while an intact front-2.mp4 sat beside the damaged original.
+        using var temp = new TempDirectory();
+        temp.Write("2025-04-11_14-34-07-front.mp4", TestMp4.BuildTruncated(keepBytes: 30));
+        var copyPath = temp.Write("2025-04-11_14-34-07-front-2.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+        var clip = CamClip.Map(temp.Path);
+
+        var mediaSource = Build(clip);
+
+        mediaSource.AutoExcludedChunkIndices.ShouldBeEmpty();
+        mediaSource.Duration.ShouldBe(TimeSpan.FromSeconds(60));
+        File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.Front]).ShouldContain(FfconcatMediaSourceBuilder.EscapeConcatPath(copyPath));
+    }
+
     // --- Chunks whose probed durations differ from their nominal one-minute spacing ---
 
     [Fact]

@@ -52,4 +52,45 @@ public sealed class CamChunkTests
         chunks.ShouldHaveSingleItem();
         chunks[0].Files.Keys.ShouldContain("front_bumper");
     }
+
+    [Theory]
+    [InlineData(CameraNames.Front)]
+    [InlineData(CameraNames.Back)]
+    public void Map_TruncatedOriginalWithAReadableCopy_UsesTheCopy(string camera)
+    {
+        // A copied or merged drive can hold a truncated original beside an intact "-2" copy; keeping the original by name dropped that minute at play time.
+        using var temp = new TempDirectory();
+        temp.Write("2025-01-01_12-00-00-front.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+        temp.Write($"2025-01-01_12-00-00-{camera}.mp4", TestMp4.BuildTruncated(keepBytes: 30));
+        temp.Write($"2025-01-01_12-00-00-{camera}-2.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        chunk.Files[camera].CopyNumber.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Map_OriginalClaimingHoursOfFootageWithAReadableCopy_UsesTheCopy()
+    {
+        // The choice must agree with what the playlist builder accepts, or the original would win here and then be dropped as implausible.
+        using var temp = new TempDirectory();
+        temp.Write("2025-01-01_12-00-00-front.mp4", TestMp4.Build(version: 0, timescale: 1, duration: uint.MaxValue));
+        temp.Write("2025-01-01_12-00-00-front-2.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        chunk.Files[CameraNames.Front].CopyNumber.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Map_ReadableOriginalAndReadableCopy_PrefersTheOriginal()
+    {
+        using var temp = new TempDirectory();
+        temp.Write("2025-01-01_12-00-00-front-2.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+        temp.Write("2025-01-01_12-00-00-front.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+
+        var chunk = CamChunk.Map(temp.Path).ShouldHaveSingleItem();
+
+        chunk.Files[CameraNames.Front].CopyNumber.ShouldBe(0);
+    }
 }
