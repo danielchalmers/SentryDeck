@@ -1726,11 +1726,22 @@
                                 ValueChanged="SeekSlider_ValueChanged"
                                 Value="{Binding Playback.SeekPosition, Mode=TwoWay}" />
 
-                        <!--  Time readout  -->
+                        <!--
+                            Time readout.
+                            Its minimum width fits the longest time the open clip can show, so the seek bar and its markers don't shift each time the position gains a digit (crossing 10:00), while a clip under 10 minutes doesn't give up seek bar width to digits it never shows.
+                            Right-aligned, so the duration stays put and only the position grows.
+                        -->
                         <TextBlock Grid.Column="3"
                                    VerticalAlignment="Center"
                                    FontFamily="Consolas"
-                                   FontSize="13">
+                                   FontSize="13"
+                                   TextAlignment="Right">
+                            <TextBlock.MinWidth>
+                                <MultiBinding Converter="{local:TimeReadoutWidthConverter}">
+                                    <Binding Path="Playback.DurationText" />
+                                    <Binding RelativeSource="{RelativeSource Self}" />
+                                </MultiBinding>
+                            </TextBlock.MinWidth>
                             <Run Text="{Binding Playback.PositionText, Mode=OneWay}"
                                  Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             <Run Text=" / "
