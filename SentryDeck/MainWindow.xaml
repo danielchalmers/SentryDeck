@@ -41,7 +41,11 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
-                        <Grid VerticalAlignment="Center">
+                        <!--
+                            The transparent background makes the whole bar clickable, since the Track's page buttons below let the mouse through to the event marker.
+                        -->
+                        <Grid VerticalAlignment="Center"
+                              Background="Transparent">
                             <Border x:Name="SeekRail"
                                     Height="4"
                                     VerticalAlignment="Center"
@@ -203,39 +207,21 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <!--  Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).  -->
-                            <Border Width="3"
+                            <!--
+                                Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).
+                                The tick sits in a wider transparent border so the tooltip doesn't need pixel-exact aim.
+                                That border is shifted left by its extra half width, so the tick stays exactly where the offset puts it.
+                            -->
+                            <Border Width="11"
                                     Height="16"
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
-                                    CornerRadius="1.5"
-                                    IsHitTestVisible="False"
+                                    Background="Transparent"
                                     ToolTip="{Binding Data.Playback.EventMarkerTooltip, Source={StaticResource VmProxy}}"
                                     Visibility="{Binding Data.Playback.HasEventMarker, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
-                                <Border.Style>
-                                    <!--  Reason color via DynamicResource (keyed by ReasonKey) so the marker re-colors on a live OS theme switch.  -->
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="sentry">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="honk">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="alert">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="saved">
-                                                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
+                                <Border.RenderTransform>
+                                    <TranslateTransform X="-4" />
+                                </Border.RenderTransform>
                                 <Border.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
                                         <Binding Path="Data.Playback.EventMarkerPosition"
@@ -244,13 +230,45 @@
                                                  Path="ActualWidth" />
                                     </MultiBinding>
                                 </Border.Margin>
+                                <Border Width="3"
+                                        CornerRadius="1.5">
+                                    <Border.Style>
+                                        <!--  Reason color via DynamicResource (keyed by ReasonKey) so the marker re-colors on a live OS theme switch.  -->
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="sentry">
+                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="honk">
+                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="alert">
+                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="saved">
+                                                    <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                </Border>
                             </Border>
 
+                            <!--
+                                The page buttons never act here: IsMoveToPointEnabled turns every press off the thumb into a jump to that point before they see it.
+                                They let the mouse through so it can reach the event marker's tooltip underneath them.
+                            -->
                             <Track x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="Slider.DecreaseLarge"
                                                   Background="Transparent"
-                                                  Focusable="False">
+                                                  Focusable="False"
+                                                  IsHitTestVisible="False">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
                                                 <Border Background="Transparent" />
@@ -261,7 +279,8 @@
                                 <Track.IncreaseRepeatButton>
                                     <RepeatButton Command="Slider.IncreaseLarge"
                                                   Background="Transparent"
-                                                  Focusable="False">
+                                                  Focusable="False"
+                                                  IsHitTestVisible="False">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
                                                 <Border Background="Transparent" />
