@@ -348,6 +348,51 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task PauseAsync_AfterFastPlayback_LinesEveryCameraUpOnTheFront()
+    {
+        // At 16x each camera drops the frames it can't decode in time and restarts its own clock, so the cameras drift apart while playing.
+        // Each one's reported time also trails the frame it shows, so even a camera that looks aligned (right) and the front itself have to be reseeked for the still frame to match the readout.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        rig.Controller.PlaybackSpeed = 16;
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        rig.Back.RaisePositionChanged(TimeSpan.FromSeconds(29.2));
+        rig.Left.RaisePositionChanged(TimeSpan.FromSeconds(31.4));
+        rig.Right.RaisePositionChanged(TimeSpan.FromSeconds(30.01));
+
+        await rig.Controller.PauseAsync();
+
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(2).ShouldBe(["pause", "seek:30"], camera);
+            player.IsPlaying.ShouldBeFalse(camera);
+        }
+
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(30));
+        rig.Controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task PauseAsync_AtNormalSpeed_RealignsOnlyACameraThatIsOutOfStep()
+    {
+        // At real time each camera's time matches its picture, so only one that has really drifted (here, left behind by an earlier fast stretch) moves, and the front stays on the frame the user paused on.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        rig.Back.RaisePositionChanged(TimeSpan.FromSeconds(28.9));
+        rig.Left.RaisePositionChanged(TimeSpan.FromSeconds(30.03));
+        rig.Right.RaisePositionChanged(TimeSpan.FromSeconds(29.98));
+
+        await rig.Controller.PauseAsync();
+
+        rig.Back.Seeks.ShouldHaveSingleItem().Position.ShouldBe(TimeSpan.FromSeconds(30));
+        rig.Front.Seeks.ShouldBeEmpty();
+        rig.Left.Seeks.ShouldBeEmpty();
+        rig.Right.Seeks.ShouldBeEmpty();
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
     public async Task PlayAsync_OnPausedClip_ResumesEveryCameraWithoutReopening()
     {
         using var rig = new Rig();
@@ -711,6 +756,28 @@ public sealed partial class VideoPlayerControllerTests
         rig.Back.Seeks.ShouldHaveSingleItem().Position.ShouldBe(anchor);
         rig.Left.Seeks.ShouldBeEmpty();
         rig.Right.Seeks.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_WhilePlayingFast_LinesTheCamerasUpBeforeStepping()
+    {
+        // Stepping on from wherever 16x left each camera kept the side cameras several frames off the front, and the next step didn't fix it.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        rig.Controller.PlaybackSpeed = 16;
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        rig.Back.RaisePositionChanged(TimeSpan.FromSeconds(30.2));
+
+        await rig.Controller.StepFrameAsync(forward: true);
+
+        var stepped = TimeSpan.FromSeconds(30) + FakeCameraPlayer.FrameDuration;
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(3).ShouldBe(["pause", "seek:30", "step:forward"], camera);
+            player.Position.ShouldBe(stepped, camera);
+        }
+
+        rig.Controller.Position.ShouldBe(stepped);
     }
 
     [Fact]

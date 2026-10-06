@@ -13,6 +13,7 @@ namespace SentryDeck;
 /// Anything that talks to the players runs as a serialized operation, so a seek never interleaves with a clip change or a recovery, and events that arrive mid-operation queue behind it.
 /// Every opened clip is a <see cref="Session"/>; replacing or stopping it cancels its token, and queued work for a session that is no longer current does nothing.
 /// Cameras stay in lockstep because every reposition pauses all players, seeks them all to the same instant, and only then resumes them together.
+/// Each player still runs its own clock while playing, so fast playback can pull them apart; they are lined up again whenever playback pauses (see <see cref="LineUpCamerasAsync"/>).
 /// </remarks>
 public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
@@ -38,10 +39,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private static readonly TimeSpan EventLeadIn = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// How far a paused side camera may sit from the front before resuming realigns it.
+    /// How far a paused side camera may sit from the front before pausing or resuming realigns it.
     /// Pausing stops each camera's play thread independently, so they park a frame or two apart; anything beyond that means a camera fell behind and would stay behind.
     /// </summary>
-    private static readonly TimeSpan ResumeAlignmentTolerance = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan PausedAlignmentTolerance = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// How far a side camera may sit from the front after a forward frame step before it is reseeked onto the front's frame.
@@ -199,9 +200,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     public Task PauseAsync() => RunOperationAsync(_session, "Playback error", async _ =>
     {
+        // A scrub already holds the players paused, and its release seek lines them up.
+        var wasPlaying = IsPlaying && !_isScrubbing;
         _resumeAfterScrub = false;
         await ForEachOpenPlayerAsync(player => player.PauseAsync());
         IsPlaying = false;
+
+        if (wasPlaying)
+        {
+            await LineUpPausedCamerasAsync();
+        }
+
         Log.Debug("Paused playback. ClipName={ClipName}; Position={Position}", CurrentClip?.Name, Position);
     });
 
@@ -291,6 +300,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             await ForEachOpenPlayerAsync(player => player.PauseAsync());
             IsPlaying = false;
+
+            // Stepping on from wherever fast playback left each camera would keep them apart, so they start the step from one frame.
+            await LineUpPausedCamerasAsync();
         }
 
         _resumeAfterScrub = false;
@@ -667,7 +679,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     {
         var anchor = _primaryPlayer.Position;
         var drifted = SecondaryPlayers()
-            .Where(player => player.IsEnded || !IsAlignedWith(player, anchor, ResumeAlignmentTolerance))
+            .Where(player => player.IsEnded || !IsAlignedWith(player, anchor, PausedAlignmentTolerance))
             .ToList();
 
         if (drifted.Count == 0)
@@ -677,6 +689,50 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         Log.Debug("Realigning side cameras before resuming. Count={Count}; Anchor={Anchor}", drifted.Count, anchor);
         return Task.WhenAll(drifted.Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
+    }
+
+    /// <summary>
+    /// Lines the just-paused cameras up on the front's moment, and moves the readout onto the frame the front then shows.
+    /// </summary>
+    private async Task LineUpPausedCamerasAsync()
+    {
+        // An ended front is parked by the end handler queued behind this.
+        if (!IsSessionOpen || !_primaryPlayer.IsOpen || _primaryPlayer.IsEnded)
+            return;
+
+        var anchor = Clamp(_primaryPlayer.Position, TimeSpan.Zero, SeekableEnd);
+        if (await LineUpCamerasAsync(anchor))
+        {
+            Position = anchor;
+        }
+    }
+
+    /// <summary>
+    /// Once playback has paused, seeks every camera that isn't showing the moment at <paramref name="anchor"/> onto it (or onto its own last frame when its footage ends sooner), so the still frame the user studies shows every camera at the same moment as the time readout.
+    /// </summary>
+    /// <remarks>
+    /// Every camera runs its own clock.
+    /// Faster than real time, a camera that can't decode every frame drops the late ones and restarts its clock wherever its decoder caught up, so at 16x the cameras drift up to a second and a half apart while playing.
+    /// A camera's reported time also trails the frame it shows by up to a third of a second then, because the next frame is drawn before its time is published.
+    /// So after fast playback no camera's position can be trusted, and every camera, the front included, is reseeked.
+    /// At real time the positions are accurate, and only a camera that is actually out of step moves.
+    /// </remarks>
+    /// <returns>Whether the front was reseeked, in which case the readout has to follow it.</returns>
+    private async Task<bool> LineUpCamerasAsync(TimeSpan anchor)
+    {
+        var positionsAreTrustworthy = PlaybackSpeed <= 1.0;
+        var outOfStep = _players.Values
+            .Where(player => player.IsOpen && !(positionsAreTrustworthy && IsAlignedWith(player, anchor, PausedAlignmentTolerance)))
+            .ToList();
+
+        if (outOfStep.Count == 0)
+        {
+            return false;
+        }
+
+        Log.Debug("Lining the cameras up after pausing. Count={Count}; Anchor={Anchor}; PlaybackSpeed={PlaybackSpeed}", outOfStep.Count, anchor, PlaybackSpeed);
+        await Task.WhenAll(outOfStep.Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
+        return outOfStep.Contains(_primaryPlayer);
     }
 
     /// <summary>
