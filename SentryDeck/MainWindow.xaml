@@ -142,9 +142,9 @@
                                 fraction × rail width; the ItemsControl matches the rail's width,
                                 so ticks stay aligned on resize. Empty list draws nothing.
                             -->
-                            <ItemsControl Focusable="False"
-                                          IsHitTestVisible="False"
-                                          ItemsSource="{Binding Data.Playback.ChunkBoundaries, Source={StaticResource VmProxy}}">
+                            <local:DecorativeItemsControl Focusable="False"
+                                                          IsHitTestVisible="False"
+                                                          ItemsSource="{Binding Data.Playback.ChunkBoundaries, Source={StaticResource VmProxy}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <Grid />
@@ -168,7 +168,7 @@
                                         </Rectangle>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            </local:DecorativeItemsControl>
 
                             <!--
                                 Gap ticks: where the clip's media time skips over a wall-clock gap (deleted/corrupt/excluded chunks, or a Sentry idle period).
@@ -176,8 +176,8 @@
                                 Like the event marker, it sits in a wider transparent border, shifted back by its extra half width, so its tooltip is easy to reach.
                                 Empty list (no gaps, or media not opened yet) draws nothing.
                             -->
-                            <ItemsControl Focusable="False"
-                                          ItemsSource="{Binding Data.Playback.GapPositions, Source={StaticResource VmProxy}}">
+                            <local:DecorativeItemsControl Focusable="False"
+                                                          ItemsSource="{Binding Data.Playback.GapPositions, Source={StaticResource VmProxy}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <Grid />
@@ -209,7 +209,7 @@
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            </local:DecorativeItemsControl>
 
                             <!--
                                 Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).
@@ -1167,7 +1167,8 @@
                                 CornerRadius="8">
                             <!--  One tile per view the current clip offers: the grid plus each recorded camera (four on HW3, six on HW4/AI4).
                                   Camera tiles carry a preview slot that registers itself with the code-behind (CameraTileSlot_Loaded), which re-parents each camera's Flyleaf host into it.  -->
-                            <ItemsControl ItemsSource="{Binding Cameras.CameraViewOptions}">
+                            <local:ControlGroupItemsControl AutomationProperties.Name="Camera views"
+                                                            ItemsSource="{Binding Cameras.CameraViewOptions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <UniformGrid Rows="1" />
@@ -1222,7 +1223,7 @@
                                         </local:CameraTileButton>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            </local:ControlGroupItemsControl>
                         </Border>
                     </Grid>
 
