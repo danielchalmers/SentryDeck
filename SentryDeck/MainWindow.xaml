@@ -1550,13 +1550,16 @@
                                 </StackPanel>
                             </Button>
 
-                            <!--  Live guidance: which step is next, then the selected length.  -->
+                            <!--
+                                Live guidance: which step is next, then the selected length.
+                                It wraps rather than trims, because at common laptop widths a single line cut off the step's last words, the part that says what to do.
+                            -->
                             <TextBlock Grid.Column="3"
                                        Text="{Binding Trim.TrimHintText}"
                                        Margin="16,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       TextTrimming="CharacterEllipsis" />
+                                       TextWrapping="Wrap" />
 
                             <Button Grid.Column="4"
                                     Command="{Binding Trim.ExportSelectionCommand}"
