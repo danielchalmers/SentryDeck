@@ -263,7 +263,31 @@ public sealed class ConverterTests
         // These bind against clip rows that may carry no event.json at all.
         new ReasonLabelConverter().Convert(null, typeof(string), null, null).ShouldBe("Recent");
         new ReasonKeyConverter().Convert(null, typeof(string), null, null).ShouldBe(ClipDisplay.ReasonRecent);
-        new MapAvailabilityConverter().Convert("not an event", typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        new CityVisibilityConverter().Convert(null, typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        new CityVisibilityConverter().Convert("not an event", typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(30.5, -97.5)]
+    public void CityVisibilityConverter_EventWithACity_ShowsTheLocationLineWithOrWithoutCoordinates(double lat, double lon)
+    {
+        // Tesla can write a city with blank or 0,0 coordinates, and search still finds the clip by that city, so the card has to show it.
+        var camEvent = new CamEvent { City = "Hutto", EstLat = (decimal)lat, EstLon = (decimal)lon };
+
+        new CityVisibilityConverter().Convert(camEvent, typeof(Visibility), null, null).ShouldBe(Visibility.Visible);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CityVisibilityConverter_EventWithoutACity_HidesTheLocationLineEvenWithCoordinates(string city)
+    {
+        // Coordinates alone would leave a lone pin with nothing beside it.
+        var camEvent = new CamEvent { City = city, EstLat = 30.5m, EstLon = -97.5m };
+
+        new CityVisibilityConverter().Convert(camEvent, typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
     }
 
     [Fact]

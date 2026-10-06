@@ -181,14 +181,16 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Visibility.Visible when the event has usable coordinates for a map lookup.
+/// Visibility.Visible when the event names a city, for the clip card's location line.
+/// The line shows the city, so it follows the city rather than the coordinates: Tesla can record a city with blank or 0,0 coordinates, and coordinates without a city would leave a lone pin.
+/// Search matches the city too, so a clip found by its city always shows it.
 /// </summary>
-public sealed class MapAvailabilityConverter : MarkupExtension, IValueConverter
+public sealed class CityVisibilityConverter : MarkupExtension, IValueConverter
 {
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => ClipDisplay.HasLocation(value as CamEvent) ? Visibility.Visible : Visibility.Collapsed;
+        => string.IsNullOrWhiteSpace((value as CamEvent)?.City) ? Visibility.Collapsed : Visibility.Visible;
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();

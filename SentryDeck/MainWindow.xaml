@@ -826,7 +826,7 @@
                                     <!--  Location: fixed-width pin column (clips the glyph's wide advance) + city with a small controlled gap.  -->
                                     <Grid Grid.Row="2"
                                           Margin="0,3,0,0"
-                                          Visibility="{Binding Event, Converter={local:MapAvailabilityConverter}}">
+                                          Visibility="{Binding Event, Converter={local:CityVisibilityConverter}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
@@ -843,7 +843,8 @@
                                                    Margin="5,0,0,0"
                                                    VerticalAlignment="Center"
                                                    Style="{StaticResource ClipListSecondaryTextBlock}"
-                                                   TextTrimming="CharacterEllipsis" />
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Event.City}" />
                                     </Grid>
                                 </Grid>
                             </Grid>
