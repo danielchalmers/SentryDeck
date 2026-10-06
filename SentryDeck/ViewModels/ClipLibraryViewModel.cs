@@ -75,23 +75,43 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     private bool _isLoadingClips;
 
     /// <summary>
-    /// Asks the user to confirm sending a clip to the Recycle Bin.
+    /// Asks the user to confirm deleting a clip.
+    /// The second argument is why Windows can't recycle the clip's folder, or null when it can, so the prompt never promises a Recycle Bin the delete won't use.
     /// Returns true to proceed.
-    /// Overridable for tests; defaults to a yes/no message box.
+    /// Overridable for tests; defaults to a yes/no message box that defaults to No for a permanent delete.
     /// </summary>
-    internal Func<CamClip, bool> ConfirmDeleteClip { get; set; } = clip =>
+    internal Func<CamClip, string, bool> ConfirmDeleteClip { get; set; } = (clip, whyPermanent) =>
         MessageBox.Show(
-            $"Move this clip to the Recycle Bin?\n\n{clip.Name}\n{clip.FullPath}",
-            "Delete clip",
+            DeleteClipPrompt(clip, whyPermanent),
+            whyPermanent is null ? "Delete clip" : "Permanently delete clip",
             MessageBoxButton.YesNo,
-            MessageBoxImage.Warning) == MessageBoxResult.Yes;
+            MessageBoxImage.Warning,
+            whyPermanent is null ? MessageBoxResult.Yes : MessageBoxResult.No) == MessageBoxResult.Yes;
 
     /// <summary>
-    /// Sends a clip folder to the Windows Recycle Bin (recoverable).
-    /// Overridable for tests; defaults to the shell recycle operation, which surfaces its own error dialog if a file is in use.
+    /// Says why the shell would permanently delete a clip folder instead of recycling it, or returns null when it can recycle it.
+    /// Overridable for tests, so they don't depend on the drives of the machine running them.
+    /// </summary>
+    internal Func<string, string> WhyCannotRecycle { get; set; } = RecycleBin.WhyCannotRecycle;
+
+    /// <summary>
+    /// Finds a file in a clip folder that is open elsewhere, or returns null when none is.
+    /// Overridable for tests.
+    /// </summary>
+    internal Func<string, string> FindFileInUse { get; set; } = RecycleBin.FindFileInUse;
+
+    /// <summary>
+    /// Sends a clip folder to the Windows Recycle Bin.
+    /// When Windows can't recycle it, the shell deletes it permanently without asking, which is why the delete command checks <see cref="WhyCannotRecycle"/> before confirming.
+    /// Overridable for tests; defaults to the shell recycle operation.
     /// </summary>
     internal Action<string> RecycleClipFolder { get; set; } = path =>
         FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+
+    internal static string DeleteClipPrompt(CamClip clip, string whyPermanent) =>
+        whyPermanent is null
+            ? $"Move this clip to the Recycle Bin?\n\n{clip.Name}\n{clip.FullPath}"
+            : $"Permanently delete this clip?\n\nIt can't go to the Recycle Bin because {whyPermanent}, so it can't be recovered once deleted.\n\n{clip.Name}\n{clip.FullPath}";
 
     /// <summary>Rescans the current source of dashcam roots (auto-discovered drives, or the folders the user picked).</summary>
     public Task ReloadAsync(TimeSpan minimumLoadingDuration = default) => LoadClipsAsync(_rootSource(), minimumLoadingDuration);
@@ -336,12 +356,31 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
 
     /// <summary>
     /// Sends the clip's folder to the Recycle Bin so the timeline can be tidied without leaving the app.
-    /// Confirms first, then, if the clip is the one currently open, stops playback so Flyleaf releases its file handles before the shell tries to recycle the (otherwise locked) folder.
+    /// Confirms first, warning when Windows would delete the folder permanently instead.
+    /// If the clip is the one currently open, it then stops playback so Flyleaf releases its file handles before the shell tries to delete the (otherwise locked) folder.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanUseClip))]
     private async Task DeleteClipAsync(CamClip clip)
     {
-        if (clip is null || !ConfirmDeleteClip(clip))
+        if (clip is null)
+        {
+            return;
+        }
+
+        string whyPermanent;
+        try
+        {
+            whyPermanent = await Task.Run(() => WhyCannotRecycle(clip.FullPath));
+        }
+        catch (Exception ex)
+        {
+            // Without knowing whether Windows would recycle the folder, any prompt could promise a recovery that won't happen.
+            Log.Error(ex, "Could not check whether a clip can be recycled. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+            _error.Show("Delete Failed", $"Could not delete clip: {clip.Name}\n\nNothing was deleted, because Windows couldn't tell whether it can go to the Recycle Bin.\n\nError: {ex.Message}");
+            return;
+        }
+
+        if (!ConfirmDeleteClip(clip, whyPermanent))
         {
             return;
         }
@@ -356,15 +395,42 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             _playback.SeekPosition = 0;
         }
 
+        string fileInUse;
         try
         {
-            Log.Information("Deleting clip to Recycle Bin. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
-            await Task.Run(() => RecycleClipFolder(clip.FullPath));
+            // A permanent delete removes files one at a time and stops at the first one in use, so check them all first and delete nothing unless every file can go.
+            fileInUse = await Task.Run(() =>
+            {
+                var inUse = FindFileInUse(clip.FullPath);
+                if (inUse is not null)
+                {
+                    return inUse;
+                }
+
+                if (whyPermanent is null)
+                {
+                    Log.Information("Deleting clip to Recycle Bin. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+                }
+                else
+                {
+                    Log.Information("Permanently deleting clip, because it can't be recycled. ClipName={ClipName}; ClipPath={ClipPath}; Reason={Reason}", clip.Name, clip.FullPath, whyPermanent);
+                }
+
+                RecycleClipFolder(clip.FullPath);
+                return null;
+            });
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to delete clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
             _error.Show("Delete Failed", $"Could not delete clip: {clip.Name}\n\nError: {ex.Message}");
+            return;
+        }
+
+        if (fileInUse is not null)
+        {
+            Log.Warning("Did not delete clip, because a file is in use. ClipName={ClipName}; FilePath={FilePath}", clip.Name, fileInUse);
+            _error.Show("Clip In Use", $"Nothing was deleted, because a file in this clip is in use:\n{Path.GetFileName(fileInUse)}\n\nClose any program that has it open, then try again.");
             return;
         }
 

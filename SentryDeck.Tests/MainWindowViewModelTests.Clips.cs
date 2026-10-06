@@ -242,6 +242,9 @@ public sealed partial class MainWindowViewModelTests
     {
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
         await vm.Library.LoadClipsAsync(new[] { "root" });
+
+        // Whether a drive has a Recycle Bin depends on the machine running the tests, so it is pinned here and varied only where a test is about it.
+        vm.Library.WhyCannotRecycle = _ => null;
         return vm;
     }
 
@@ -260,7 +263,7 @@ public sealed partial class MainWindowViewModelTests
         var clips = ClipsWithDistinctPaths(3);
         var vm = await LoadedViewModelAsync(clips);
         string recycledPath = null;
-        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
         vm.Library.RecycleClipFolder = path => recycledPath = path;
 
         var target = vm.Library.FilteredClips.Single(clip => clip.Name == "Clip 1");
@@ -277,7 +280,7 @@ public sealed partial class MainWindowViewModelTests
         var clips = ClipsWithDistinctPaths(2);
         var vm = await LoadedViewModelAsync(clips);
         var recycleCalls = 0;
-        vm.Library.ConfirmDeleteClip = _ => false;
+        vm.Library.ConfirmDeleteClip = (_, _) => false;
         vm.Library.RecycleClipFolder = _ => recycleCalls++;
 
         var target = vm.Library.FilteredClips[0];
@@ -293,7 +296,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = ClipsWithDistinctPaths(2);
         var vm = await LoadedViewModelAsync(clips);
-        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
         vm.Library.RecycleClipFolder = _ => { };
 
         var target = vm.Library.FilteredClips[0];
@@ -312,7 +315,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = ClipsWithDistinctPaths(3);
         var vm = await LoadedViewModelAsync(clips);
-        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
         vm.Library.RecycleClipFolder = _ => { };
 
         var selected = vm.Library.FilteredClips.Single(clip => clip.Name == "Clip 2");
@@ -331,7 +334,7 @@ public sealed partial class MainWindowViewModelTests
     {
         var clips = ClipsWithDistinctPaths(2);
         var vm = await LoadedViewModelAsync(clips);
-        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
         vm.Library.RecycleClipFolder = _ => throw new IOException("The file is in use.");
 
         var target = vm.Library.FilteredClips[0];
@@ -341,6 +344,106 @@ public sealed partial class MainWindowViewModelTests
         vm.Error.Title.ShouldBe("Delete Failed");
         vm.Library.ClipCount.ShouldBe(2);
         vm.Library.FilteredClips.ShouldContain(target);
+    }
+
+    [Fact]
+    public async Task DeleteClip_FolderCannotBeRecycled_WarnsThatTheDeleteIsPermanent()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        string prompt = null;
+        vm.Library.WhyCannotRecycle = _ => RecycleBin.RemovableReason;
+        vm.Library.ConfirmDeleteClip = (clip, whyPermanent) =>
+        {
+            prompt = ClipLibraryViewModel.DeleteClipPrompt(clip, whyPermanent);
+            return false;
+        };
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(vm.Library.FilteredClips[0]);
+
+        // A TeslaCam USB flash drive has no Recycle Bin, so a prompt promising one let the shell destroy footage the user believed was recoverable.
+        prompt.ShouldStartWith("Permanently delete this clip?");
+        prompt.ShouldContain(RecycleBin.RemovableReason);
+        prompt.ShouldNotContain("Move this clip to the Recycle Bin");
+    }
+
+    [Fact]
+    public async Task DeleteClip_FolderCanBeRecycled_OffersTheRecycleBin()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        string prompt = null;
+        vm.Library.ConfirmDeleteClip = (clip, whyPermanent) =>
+        {
+            prompt = ClipLibraryViewModel.DeleteClipPrompt(clip, whyPermanent);
+            return false;
+        };
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(vm.Library.FilteredClips[0]);
+
+        prompt.ShouldStartWith("Move this clip to the Recycle Bin?");
+        prompt.ShouldNotContain("Permanently");
+    }
+
+    [Fact]
+    public async Task DeleteClip_RecycleCheckFails_DeletesNothing()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        var confirmCalls = 0;
+        var recycleCalls = 0;
+        vm.Library.WhyCannotRecycle = _ => throw new IOException("The network name is no longer available.");
+        vm.Library.ConfirmDeleteClip = (_, _) =>
+        {
+            confirmCalls++;
+            return true;
+        };
+        vm.Library.RecycleClipFolder = _ => recycleCalls++;
+
+        var target = vm.Library.FilteredClips[0];
+        await vm.Library.DeleteClipCommand.ExecuteAsync(target);
+
+        // Without an answer, any prompt could promise a recovery that won't happen, so the delete stops before asking.
+        confirmCalls.ShouldBe(0);
+        recycleCalls.ShouldBe(0);
+        vm.Error.Title.ShouldBe("Delete Failed");
+        vm.Error.Details.ShouldContain("Nothing was deleted");
+        vm.Library.FilteredClips.ShouldContain(target);
+    }
+
+    [Fact]
+    public async Task DeleteClip_AFileIsHeldOpen_DeletesNothing()
+    {
+        using var folder = new TempDirectory();
+        var back = folder.Write("2025-01-01_12-00-00-back.mp4", [1]);
+        var front = folder.Write("2025-01-01_12-00-00-front.mp4", [1]);
+        var clip = new CamClip(folder.Path, "Clip", new DateTime(2025, 1, 1, 12, 0, 0), [], camEvent: null);
+        var vm = await LoadedViewModelAsync([clip]);
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+
+        // Like the shell on a drive without a Recycle Bin: files go one at a time, so a file in use stops the delete partway through.
+        vm.Library.RecycleClipFolder = path =>
+        {
+            foreach (var file in Directory.GetFiles(path).Order(StringComparer.OrdinalIgnoreCase))
+            {
+                File.Delete(file);
+            }
+
+            Directory.Delete(path);
+        };
+
+        // Shared reading without shared deleting, the way another video player holds a file it is showing.
+        using (new FileStream(front, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            await vm.Library.DeleteClipCommand.ExecuteAsync(clip);
+        }
+
+        // Deleting the other cameras before reaching the open one left a gutted clip that still listed and played, front camera only.
+        File.Exists(back).ShouldBeTrue();
+        File.Exists(front).ShouldBeTrue();
+        vm.Library.FilteredClips.ShouldContain(clip);
+        vm.Error.Title.ShouldBe("Clip In Use");
+        vm.Error.Details.ShouldContain(Path.GetFileName(front));
     }
 
     // --- Deleting the clip that is actually open: the point of the feature, and the only path that touches the player.
@@ -353,7 +456,8 @@ public sealed partial class MainWindowViewModelTests
         var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
         var closesBeforeDelete = front.Count("close");
         var closesWhenRecycled = -1;
-        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.WhyCannotRecycle = _ => null;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
         vm.Library.RecycleClipFolder = _ => closesWhenRecycled = front.Count("close");
         vm.Playback.SeekPosition = 0.5;
 
@@ -365,12 +469,35 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task DeleteClip_TheOpenClip_ChecksForFilesInUseAfterStoppingPlayback()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
+        var closesBeforeDelete = front.Count("close");
+        var closesWhenChecked = -1;
+        vm.Library.WhyCannotRecycle = _ => null;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+        vm.Library.FindFileInUse = _ =>
+        {
+            closesWhenChecked = front.Count("close");
+            return null;
+        };
+        vm.Library.RecycleClipFolder = _ => { };
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
+
+        // The app's own players hold the open clip's files, so checking before they close would always report the clip as in use.
+        closesWhenChecked.ShouldBeGreaterThan(closesBeforeDelete);
+    }
+
+    [Fact]
     public async Task DeleteClip_TheOpenClip_RemovesItFromThePlayerPlaylist()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var clip = clipFiles.Clip;
         var (vm, controller, _) = CreateViewModelWithOpenedClip(clip, uiInvoker: action => action());
-        vm.Library.ConfirmDeleteClip = _ => true;
+        vm.Library.WhyCannotRecycle = _ => null;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
         vm.Library.RecycleClipFolder = _ => { };
         vm.Library.SelectedClip = clip; // sets NowPlayingClip too (see OnSelectedClipChanged)
 

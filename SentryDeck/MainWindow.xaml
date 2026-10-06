@@ -534,8 +534,11 @@
                 </MenuItem.Icon>
             </MenuItem>
             <Separator />
-            <!--  Moves the whole clip folder to the Windows Recycle Bin (recoverable) so the timeline can be tidied in place.  -->
-            <MenuItem Header="Delete to Recycle Bin"
+            <!--
+                Deletes the whole clip folder so the timeline can be tidied in place.
+                The header doesn't name the Recycle Bin because a drive that can't recycle the clip deletes it permanently; the confirmation says which one happens.
+            -->
+            <MenuItem Header="Delete clip…"
                       Command="{Binding PlacementTarget.Tag.Library.DeleteClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
