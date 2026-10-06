@@ -26,6 +26,63 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task FrontEnded_AfterFastPlayback_MovesEveryCameraThatRanOutOntoItsLastFrame()
+    {
+        // At 16x the front can reach its end on a frame 0.6 s early, having dropped the frames it couldn't decode in time, while the readout claims the end.
+        // The left camera's shorter file already ran out too, and must not be seeked past its own last frame.
+        // The rear and right lag behind and are still mid-stream: seeking a camera to its last moments from there can park its decoder for good, so they stay where they stopped.
+        using var rig = new Rig(chunkCount: 2);
+        var end = ChunkDuration * 2;
+        var leftShortfall = TimeSpan.FromMilliseconds(600);
+        rig.ShortenCamera(CameraNames.LeftRepeater, leftShortfall);
+        rig.PlaceLastFrames(end);
+        await rig.OpenAsync();
+        rig.Controller.PlaybackSpeed = 16;
+        var backStop = end - TimeSpan.FromSeconds(1.3);
+        rig.Back.RaisePositionChanged(backStop);
+        rig.Left.RaiseEnded(at: end - leftShortfall - LastFrameCut);
+        rig.Right.RaisePositionChanged(end - TimeSpan.FromSeconds(0.2));
+
+        rig.Front.RaiseEnded(at: end - TimeSpan.FromSeconds(0.6));
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Front.Seeks.ShouldHaveSingleItem().Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Left.Seeks.ShouldHaveSingleItem().Position.ShouldBe(end - leftShortfall - VideoPlayerController.EndSeekMargin);
+        rig.Back.Seeks.ShouldBeEmpty();
+        rig.Right.Seeks.ShouldBeEmpty();
+        rig.Back.Position.ShouldBe(backStop);
+        rig.All.ShouldAllBe(player => !player.IsWedged && !player.IsPlaying);
+        rig.Controller.Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Controller.IsPlaying.ShouldBeFalse();
+
+        await rig.Controller.PlayAsync();
+
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(2).ShouldBe(["seek:0", "play"], camera);
+        }
+    }
+
+    [Fact]
+    public async Task FrontEnded_AtNormalSpeed_LeavesEveryCameraOnTheLastFrameItDrew()
+    {
+        // At real time a camera draws every frame up to its last, so reseeking one that ran out would only step it back a few frames.
+        using var rig = new Rig(chunkCount: 1);
+        var leftShortfall = TimeSpan.FromMilliseconds(600);
+        rig.ShortenCamera(CameraNames.LeftRepeater, leftShortfall);
+        rig.PlaceLastFrames(ChunkDuration);
+        await rig.OpenAsync();
+        rig.Left.RaiseEnded(at: ChunkDuration - leftShortfall);
+        rig.Back.RaisePositionChanged(ChunkDuration - TimeSpan.FromMilliseconds(60));
+
+        rig.Front.RaiseEnded(at: ChunkDuration);
+        await rig.Controller.WhenIdleAsync();
+
+        rig.All.ShouldAllBe(player => player.Seeks.Count == 0);
+        rig.Controller.Position.ShouldBe(ChunkDuration);
+    }
+
+    [Fact]
     public async Task PlayAsync_AfterTheClipEnded_ReplaysEveryCameraFromTheStart()
     {
         // Flyleaf ignores Play on an ended player, so every camera must be moved off the end before playing or the video stays frozen on the last frame.

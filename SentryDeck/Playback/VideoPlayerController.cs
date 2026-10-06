@@ -13,7 +13,7 @@ namespace SentryDeck;
 /// Anything that talks to the players runs as a serialized operation, so a seek never interleaves with a clip change or a recovery, and events that arrive mid-operation queue behind it.
 /// Every opened clip is a <see cref="Session"/>; replacing or stopping it cancels its token, and queued work for a session that is no longer current does nothing.
 /// Cameras stay in lockstep because every reposition pauses all players, seeks them all to the same instant, and only then resumes them together.
-/// Each player still runs its own clock while playing, so fast playback can pull them apart; they are lined up again whenever playback pauses (see <see cref="LineUpCamerasAsync"/>).
+/// Each player still runs its own clock while playing, so fast playback can pull them apart; they are lined up again whenever playback pauses or reaches the end (see <see cref="LineUpCamerasAsync"/>).
 /// </remarks>
 public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
@@ -701,14 +701,14 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return;
 
         var anchor = Clamp(_primaryPlayer.Position, TimeSpan.Zero, SeekableEnd);
-        if (await LineUpCamerasAsync(anchor))
+        if (await LineUpCamerasAsync(anchor, _players.Values))
         {
             Position = anchor;
         }
     }
 
     /// <summary>
-    /// Once playback has paused, seeks every camera that isn't showing the moment at <paramref name="anchor"/> onto it (or onto its own last frame when its footage ends sooner), so the still frame the user studies shows every camera at the same moment as the time readout.
+    /// Once playback has stopped, seeks each of <paramref name="players"/> that isn't showing the moment at <paramref name="anchor"/> onto it (or onto its own last frame when its footage ends sooner), so the still frame the user studies shows every camera at the same moment as the time readout.
     /// </summary>
     /// <remarks>
     /// Every camera runs its own clock.
@@ -718,10 +718,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// At real time the positions are accurate, and only a camera that is actually out of step moves.
     /// </remarks>
     /// <returns>Whether the front was reseeked, in which case the readout has to follow it.</returns>
-    private async Task<bool> LineUpCamerasAsync(TimeSpan anchor)
+    private async Task<bool> LineUpCamerasAsync(TimeSpan anchor, IEnumerable<ICameraPlayer> players)
     {
         var positionsAreTrustworthy = PlaybackSpeed <= 1.0;
-        var outOfStep = _players.Values
+        var outOfStep = players
             .Where(player => player.IsOpen && !(positionsAreTrustworthy && IsAlignedWith(player, anchor, PausedAlignmentTolerance)))
             .ToList();
 
@@ -730,7 +730,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             return false;
         }
 
-        Log.Debug("Lining the cameras up after pausing. Count={Count}; Anchor={Anchor}; PlaybackSpeed={PlaybackSpeed}", outOfStep.Count, anchor, PlaybackSpeed);
+        Log.Debug("Lining the cameras up after playback stopped. Count={Count}; Anchor={Anchor}; PlaybackSpeed={PlaybackSpeed}", outOfStep.Count, anchor, PlaybackSpeed);
         await Task.WhenAll(outOfStep.Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
         return outOfStep.Contains(_primaryPlayer);
     }
@@ -916,7 +916,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             // Deliberately no auto-advance to the next clip: each clip is its own incident, and the most likely follow-up is replaying it.
             // The media stays open so the scrubber and frame-step remain usable to review the final moments, and play replays from the start.
-            Position = Duration;
+            // Past real time the front can reach its end on a frame most of a second early: it drops the frames it can't decode in time, then jumps its clock to the end without drawing the rest.
+            // So every camera that ran out of footage is moved onto its last frame, and the readout follows a front that had to move.
+            // A side camera still short of its end stays where it stopped: seeking a camera to its last moments while its decoder is still mid-stream can park that decoder for good, which froze side cameras that lagged behind at 16x.
+            var endedCameras = _players.Values.Where(player => player.IsEnded).ToList();
+            Position = await LineUpCamerasAsync(Duration, endedCameras) ? SeekableEnd : Duration;
         });
     }
 
