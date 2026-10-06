@@ -175,6 +175,9 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             // Any other ordering sends them out of list order when several folders are loaded or clips share a timestamp.
             _playback.SetPlaylist(Enumerable.Reverse(_allClips));
 
+            // A search typed before the player existed (while FFmpeg was still missing) never reached it, so every new playlist gets the search too.
+            _playback.SetNavigationFilter(MatchesFilter);
+
             // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh (clear -> loading -> refill) instead of an imperceptible flicker.
             var remaining = minimumLoadingDuration - stopwatch.Elapsed;
             if (remaining > TimeSpan.Zero)
@@ -233,6 +236,9 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
 
         // A search that hid the selected clip left its row unhighlighted, and nothing else tells the list to highlight it again once a later search shows it.
         OnPropertyChanged(nameof(ListSelection));
+
+        // Next and Previous walk only the clips the list shows: a clip they opened behind the search couldn't be highlighted, so the list would keep pointing at the clip they left.
+        _playback.SetNavigationFilter(MatchesFilter);
     }
 
     private ScanResult ScanRoots(IEnumerable<string> roots)

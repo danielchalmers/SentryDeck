@@ -55,6 +55,94 @@ public sealed class ClipPlaylistTests
     }
 
     [Fact]
+    public void MoveNextAndPrevious_WithANavigationFilter_SkipTheClipsItRejects()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(5);
+        playlist.SetClips(clips);
+        playlist.SetNavigationFilter(clip => clip != clips[1] && clip != clips[3]);
+        playlist.MoveTo(2);
+
+        // With a search active, stepping by one landed on clips the search hides, which the list can't show as selected.
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[4]);
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[2]);
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[0]);
+    }
+
+    [Fact]
+    public void HasNextAndPrevious_WithANavigationFilter_IgnoreTheClipsItRejects()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(4);
+        playlist.SetClips(clips);
+        playlist.SetNavigationFilter(clip => clip == clips[1] || clip == clips[2]);
+        playlist.MoveTo(2);
+
+        // The buttons stayed enabled at the edge of the search results and then opened a hidden clip.
+        playlist.HasNext.ShouldBeFalse();
+        playlist.MoveNext().ShouldBeFalse();
+        playlist.CurrentClip.ShouldBe(clips[2]);
+
+        playlist.MoveTo(1);
+        playlist.HasPrevious.ShouldBeFalse();
+        playlist.MovePrevious().ShouldBeFalse();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void SetNavigationFilter_RejectingTheCurrentClip_KeepsItCurrentAndStepsToItsNearestAcceptedNeighbours()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(5);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+        var currentChanged = 0;
+        playlist.CurrentClipChanged += (_, _) => currentChanged++;
+
+        playlist.SetNavigationFilter(clip => clip == clips[0] || clip == clips[4]);
+
+        // A search that hides the open clip mustn't close it, and Next and Previous carry on from its place.
+        currentChanged.ShouldBe(0);
+        playlist.CurrentClip.ShouldBe(clips[2]);
+        playlist.HasNext.ShouldBeTrue();
+        playlist.HasPrevious.ShouldBeTrue();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[4]);
+    }
+
+    [Fact]
+    public void SetNavigationFilter_Null_LetsNextAndPreviousReachEveryClipAgain()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.SetNavigationFilter(clip => clip != clips[1]);
+        playlist.MoveTo(0);
+
+        playlist.SetNavigationFilter(null);
+
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void SetClips_WithANavigationFilterSet_KeepsTheFilter()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetNavigationFilter(clip => clip != clips[0]);
+
+        playlist.SetClips(clips);
+
+        // A rescan replaces the clips while the search stays in the box, so Next has to keep skipping what it hides.
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
     public void MoveTo_WithClipReference_SelectsClipAndRaisesEvent()
     {
         var playlist = new ClipPlaylist();

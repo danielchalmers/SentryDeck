@@ -429,6 +429,107 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.ClipCount.ShouldBe(expectedScans.Length);
     }
 
+    // --- Next/Previous with a search: they walk the clips the list shows, so the list can highlight every clip they open. ---
+
+    // A clip recorded in a city on 2025-08-08 at the given hour, so a search for the city shows it and hides the others.
+    private static CamClip ClipInCity(string city, int hour)
+    {
+        var timestamp = new DateTime(2025, 8, 8, hour, 0, 0);
+        var name = $"{timestamp:yyyy-MM-dd_HH-mm-ss}";
+        return new CamClip($@"D:\TeslaCam\SavedClips\{name}", name, timestamp, [], new CamEvent { City = city, Timestamp = timestamp });
+    }
+
+    // Oldest to newest, with two hidden clips between the Austin ones so that skipping one isn't enough.
+    private readonly CamClip _olderAustin = ClipInCity("Austin", 9);
+    private readonly CamClip _springfield = ClipInCity("Springfield", 10);
+    private readonly CamClip _kyle = ClipInCity("Kyle", 11);
+    private readonly CamClip _newerAustin = ClipInCity("Austin", 12);
+    private readonly CamClip _hutto = ClipInCity("Hutto", 13);
+
+    private async Task<(MainWindowViewModel Vm, VideoPlayerController Controller)> CitiesLoadedAsync()
+    {
+        var (vm, controller) = CreateViewModelWithRoots(new()
+        {
+            [@"D:\TeslaCam"] = [_olderAustin, _springfield, _kyle, _newerAustin, _hutto],
+        });
+        await vm.Library.LoadClipsAsync([@"D:\TeslaCam"]);
+        return (vm, controller);
+    }
+
+    private static void Search(MainWindowViewModel vm, string text)
+    {
+        vm.Library.FilterText = text;
+        vm.Library.ApplyFilter();
+    }
+
+    [Fact]
+    public async Task PreviousCommand_WithASearch_OpensTheNextOlderClipTheListShows()
+    {
+        var (vm, controller) = await CitiesLoadedAsync();
+        Search(vm, "Austin");
+        vm.Library.ListSelection = _newerAustin;
+
+        RunPinnedToTestThread(() => vm.Playback.PreviousCommand.ExecuteAsync(null));
+
+        // Stepping through the whole library opened the Kyle clip the search hides, while the list kept highlighting the Austin clip it left.
+        controller.CurrentClip.ShouldBe(_olderAustin);
+        vm.Library.SelectedClip.ShouldBe(_olderAustin);
+        vm.Library.ListSelection.ShouldBe(_olderAustin);
+        vm.Playback.NowPlayingClip.ShouldBe(_olderAustin);
+    }
+
+    [Fact]
+    public async Task NextAndPrevious_WithASearch_AreDisabledAtTheEdgesOfTheResults()
+    {
+        var (vm, _) = await CitiesLoadedAsync();
+        vm.Library.ListSelection = _newerAustin;
+        vm.Playback.CanGoNext.ShouldBeTrue();
+        var changed = new List<string>();
+        vm.Playback.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        Search(vm, "Austin");
+
+        // The newer Hutto clip is hidden, so Next at the top of the results would open a clip the list can't show.
+        vm.Playback.CanGoNext.ShouldBeFalse();
+        vm.Playback.CanGoPrevious.ShouldBeTrue();
+
+        // The buttons only re-read these when told, so a search that changes them has to say so.
+        changed.ShouldContain(nameof(PlaybackViewModel.CanGoNext));
+        changed.ShouldContain(nameof(PlaybackViewModel.CanGoPrevious));
+
+        vm.Library.ListSelection = _olderAustin;
+        vm.Playback.CanGoPrevious.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task NextCommand_FromAClipTheSearchHides_OpensTheNearestNewerClipTheListShows()
+    {
+        var (vm, controller) = await CitiesLoadedAsync();
+        vm.Library.ListSelection = _springfield;
+        Search(vm, "Austin");
+        vm.Library.ListSelection = null; // the list drops the row the search hid
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+
+        // The open clip stays where it is in the library, so Next continues from there to the next clip the user can see.
+        controller.CurrentClip.ShouldBe(_newerAustin);
+        vm.Library.ListSelection.ShouldBe(_newerAustin);
+    }
+
+    [Fact]
+    public async Task NextCommand_AfterTheSearchIsCleared_ReachesEveryClipAgain()
+    {
+        var (vm, controller) = await CitiesLoadedAsync();
+        Search(vm, "Austin");
+        vm.Library.ListSelection = _olderAustin;
+        Search(vm, string.Empty);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+
+        controller.CurrentClip.ShouldBe(_springfield);
+        vm.Library.ListSelection.ShouldBe(_springfield);
+    }
+
     // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
 
     private static List<CamClip> ClipsWithDistinctPaths(int count) =>

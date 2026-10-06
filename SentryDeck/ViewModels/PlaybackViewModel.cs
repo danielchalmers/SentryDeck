@@ -240,6 +240,16 @@ public sealed partial class PlaybackViewModel : ObservableObject
         NotifyNavigationChanged();
     }
 
+    /// <summary>
+    /// Limits Next and Previous to the clips <paramref name="canNavigateTo"/> accepts, such as the ones a search shows, so they never open a clip the list can't highlight.
+    /// The open clip stays open even when it is rejected.
+    /// </summary>
+    public void SetNavigationFilter(Func<CamClip, bool> canNavigateTo)
+    {
+        _playerController?.Playlist.SetNavigationFilter(canNavigateTo);
+        NotifyNavigationChanged();
+    }
+
     /// <summary>Closes whatever the player has open, releasing its file handles.</summary>
     public Task StopPlayerAsync() => _playerController?.StopAsync() ?? Task.CompletedTask;
 
