@@ -363,7 +363,31 @@ public sealed partial class MainWindowViewModelTests
         RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
 
         var videos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
-        suggested.ShouldBe(Path.Combine(videos, "2023-02-23_14-14-48 front 0m39s-2m01s.mp4"));
+        suggested.ShouldBe(Path.Combine(videos, "2023-02-23_14-14-48 front 0m39s-2m00s.mp4"));
+    }
+
+    [Fact]
+    public void ExportSelection_MarksLateInTheirSeconds_NamesTheTimesTheReadoutShowed()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 6); // 6:00 of footage
+        string suggested = null;
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), path =>
+        {
+            suggested = path;
+            return null;
+        });
+
+        vm.Playback.SeekPosition = 95.6 / 360;
+        vm.Playback.PositionText.ShouldBe("1:35");
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 301.7 / 360;
+        vm.Playback.PositionText.ShouldBe("5:01");
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        // Rounding named this cut 1m36s-5m02s, a second later at both ends than the times the user set the marks at.
+        Path.GetFileName(suggested).ShouldBe("2023-02-23_14-14-48 front 1m35s-5m01s.mp4");
     }
 
     [Fact]

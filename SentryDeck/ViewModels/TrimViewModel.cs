@@ -466,9 +466,11 @@ public sealed partial class TrimViewModel : ObservableObject
     private static string FormatRangeForFileName(TimeSpan start, TimeSpan end) =>
         $"{FormatOffsetForFileName(start)}-{FormatOffsetForFileName(end)}";
 
+    // Drops the part of a second the way the time readout does, so the name gives the times the user saw when setting the marks.
+    // Rounding named a start set at 1:35 as 1m36s.
     private static string FormatOffsetForFileName(TimeSpan offset)
     {
-        var seconds = (long)Math.Round(offset.TotalSeconds, MidpointRounding.AwayFromZero);
+        var seconds = offset.Ticks / TimeSpan.TicksPerSecond;
         return string.Create(CultureInfo.InvariantCulture, $"{seconds / 60}m{seconds % 60:00}s");
     }
 
