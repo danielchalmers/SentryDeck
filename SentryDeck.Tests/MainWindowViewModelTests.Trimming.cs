@@ -218,6 +218,37 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void SelectionDurationText_RangeJustShortOfAWholeSecond_RoundsToIt()
+    {
+        // Marks land on frame boundaries, so a cut made with one 5 s step often comes out a few milliseconds short.
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.Playback.SeekPosition = 0.1;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.1 + (4.98 / 60);
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        vm.Trim.SelectionDurationText.ShouldBe("0:05");
+    }
+
+    [Fact]
+    public void SelectionDurationText_RangeUnderASecond_ReadsLessThanOneSecond()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(1);
+        controller.IsMediaOpen = true;
+
+        vm.Playback.SeekPosition = 0.5;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.5 + (0.04 / 60); // one frame
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        vm.Trim.SelectionDurationText.ShouldBe("<1 s");
+    }
+
+    [Fact]
     public void MarkSelection_RequiresSeekableMedia()
     {
         var vm = CreateViewModel();

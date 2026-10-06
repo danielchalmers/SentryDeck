@@ -96,7 +96,7 @@ public sealed partial class TrimViewModel : ObservableObject
         }
     }
 
-    /// <summary>Length of the marked range, e.g. "0:42" (empty until both marks are set).</summary>
+    /// <summary>Length of the marked range to the nearest second, e.g. "0:42", or "&lt;1 s" for a sliver (empty until both marks are set).</summary>
     public string SelectionDurationText
     {
         get
@@ -106,8 +106,13 @@ public sealed partial class TrimViewModel : ObservableObject
                 return string.Empty;
             }
 
-            var duration = _playback.Duration;
-            return PlaybackViewModel.FormatTimeSpan(TimeSpan.FromSeconds((end - start) * duration.TotalSeconds));
+            var length = TimeSpan.FromSeconds((end - start) * _playback.Duration.TotalSeconds);
+
+            // Marks land on frame boundaries, so a cut made as 5 s is often a few milliseconds short, and truncating would call it 0:04.
+            // Under a second, any whole-second figure misdescribes a range of a few frames.
+            return length < TimeSpan.FromSeconds(1)
+                ? "<1 s"
+                : PlaybackViewModel.FormatTimeSpan(TimeSpan.FromSeconds(Math.Round(length.TotalSeconds, MidpointRounding.AwayFromZero)));
         }
     }
 
