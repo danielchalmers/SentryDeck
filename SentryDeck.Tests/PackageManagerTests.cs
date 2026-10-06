@@ -1,5 +1,7 @@
 using System.IO;
 using System.IO.Compression;
+using System.Net.Http;
+using System.Net.Sockets;
 
 namespace SentryDeck.Tests;
 
@@ -116,6 +118,51 @@ public sealed class PackageManagerTests : IDisposable
         Directory.Exists(Path.Combine(installRoot, "logs")).ShouldBeTrue();
         Directory.Exists(Path.Combine(installRoot, "ffmpeg-notes")).ShouldBeTrue();
         Directory.Exists(Path.Combine(installRoot, "runtimes")).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("refused")]
+    [InlineData("dropped mid-download")]
+    [InlineData("timed out")]
+    public void DescribeDownloadFailure_NetworkError_SaysWhatToCheckInsteadOfTheSocketError(string failure)
+    {
+        Exception exception = failure switch
+        {
+            "refused" => new HttpRequestException("No connection could be made because the target machine actively refused it. (127.0.0.1:9)", new SocketException(10061)),
+            "dropped mid-download" => new IOException("Unable to read data from the transport connection.", new SocketException(10054)),
+            _ => new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 1800 seconds elapsing.", new TimeoutException()),
+        };
+
+        var description = PackageManager.DescribeDownloadFailure(exception);
+
+        description.ShouldContain("online");
+        description.ShouldContain("proxy or firewall");
+        description.ShouldNotContain(exception.Message);
+    }
+
+    [Fact]
+    public void DescribeDownloadFailure_FolderNotWritable_SuggestsMovingTheApp()
+    {
+        var description = PackageManager.DescribeDownloadFailure(new UnauthorizedAccessException("Access to the path is denied."));
+
+        description.ShouldContain("folder you can write to");
+    }
+
+    [Fact]
+    public void DescribeDownloadFailure_UnexpectedError_KeepsItsMessageAsTheOnlyClue()
+    {
+        var description = PackageManager.DescribeDownloadFailure(new InvalidDataException("End of Central Directory record could not be found."));
+
+        description.ShouldContain("End of Central Directory record could not be found.");
+    }
+
+    [Fact]
+    public void DescribeDownloadFailure_EndsWithHowToInstallFFmpegByHand()
+    {
+        // Someone behind a firewall that blocks GitHub can never download it from the app, so the message has to say where a manually downloaded build goes.
+        var description = PackageManager.DescribeDownloadFailure(new HttpRequestException("Connection refused"));
+
+        description.ShouldContain(Path.Combine(AppContext.BaseDirectory, "ffmpeg-9.0-bin"));
     }
 
     [Fact]

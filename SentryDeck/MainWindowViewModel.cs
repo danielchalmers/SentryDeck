@@ -15,6 +15,8 @@ namespace SentryDeck;
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly FlyleafRuntime _flyleafRuntime = new();
+    private readonly Func<bool> _tryStartFlyleaf;
+    private readonly Func<Task> _downloadFFmpeg;
     private readonly Dispatcher _dispatcher;
     private bool _isInitialized;
     private bool _isDownloadingFFmpeg;
@@ -32,6 +34,10 @@ public partial class MainWindowViewModel : ObservableObject
     /// Overridable for tests.</param>
     /// <param name="uiInvoker">Runs an action on the UI thread.
     /// Defaults to the dispatcher hop; overridable for tests, which have no pumped message loop to service it.</param>
+    /// <param name="tryStartFlyleaf">Starts Flyleaf, returning false when FFmpeg is missing.
+    /// Defaults to the real runtime; overridable for tests.</param>
+    /// <param name="downloadFFmpeg">Downloads and installs FFmpeg.
+    /// Defaults to <see cref="PackageManager.DownloadAndExtractFFmpeg"/>; overridable for tests.</param>
     public MainWindowViewModel(
         Func<VideoPlayerController> playerControllerFactory,
         Func<string, IReadOnlyList<CamClip>> clipLoader = null,
@@ -39,9 +45,13 @@ public partial class MainWindowViewModel : ObservableObject
         IClipExporter clipExporter = null,
         Func<string, string> savePathPicker = null,
         IClipMediaSourceBuilder exportMediaSourceBuilder = null,
-        Action<Action> uiInvoker = null)
+        Action<Action> uiInvoker = null,
+        Func<bool> tryStartFlyleaf = null,
+        Func<Task> downloadFFmpeg = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _tryStartFlyleaf = tryStartFlyleaf ?? _flyleafRuntime.TryStart;
+        _downloadFFmpeg = downloadFFmpeg ?? PackageManager.DownloadAndExtractFFmpeg;
 
         Playback = new PlaybackViewModel(
             playerControllerFactory,
@@ -125,13 +135,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     // The full-screen overlay only covers the no-video states (scanning with no clip, error, empty); as a WPF sibling it can't draw over the Flyleaf video surface anyway.
     // While a selected clip loads, the hosts stay visible and simply show black until the first frame decodes, with no loading screen flashing mid-playback.
-    public bool ShowStatusOverlay => (IsLoading && Library.SelectedClip is null) || Error.IsVisible || HasNoClipSelected;
+    public bool ShowStatusOverlay => (IsLoading && !HasVideo) || Error.IsVisible || HasNoClipSelected;
 
-    public bool ShowVideoHosts => Library.SelectedClip is not null && !Error.IsVisible;
+    public bool ShowVideoHosts => HasVideo && !Error.IsVisible;
 
     public bool HasError => Error.IsVisible;
 
     public bool HasNoClipSelected => Library.SelectedClip is null && !IsLoading && !Error.IsVisible;
+
+    // Without FFmpeg there is no player, and a selected clip would only show black hosts behind an enabled Play button that does nothing.
+    private bool HasVideo => Library.SelectedClip is not null && Playback.HasPlayer;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowMainContent))]
@@ -151,15 +164,7 @@ public partial class MainWindowViewModel : ObservableObject
         _ = About.CheckForUpdatesAsync();
 #endif
 
-        if (_flyleafRuntime.TryStart())
-        {
-            InitializePlayer();
-            await Library.ReloadAsync();
-        }
-        else
-        {
-            ShowFFmpegMissingError();
-        }
+        await StartPlaybackAsync();
     }
 
     public void Shutdown()
@@ -224,27 +229,23 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task DownloadFFmpegAsync()
     {
         SetDownloadingFFmpeg(true);
-        Error.Clear();
+
+        // The loading overlay takes the prompt's place while the download runs.
+        Error.WithdrawFFmpegPrompt();
 
         try
         {
             Log.Debug("Starting FFmpeg download workflow");
-            await PackageManager.DownloadAndExtractFFmpeg();
-            if (_flyleafRuntime.TryStart())
-            {
-                InitializePlayer();
-                await Library.ReloadAsync();
-            }
-            else
-            {
-                ShowFFmpegMissingError();
-            }
+            await _downloadFFmpeg();
+            await StartPlaybackAsync();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to download FFmpeg");
-            Error.Show("Download Failed", $"Failed to download FFmpeg: {ex.Message}");
-            Error.ShowFFmpegDownloadButton = true;
+
+            // The failure covers the prompt rather than replacing it, so it keeps the retry, and dismissing it returns to the prompt.
+            Error.ShowFFmpegPrompt();
+            Error.Show("Download Failed", PackageManager.DescribeDownloadFailure(ex));
         }
         finally
         {
@@ -252,17 +253,28 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Starts the player and scans for clips, or asks for FFmpeg when it is missing.
+    /// Shared by startup and the end of a download, so FFmpeg turning out to be unusable either way leaves the same standing prompt.
+    /// Internal so tests can reach the FFmpeg-missing state without the startup update check going to the network.
+    /// </summary>
+    internal async Task StartPlaybackAsync()
+    {
+        if (!_tryStartFlyleaf())
+        {
+            Log.Debug("Showing FFmpeg missing prompt");
+            Error.ShowFFmpegPrompt();
+            return;
+        }
+
+        InitializePlayer();
+        await Library.ReloadAsync();
+    }
+
     private void SetDownloadingFFmpeg(bool value)
     {
         _isDownloadingFFmpeg = value;
         NotifyLoadingChanged();
-    }
-
-    private void ShowFFmpegMissingError()
-    {
-        Log.Debug("Showing FFmpeg missing prompt");
-        Error.ShowFFmpegDownloadButton = true;
-        Error.Show("FFmpeg Required", "FFmpeg is required to play clips. This will download about 80MB.", canDismiss: false);
     }
 
     private static async Task RunKeyActionAsync(Func<Task> action, Key key)
@@ -399,7 +411,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void OnPlaybackPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PlaybackViewModel.IsLoading))
+        if (e.PropertyName is nameof(PlaybackViewModel.IsLoading) or nameof(PlaybackViewModel.HasPlayer))
         {
             NotifyLoadingChanged();
         }

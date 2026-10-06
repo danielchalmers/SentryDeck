@@ -26,6 +26,7 @@ public partial class MainWindow : Window
 
     private bool _isClosing;
     private bool _isReadyToClose;
+    private bool _areCameraHostsInWindow;
 
     public MainWindow()
     {
@@ -41,8 +42,11 @@ public partial class MainWindow : Window
             [CameraNames.RightPillar] = RightPillarFlyleafHost,
         };
 
-        _viewModel = new MainWindowViewModel(
-            () => VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]));
+        // A host that has loaded logs through Flyleaf's engine when the window closes, and that engine only starts once FFmpeg is installed, so without FFmpeg every host threw on close.
+        // The hosts therefore join the window only when the player that drives them is created (see CreatePlayerController).
+        FlyleafHostPool.Children.Clear();
+
+        _viewModel = new MainWindowViewModel(CreatePlayerController);
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
         _viewModel.Cameras.PropertyChanged += CamerasOnPropertyChanged;
 
@@ -56,6 +60,15 @@ public partial class MainWindow : Window
         }
 
         UpdateCameraHostLayout();
+    }
+
+    // Only called once Flyleaf has started.
+    private VideoPlayerController CreatePlayerController()
+    {
+        _areCameraHostsInWindow = true;
+        UpdateCameraHostLayout();
+
+        return VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]);
     }
 
     private async void Window_ContentRendered(object sender, EventArgs e)
@@ -230,7 +243,7 @@ public partial class MainWindow : Window
 
     private void UpdateCameraHostLayout()
     {
-        if (PrimaryCameraHostSlot is null)
+        if (PrimaryCameraHostSlot is null || !_areCameraHostsInWindow)
             return;
 
         var placed = new HashSet<FlyleafHost>();

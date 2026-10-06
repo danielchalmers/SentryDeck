@@ -448,9 +448,9 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     [Fact]
     public void SelectingClip_HidesOverlay_AndShowsVideo()
     {
-        var vm = CreateViewModel();
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
 
-        vm.Library.SelectedClip = TestClips.Create(1)[0];
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
 
         vm.HasNoClipSelected.ShouldBeFalse();
         vm.ShowStatusOverlay.ShouldBeFalse();
@@ -460,10 +460,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     [Fact]
     public void CanPlayPause_RequiresClipOrPlayback_AndNotLoading()
     {
-        var vm = CreateViewModel();
-        vm.Playback.CanPlayPause.ShouldBeFalse();
+        CreateViewModelWithController(out _, out _).Playback.CanPlayPause.ShouldBeFalse();
 
-        vm.Library.SelectedClip = TestClips.Create(1)[0];
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
         vm.Playback.CanPlayPause.ShouldBeTrue();
 
         vm.Playback.IsLoading = true;
@@ -472,7 +472,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         // Even with no selected clip, an in-flight playback keeps the toggle live.
         vm.Playback.IsLoading = false;
         vm.Library.SelectedClip = null;
-        vm.Playback.IsPlaying = true;
+        vm.Playback.IsPlaying.ShouldBeTrue();
         vm.Playback.CanPlayPause.ShouldBeTrue();
     }
 
@@ -584,7 +584,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
         vm.Error.IsVisible = true;
-        vm.Error.ShowFFmpegDownloadButton = true;
         vm.Error.CanDismiss = false;
         vm.Error.Title = "Boom";
         vm.Error.Details = "Something went wrong";
@@ -592,7 +591,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         vm.Error.DismissCommand.Execute(null);
 
         vm.Error.IsVisible.ShouldBeFalse();
-        vm.Error.ShowFFmpegDownloadButton.ShouldBeFalse();
         vm.Error.CanDismiss.ShouldBeTrue();
         vm.Error.Title.ShouldBeNull();
         vm.Error.Details.ShouldBeNull();

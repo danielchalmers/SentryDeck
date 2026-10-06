@@ -317,10 +317,11 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public async Task Search_HidesTheOpenClip_KeepsItOpenAndInView()
     {
-        var clips = TestClips.Create(3);
-        var vm = await LoadedViewModelAsync(clips);
-        var open = clips[1];
-        vm.Library.ListSelection = open;
+        // The video only shows with a player, so the clip is opened in a real one rather than just selected.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, _) = CreateRescannableViewModel(_ => [clipFiles.Clip]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        var open = vm.Library.SelectedClip;
 
         vm.Library.FilterText = "zzzz";
         vm.Library.ApplyFilter();

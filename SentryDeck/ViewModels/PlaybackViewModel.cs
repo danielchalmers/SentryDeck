@@ -112,7 +112,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
     public bool CanSeek => _playerController?.IsMediaOpen == true && !IsLoading && _playerController.Duration > TimeSpan.Zero;
 
-    public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
+    // Without a player (FFmpeg missing) Play would do nothing at all, so it must not look available.
+    public bool CanPlayPause => HasPlayer && (SelectedClip is not null || IsPlaying) && !IsLoading;
 
     // A paused or finished clip still holds its files open, so Stop must stay available to let go of them without resuming first.
     public bool CanStop => IsPlaying || IsLoading || _playerController?.IsMediaOpen == true;
@@ -196,6 +197,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
         _playerController = _playerControllerFactory();
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = PlaybackSpeed;
+
+        // The player can arrive mid-session, once a first-run FFmpeg download finishes.
+        OnPropertyChanged(nameof(HasPlayer));
+        OnPropertyChanged(nameof(CanPlayPause));
     }
 
     public void Shutdown()
