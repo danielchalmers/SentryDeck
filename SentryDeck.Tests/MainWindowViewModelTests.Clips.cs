@@ -77,6 +77,25 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task FilteredClips_SavedClipWithoutEventJson_IsFoundAsSavedNotRecent()
+    {
+        // Older firmware wrote no event.json, so the SavedClips folder is the only sign the clip was saved rather than left in the rolling buffer.
+        var clips = new List<CamClip>
+        {
+            new(@"D:\TeslaCam\SavedClips\2024-05-02_16-49-35", "Saved Without Event", new DateTime(2024, 5, 2), [], camEvent: null),
+            new(@"D:\TeslaCam\RecentClips", "Rolling Buffer", new DateTime(2024, 5, 3), [], camEvent: null),
+        };
+        var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
+        await vm.Library.LoadClipsAsync(new[] { "root" });
+
+        vm.Library.FilterText = "recent";
+        vm.Library.FilteredClips.Single().Name.ShouldBe("Rolling Buffer");
+
+        vm.Library.FilterText = "saved";
+        vm.Library.FilteredClips.Single().Name.ShouldBe("Saved Without Event");
+    }
+
+    [Fact]
     public async Task ClipCount_ReflectsFilteredCount()
     {
         var clips = TestClips.Create(3);

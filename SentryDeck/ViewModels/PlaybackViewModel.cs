@@ -119,9 +119,12 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// <summary>True when the selected clip has a locatable event moment to mark on the seek bar and jump to.</summary>
     public bool HasEventMarker => _eventPosition.HasValue;
 
-    /// <summary>Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".</summary>
+    /// <summary>
+    /// Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".
+    /// The reason comes from the clip rather than its event, so a saved clip whose event.json has no reason is called Saved here, as on its card.
+    /// </summary>
     public string EventMarkerTooltip => SelectedClip?.Event is { } camEvent && HasEventMarker
-        ? $"{ClipDisplay.ReasonLabel(camEvent)} · {camEvent.Timestamp:t}"
+        ? $"{ClipDisplay.ReasonLabel(SelectedClip)} · {camEvent.Timestamp:t}"
         : string.Empty;
 
     /// <summary>Interior chunk-boundary fractions (i/Count for i in 1..Count-1); empty for fewer than two chunks.</summary>

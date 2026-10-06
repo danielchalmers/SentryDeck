@@ -9,21 +9,22 @@ using System.Windows.Media.Imaging;
 namespace SentryDeck;
 
 /// <summary>
-/// Friendly event-reason label for a <see cref="CamEvent"/> (e.g. "Sentry", "Honk", "Saved").
+/// Friendly event-reason label for a <see cref="CamClip"/> or <see cref="CamEvent"/> (e.g. "Sentry", "Honk", "Saved").
+/// Bind the clip where there is one: a clip without event.json takes its label from its TeslaCam folder, which a bare event can't tell.
 /// </summary>
 public sealed class ReasonLabelConverter : MarkupExtension, IValueConverter
 {
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => ClipDisplay.ReasonLabel(value as CamEvent);
+        => value is CamClip clip ? ClipDisplay.ReasonLabel(clip) : ClipDisplay.ReasonLabel(value as CamEvent);
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
 
 /// <summary>
-/// The stable reason category key for a <see cref="CamEvent"/> (see <see cref="ClipDisplay.ReasonKey"/>).
+/// The stable reason category key for a <see cref="CamClip"/> or <see cref="CamEvent"/> (see <see cref="ClipDisplay.ReasonKey(CamClip)"/>).
 /// Reason-colored overlays bind this into DataTriggers that pick a theme brush via <c>DynamicResource</c>, so the color follows a live OS light/dark switch.
 /// (Resolving the brush in the converter instead returned a one-time snapshot that stayed on the old theme.)
 /// </summary>
@@ -32,7 +33,7 @@ public sealed class ReasonKeyConverter : MarkupExtension, IValueConverter
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => ClipDisplay.ReasonKey(value as CamEvent);
+        => value is CamClip clip ? ClipDisplay.ReasonKey(clip) : ClipDisplay.ReasonKey(value as CamEvent);
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();

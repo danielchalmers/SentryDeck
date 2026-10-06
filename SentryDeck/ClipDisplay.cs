@@ -13,14 +13,27 @@ public static class ClipDisplay
     public const string ReasonRecent = "recent";
 
     /// <summary>
+    /// Normalizes a clip's event reason into a stable category key.
+    /// A clip with no event.json, or a blank reason, falls back to its TeslaCam folder, so a saved or Sentry clip isn't passed off as the rolling Recent buffer.
+    /// </summary>
+    public static string ReasonKey(CamClip clip) => ReasonKey(clip?.Event, clip?.SourceFolder ?? CamSourceFolder.Other);
+
+    /// <summary>
     /// Normalizes a raw event reason into a stable category key.
     /// </summary>
-    public static string ReasonKey(CamEvent camEvent)
+    public static string ReasonKey(CamEvent camEvent) => ReasonKey(camEvent, CamSourceFolder.Other);
+
+    private static string ReasonKey(CamEvent camEvent, CamSourceFolder sourceFolder)
     {
         var reason = camEvent?.Reason;
         if (string.IsNullOrWhiteSpace(reason))
         {
-            return ReasonRecent;
+            return sourceFolder switch
+            {
+                CamSourceFolder.SavedClips => ReasonSaved,
+                CamSourceFolder.SentryClips => ReasonSentry,
+                _ => ReasonRecent,
+            };
         }
 
         reason = reason.ToLowerInvariant();
@@ -45,9 +58,16 @@ public static class ClipDisplay
     }
 
     /// <summary>
+    /// A short, human-friendly label for the clip's event reason, or for its TeslaCam folder when the reason is missing.
+    /// </summary>
+    public static string ReasonLabel(CamClip clip) => LabelFor(ReasonKey(clip));
+
+    /// <summary>
     /// A short, human-friendly label for the event reason.
     /// </summary>
-    public static string ReasonLabel(CamEvent camEvent) => ReasonKey(camEvent) switch
+    public static string ReasonLabel(CamEvent camEvent) => LabelFor(ReasonKey(camEvent));
+
+    private static string LabelFor(string reasonKey) => reasonKey switch
     {
         ReasonSentry => "Sentry",
         ReasonHonk => "Honk",

@@ -217,19 +217,19 @@
                                     <Style TargetType="Border">
                                         <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="sentry">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
                                             </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="honk">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
                                             </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="alert">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                             </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
                                                          Value="saved">
                                                 <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                             </DataTrigger>
@@ -715,19 +715,19 @@
                                             <!--  Reason color via DynamicResource (keyed by ReasonKey) so the stripe re-colors on a live OS theme switch.  -->
                                             <Setter Property="Fill" Value="{DynamicResource TextFillColorTertiaryBrush}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="sentry">
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorAttentionBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="honk">
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorCautionBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="alert">
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="saved">
                                                     <Setter Property="Fill" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                                 </DataTrigger>
@@ -814,7 +814,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0"
-                                                   Text="{Binding Event, Converter={local:ReasonLabelConverter}}"
+                                                   Text="{Binding Converter={local:ReasonLabelConverter}}"
                                                    Style="{StaticResource ClipListSecondaryTextBlock}"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Column="1"

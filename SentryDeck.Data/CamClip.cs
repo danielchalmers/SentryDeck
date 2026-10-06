@@ -46,6 +46,12 @@ public partial record class CamClip
     /// </summary>
     public TimeSpan EstimatedDuration { get; private init; }
 
+    /// <summary>
+    /// The TeslaCam folder the clip sits in, read from its path.
+    /// Firmware that wrote no event.json leaves no reason, so this is the only sign whether the clip was saved, kept by Sentry Mode, or is the rolling RecentClips buffer.
+    /// </summary>
+    public CamSourceFolder SourceFolder { get; private init; }
+
     public CamClip(string path, string name, DateTime timestamp, IEnumerable<CamChunk> chunks, CamEvent camEvent)
     {
         FullPath = Path.GetFullPath(path);
@@ -55,6 +61,7 @@ public partial record class CamClip
         Event = camEvent;
         ThumbnailPath = Path.Combine(FullPath, "thumb.png");
         EstimatedDuration = new ClipTimeline(Chunks).Duration;
+        SourceFolder = SourceFolderOf(FullPath);
     }
 
     /// <summary>
@@ -135,6 +142,25 @@ public partial record class CamClip
 
         return nominalChunk;
     }
+
+    /// <summary>
+    /// Tesla keeps RecentClips chunks loose in the folder itself but puts each saved or Sentry event in its own subfolder, so the clip folder's name is checked before its parent's.
+    /// </summary>
+    private static CamSourceFolder SourceFolderOf(string fullPath)
+    {
+        var folder = Path.TrimEndingDirectorySeparator(fullPath);
+        var own = SourceFolderNamed(Path.GetFileName(folder));
+        return own != CamSourceFolder.Other ? own : SourceFolderNamed(Path.GetFileName(Path.GetDirectoryName(folder)));
+    }
+
+    // Case-insensitive because copies made on other systems or by other tools don't always keep Tesla's capitalization.
+    private static CamSourceFolder SourceFolderNamed(string name) => name?.ToUpperInvariant() switch
+    {
+        "RECENTCLIPS" => CamSourceFolder.RecentClips,
+        "SAVEDCLIPS" => CamSourceFolder.SavedClips,
+        "SENTRYCLIPS" => CamSourceFolder.SentryClips,
+        _ => CamSourceFolder.Other,
+    };
 
     /// <summary>
     /// Finds clip folders inside the specified root directory.

@@ -22,6 +22,20 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void EventMarkerTooltip_SavedClipWithBlankReason_SaysSavedLikeItsCard()
+    {
+        var vm = CreateViewModel();
+        var start = new DateTime(2025, 1, 1, 12, 0, 0);
+        var camEvent = new CamEvent { Reason = " ", Timestamp = start.AddSeconds(30) };
+
+        // The card names this clip by its SavedClips folder, so the marker over the same clip must not call it Recent.
+        vm.Library.SelectedClip = new CamClip(@"D:\TeslaCam\SavedClips\2025-01-01_12-00-00", "Saved Clip", start, [new CamChunk(start, [])], camEvent);
+
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.EventMarkerTooltip.ShouldStartWith("Saved · ");
+    }
+
+    [Fact]
     public void EventMarker_AbsentWithoutEvent()
     {
         var vm = CreateViewModel();

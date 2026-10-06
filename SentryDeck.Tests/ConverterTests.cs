@@ -266,6 +266,16 @@ public sealed class ConverterTests
         new MapAvailabilityConverter().Convert("not an event", typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
     }
 
+    [Fact]
+    public void ReasonConverters_SentryClipWithoutEventJson_UseItsFolder()
+    {
+        // The clip row binds the clip itself, because a missing event.json leaves only the folder to say how the clip was recorded.
+        var clip = new CamClip(@"D:\TeslaCam\SentryClips\2024-05-02_16-49-35", "Sentry Without Event", Moment, [], camEvent: null);
+
+        new ReasonLabelConverter().Convert(clip, typeof(string), null, null).ShouldBe("Sentry");
+        new ReasonKeyConverter().Convert(clip, typeof(string), null, null).ShouldBe(ClipDisplay.ReasonSentry);
+    }
+
     private static CamClip ClipWithChunks(int chunkCount)
     {
         var chunks = Enumerable.Range(0, chunkCount)

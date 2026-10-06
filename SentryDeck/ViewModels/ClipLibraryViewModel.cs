@@ -162,7 +162,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         return clip.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
             || clip.FullPath.Contains(term, StringComparison.CurrentCultureIgnoreCase)
             || (clip.Event?.City?.Contains(term, StringComparison.CurrentCultureIgnoreCase) ?? false)
-            || ClipDisplay.ReasonLabel(clip.Event).Contains(term, StringComparison.CurrentCultureIgnoreCase);
+            || ClipDisplay.ReasonLabel(clip).Contains(term, StringComparison.CurrentCultureIgnoreCase);
     }
 
     // Restart the debounce on each keystroke; the list is rebound once typing settles.

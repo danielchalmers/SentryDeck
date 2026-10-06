@@ -31,6 +31,21 @@ public sealed class CamStorageTests
         clip.Name.ShouldBe(expectedName);
     }
 
+    [Theory]
+    [InlineData(@"D:\TeslaCam\SavedClips\2024-05-02_16-49-35", CamSourceFolder.SavedClips)]
+    [InlineData(@"D:\TeslaCam\SentryClips\2024-05-02_16-49-35\", CamSourceFolder.SentryClips)]
+    [InlineData(@"D:\TeslaCam\RecentClips", CamSourceFolder.RecentClips)]
+    [InlineData(@"D:\TeslaCam\RecentClips\2024-05-02", CamSourceFolder.RecentClips)]
+    [InlineData(@"E:\teslacam\savedclips\2024-05-02_16-49-35", CamSourceFolder.SavedClips)]
+    [InlineData(@"D:\Backup\2024-05-02_16-49-35", CamSourceFolder.Other)]
+    [InlineData(@"D:\", CamSourceFolder.Other)]
+    public void Constructor_ClipPath_RecordsTheTeslaCamFolderItSitsIn(string path, CamSourceFolder expected)
+    {
+        var clip = new CamClip(path, "Clip", new DateTime(2024, 5, 2), [], camEvent: null);
+
+        clip.SourceFolder.ShouldBe(expected);
+    }
+
     [Fact]
     public void MapClipWithNonstandardNameFallsBackToEventDataForTimestamp()
     {
