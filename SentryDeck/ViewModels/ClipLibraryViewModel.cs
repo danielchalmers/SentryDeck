@@ -23,9 +23,12 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     private readonly ErrorOverlayViewModel _error;
     private readonly DispatcherTimer _filterDebounceTimer;
 
-    // The source of dashcam roots: auto-discovery by default, or the user's last picked folders.
-    // Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
-    private Func<IEnumerable<string>> _rootSource = CamStorage.FindCommonRoots;
+    /// <summary>
+    /// The source of dashcam roots: auto-discovery by default, or the user's last picked folders.
+    /// Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
+    /// Overridable for tests, which must not depend on the drives of the machine running them.
+    /// </summary>
+    internal Func<IEnumerable<string>> RootSource { get; set; } = CamStorage.FindCommonRoots;
 
     // The roots the last scan read, so an empty library can name the folders it looked in.
     private IReadOnlyList<string> _scannedRoots = [];
@@ -137,7 +140,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             : $"Permanently delete this clip?\n\nIt can't go to the Recycle Bin because {whyPermanent}, so it can't be recovered once deleted.\n\n{clip.Name}\n{clip.FullPath}";
 
     /// <summary>Rescans the current source of dashcam roots (auto-discovered drives, or the folders the user picked).</summary>
-    public Task ReloadAsync(TimeSpan minimumLoadingDuration = default) => LoadClipsAsync(_rootSource(), minimumLoadingDuration);
+    public Task ReloadAsync(TimeSpan minimumLoadingDuration = default) => LoadClipsAsync(RootSource(), minimumLoadingDuration);
 
     public async Task LoadClipsAsync(IEnumerable<string> roots, TimeSpan minimumLoadingDuration = default)
     {
@@ -424,7 +427,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
 
             await _playback.StopPlayerAsync();
 
-            _rootSource = () => folders;
+            RootSource = () => folders;
             await LoadClipsAsync(folders);
         }
         else
@@ -438,8 +441,27 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     {
         Log.Debug("Refreshing clips");
 
+        // A rescan is for picking up newly copied footage, so the clip being reviewed carries on where it was rather than closing and leaving the user to find it and seek back.
+        // Only a clip still in the player is reopened: one the user stopped stays closed.
+        var openClipPath = SelectedClip is { } selected && ReferenceEquals(selected, _playback.NowPlayingClip) ? selected.FullPath : null;
+        var place = _playback.CurrentPlace;
+
         await _playback.StopPlayerAsync();
         await ReloadAsync(TimeSpan.FromMilliseconds(400));
+
+        // Opening a clip clears the notice over the video, which would hide why another folder's clips are missing.
+        if (openClipPath is null || _error.IsVisible)
+        {
+            return;
+        }
+
+        // The scan read every clip into a new object, so the open clip is found again by its folder.
+        var rescanned = _allClips.FirstOrDefault(clip => string.Equals(clip.FullPath, openClipPath, StringComparison.OrdinalIgnoreCase));
+        if (rescanned is not null)
+        {
+            _playback.ResumeAt(place);
+            SelectedClip = rescanned;
+        }
     }
 
     private bool CanRefreshClips => !IsLoadingClips;

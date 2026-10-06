@@ -21,6 +21,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private CancellationTokenSource _selectionCts;
     private bool _isSeeking;
 
+    // Where the next selection picks up instead of just before its event (see ResumeAt), or null.
+    private PlaybackPlace _resumePlace;
+
     // Identifies the current seek gesture.
     // EndSeekAsync's slow tail (the accurate seek can queue behind in-flight scrubs) may complete after the user has already started a NEW drag; only the completion belonging to the latest gesture may clear _isSeeking, or the position sync would yank the thumb out from under the active drag.
     private int _seekGeneration;
@@ -222,7 +225,15 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 "Selected clip changed. ClipName={ClipName}; ClipPath={ClipPath}",
                 clip.Name,
                 clip.FullPath);
-            _ = PlaySelectedClipAsync(clip, _selectionCts.Token);
+
+            var resumePlace = TakeResumePlace(clip);
+            if (resumePlace is not null)
+            {
+                // Nothing was selected while the clip was reread, so the tiles fell back to the classic four cameras and a B-pillar view dropped to the front.
+                _cameras.SelectCameraViewCommand.Execute(resumePlace.CameraView);
+            }
+
+            _ = PlaySelectedClipAsync(clip, resumePlace, _selectionCts.Token);
         }
     }
 
@@ -259,6 +270,25 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// </summary>
     public Task ReopenAsync(CamClip clip, TimeSpan position, bool play) =>
         _playerController?.ReopenAsync(clip, position, play) ?? Task.CompletedTask;
+
+    /// <summary>Where the viewer is in the open clip, or null while no clip is open.</summary>
+    public PlaybackPlace CurrentPlace => _playerController is { IsMediaOpen: true, CurrentClip: { } clip } controller
+        ? new PlaybackPlace(clip.FullPath, controller.Position, controller.IsPlaying, _cameras.SelectedCameraView)
+        : null;
+
+    /// <summary>
+    /// Has the next selection open at <paramref name="place"/> if it is the same clip folder, instead of just before its event.
+    /// A rescan reads every clip into a new object, and selecting the open clip's new object would otherwise start it over.
+    /// </summary>
+    public void ResumeAt(PlaybackPlace place) => _resumePlace = place;
+
+    // A place only applies to the selection right after it, so picking that clip again later starts it over as usual.
+    private PlaybackPlace TakeResumePlace(CamClip clip)
+    {
+        var place = _resumePlace;
+        _resumePlace = null;
+        return string.Equals(place?.ClipPath, clip.FullPath, StringComparison.OrdinalIgnoreCase) ? place : null;
+    }
 
     public Task TogglePlayPauseAsync() => _playerController?.TogglePlayPauseAsync() ?? Task.CompletedTask;
 
@@ -414,7 +444,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         }
     }
 
-    private async Task PlaySelectedClipAsync(CamClip clip, CancellationToken cancellationToken)
+    private async Task PlaySelectedClipAsync(CamClip clip, PlaybackPlace resumePlace, CancellationToken cancellationToken)
     {
         if (clip is null || _playerController is null)
             return;
@@ -437,9 +467,17 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
         try
         {
-            await _playerController.GoToClipAsync(clip);
+            if (resumePlace is null)
+            {
+                await _playerController.GoToClipAsync(clip);
+            }
+            else
+            {
+                await _playerController.GoToClipAsync(clip, resumePlace.Position, resumePlace.IsPlaying);
+            }
 
-            if (cancellationToken.IsCancellationRequested)
+            // A clip picked up where the viewer was stays on the camera they were watching.
+            if (cancellationToken.IsCancellationRequested || resumePlace is not null)
                 return;
 
             // Auto-focus the camera that triggered the event (Full metadata mode).

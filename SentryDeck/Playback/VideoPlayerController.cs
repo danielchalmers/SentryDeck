@@ -75,6 +75,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private bool _isScrubbing;
     private bool _resumeAfterScrub;
     private bool _isDisposed;
+    private (CamClip Clip, TimeSpan Position, bool Play)? _requestedStart;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
@@ -356,6 +357,26 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     public Task GoToClipAsync(int index)
     {
         Playlist.MoveTo(index);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Like <see cref="GoToClipAsync(CamClip)"/>, but the clip opens at <paramref name="startPosition"/>, playing or paused, instead of just before its event.
+    /// A clip read from disk again keeps the viewer's place this way, without first playing on from its event.
+    /// </summary>
+    public Task GoToClipAsync(CamClip clip, TimeSpan startPosition, bool play)
+    {
+        // Moving to the clip starts its open before returning, so only that open sees the request.
+        _requestedStart = (clip, startPosition, play);
+        try
+        {
+            Playlist.MoveTo(clip);
+        }
+        finally
+        {
+            _requestedStart = null;
+        }
+
         return Task.CompletedTask;
     }
 
@@ -966,7 +987,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             Playlist.CurrentIndex,
             Playlist.Clips.Count);
 
-        _ = OpenClipAsync(clip);
+        // A clip reached through GoToClipAsync with a start position opens there instead of just before its event.
+        _ = _requestedStart is { } start && start.Clip == clip
+            ? OpenClipAsync(clip, start.Position, start.Play)
+            : OpenClipAsync(clip);
     }
 
     private void OnPlaylistChanged(object sender, EventArgs e)

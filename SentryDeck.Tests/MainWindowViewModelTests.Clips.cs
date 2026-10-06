@@ -624,6 +624,155 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.ListSelection.ShouldBe(_springfield);
     }
 
+    // --- Rescan: every clip is read from disk again, so the open clip comes back as a new object and is found by its folder. ---
+
+    // A real controller, and a loader that reads the clips afresh on every scan the way a rescan of the disk does.
+    private (MainWindowViewModel Vm, VideoPlayerController Controller, FakeCameraPlayer Front) CreateRescannableViewModel(Func<string, IReadOnlyList<CamClip>> scan)
+    {
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        var vm = new MainWindowViewModel(
+            () => controller,
+            clipLoader: scan,
+            backgroundYield: () => Task.CompletedTask,
+            uiInvoker: action => action());
+        vm.Library.RootSource = () => [@"D:\TeslaCam"];
+        vm.InitializePlayer();
+        return (vm, controller, front);
+    }
+
+    // The clip as a fresh scan reads it: the same folder and footage, but a different object.
+    private static CamClip ReadAgain(CamClip clip, CamEvent camEvent = null) =>
+        new(clip.FullPath, clip.Name, clip.Timestamp, clip.Chunks, camEvent ?? clip.Event);
+
+    private static async Task OpenClipAsync(MainWindowViewModel vm, VideoPlayerController controller, CamClip clip)
+    {
+        await vm.Library.ReloadAsync();
+        vm.Library.ListSelection = vm.Library.FilteredClips.Single(listed => listed.FullPath == clip.FullPath);
+        await controller.WhenIdleAsync();
+    }
+
+    [Fact]
+    public async Task RefreshClips_WhilePlaying_KeepsPlayingTheClipFromWhereItWas()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var (vm, controller, _) = CreateRescannableViewModel(_ => [ReadAgain(clipFiles.Clip)]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        await controller.SeekAsync(TimeSpan.FromSeconds(75));
+
+        await vm.Library.RefreshClipsCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+
+        // Rescanning to pick up newly copied footage closed the clip being reviewed, so it had to be found in the list again and sought back to.
+        var rescanned = vm.Library.FilteredClips.Single();
+        vm.Library.SelectedClip.ShouldBeSameAs(rescanned);
+        vm.Library.ListSelection.ShouldBeSameAs(rescanned);
+        vm.Playback.NowPlayingClip.ShouldBeSameAs(rescanned);
+        controller.CurrentClip.ShouldBeSameAs(rescanned);
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(75));
+        controller.IsPlaying.ShouldBeTrue();
+        vm.ShowVideoHosts.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RefreshClips_WhilePaused_ReopensTheClipPausedWhereItWas()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var (vm, controller, front) = CreateRescannableViewModel(_ => [ReadAgain(clipFiles.Clip)]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        await controller.SeekAsync(TimeSpan.FromSeconds(75));
+        await controller.PauseAsync();
+        var callsBeforeRescan = front.Calls.Count;
+
+        await vm.Library.RefreshClipsCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+
+        // Opening straight onto the paused frame keeps the clip from playing on, even for a moment, past the frame the user stopped on.
+        var callsSinceRescan = front.Calls.Skip(callsBeforeRescan).ToList();
+        callsSinceRescan.ShouldContain("seek:75");
+        callsSinceRescan.ShouldNotContain("play");
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(75));
+        controller.IsPlaying.ShouldBeFalse();
+        controller.IsMediaOpen.ShouldBeTrue();
+        vm.Library.SelectedClip.ShouldBeSameAs(vm.Library.FilteredClips.Single());
+    }
+
+    [Fact]
+    public async Task RefreshClips_WhileWatchingAPillarCamera_KeepsThatCamera()
+    {
+        // An event that names the rear camera, on a clip that also recorded the B-pillars.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var rearEvent = new CamEvent { Reason = "sentry_aware_object_detection", Timestamp = clipFiles.Clip.Timestamp.AddSeconds(30), Camera = 7 };
+        var (vm, controller, _) = CreateRescannableViewModel(_ => [ReadAgain(clipFiles.Clip, rearEvent)]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.LeftPillar);
+
+        await vm.Library.RefreshClipsCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+
+        // Reopening the clip as if it were newly picked jumped to the camera its event names.
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+    }
+
+    [Fact]
+    public async Task RefreshClips_AfterStop_LeavesTheClipClosed()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateRescannableViewModel(_ => [ReadAgain(clipFiles.Clip)]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        await vm.Playback.StopCommand.ExecuteAsync(null);
+
+        await vm.Library.RefreshClipsCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+
+        // Stop asked for the clip's files to be let go, and a rescan is no reason to open them again.
+        front.Count("open").ShouldBe(1);
+        controller.IsMediaOpen.ShouldBeFalse();
+        vm.Library.SelectedClip.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RefreshClips_TheOpenClipIsGone_LeavesNothingOpen()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var other = ClipAt(@"D:\TeslaCam\SavedClips\2025-01-01_12-00-00", "Other", new DateTime(2025, 1, 1, 12, 0, 0));
+        var scans = 0;
+        var (vm, controller, _) = CreateRescannableViewModel(_ => ++scans == 1 ? [ReadAgain(clipFiles.Clip)] : [other]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+
+        await vm.Library.RefreshClipsCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+
+        vm.Library.SelectedClip.ShouldBeNull();
+        vm.Playback.NowPlayingClip.ShouldBeNull();
+        controller.IsMediaOpen.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RefreshClips_AnotherFolderFails_ShowsTheErrorInsteadOfReopening()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var otherDriveClip = ClipAt(@"E:\TeslaCam\SavedClips\2025-01-01_12-00-00", "Other", new DateTime(2025, 1, 1, 12, 0, 0));
+        var unplug = false;
+        var (vm, controller, _) = CreateRescannableViewModel(root => root switch
+        {
+            @"E:\TeslaCam" when unplug => throw new IOException("the drive was removed"),
+            @"E:\TeslaCam" => [otherDriveClip],
+            _ => [ReadAgain(clipFiles.Clip)],
+        });
+        vm.Library.RootSource = () => [@"D:\TeslaCam", @"E:\TeslaCam"];
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        unplug = true;
+
+        await vm.Library.RefreshClipsCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+
+        // Opening a clip clears the notice over the video, so reopening this one would hide why the other folder's clips vanished.
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Error Loading Clips");
+        vm.Library.SelectedClip.ShouldBeNull();
+    }
+
     // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
 
     private static List<CamClip> ClipsWithDistinctPaths(int count) =>
