@@ -995,11 +995,16 @@
                 </Border>
             </Grid>
 
-            <!--  Splitter  -->
+            <!--
+                Splitter.
+                Out of the tab order: the arrow keys that would move it seek the video instead, so as a tab stop it was an unnamed stop that did nothing.
+            -->
             <GridSplitter Grid.Column="1"
                           Width="8"
                           HorizontalAlignment="Stretch"
-                          Background="Transparent" />
+                          AutomationProperties.Name="Resize sidebar"
+                          Background="Transparent"
+                          IsTabStop="False" />
 
             <!--  Video Player Area (opaque: frames the native video surface)  -->
             <Grid Grid.Column="2"
@@ -1020,13 +1025,14 @@
                     <Grid x:Name="FlyleafHostPool"
                           Visibility="Collapsed">
                         <!--  KeyBindings=None: shortcuts are app-wide (Window_PreviewKeyDown acts on all cameras);
-                              Flyleaf's per-surface key handling would pause/seek a single camera only.  -->
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="BackFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="LeftFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="RightFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="LeftPillarFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="RightPillarFlyleafHost" KeyBindings="None" />
+                              Flyleaf's per-surface key handling would pause/seek a single camera only.
+                              Not focusable, like the slots they move between: they only show video, so as tab stops they were invisible, unnamed stops between the sidebar and the player controls.  -->
+                        <fl:FlyleafHost x:Name="FrontFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="BackFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="LeftFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="RightFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="LeftPillarFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="RightPillarFlyleafHost" Focusable="False" KeyBindings="None" />
                     </Grid>
 
                     <!--  Video Player  -->
@@ -1040,6 +1046,7 @@
                         <!--
                             Focusable: keyboard focus is parked here after a camera-tile click so no control consumes keys ahead of the app-wide shortcuts.
                             Focusing the Window instead doesn't work because it's a focus scope, so WPF redirects to the last focused child (often a clip ListBoxItem, which swallows Space/arrows for list navigation).
+                            It is no tab stop, though: Tab would land on it as an invisible, unnamed stop that does nothing.
                         -->
                         <Border x:Name="VideoContainer"
                                 Grid.Row="0"
@@ -1048,7 +1055,8 @@
                                 BorderThickness="1"
                                 ClipToBounds="True"
                                 CornerRadius="6"
-                                Focusable="True">
+                                Focusable="True"
+                                KeyboardNavigation.IsTabStop="False">
                             <Grid>
                                 <Grid Visibility="{Binding Cameras.IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
                                     <Grid.RowDefinitions>
@@ -1066,7 +1074,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridFrontHostSlot" />
+                                            <ContentControl x:Name="GridFrontHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1086,7 +1095,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridRearHostSlot" />
+                                            <ContentControl x:Name="GridRearHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1106,7 +1116,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridLeftHostSlot" />
+                                            <ContentControl x:Name="GridLeftHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1126,7 +1137,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridRightHostSlot" />
+                                            <ContentControl x:Name="GridRightHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1142,7 +1154,8 @@
                                 </Grid>
 
                                 <Grid Visibility="{Binding Cameras.IsSingleCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
-                                    <ContentControl x:Name="PrimaryCameraHostSlot" />
+                                    <ContentControl x:Name="PrimaryCameraHostSlot"
+                                                    Focusable="False" />
                                     <Border Margin="14"
                                             Padding="10,4"
                                             HorizontalAlignment="Left"
@@ -1168,6 +1181,7 @@
                             <!--  One tile per view the current clip offers: the grid plus each recorded camera (four on HW3, six on HW4/AI4).
                                   Camera tiles carry a preview slot that registers itself with the code-behind (CameraTileSlot_Loaded), which re-parents each camera's Flyleaf host into it.  -->
                             <local:ControlGroupItemsControl AutomationProperties.Name="Camera views"
+                                                            Focusable="False"
                                                             ItemsSource="{Binding Cameras.CameraViewOptions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -1205,7 +1219,8 @@
                                                         CornerRadius="4"
                                                         Visibility="{Binding IsCamera, Converter={local:BoolToVisibilityConverter}}">
                                                     <Grid>
-                                                        <ContentControl Loaded="CameraTileSlot_Loaded" />
+                                                        <ContentControl Focusable="False"
+                                                                        Loaded="CameraTileSlot_Loaded" />
                                                         <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
                                                         <Border Margin="18"
                                                                 Background="{DynamicResource ControlFillColorSecondaryBrush}"
