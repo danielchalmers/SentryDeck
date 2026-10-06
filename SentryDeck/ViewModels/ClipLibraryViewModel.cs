@@ -65,7 +65,28 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     private string _filterText = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ListSelection))]
     private CamClip _selectedClip;
+
+    /// <summary>
+    /// The row the clip list highlights, which the list binds two-way: the selected clip while the search shows it, otherwise none.
+    /// Kept apart from <see cref="SelectedClip"/> so a search that hides the open clip only hides its row, and the clip keeps playing in view.
+    /// </summary>
+    public CamClip ListSelection
+    {
+        get => IsShownInList(SelectedClip) ? SelectedClip : null;
+        set
+        {
+            // The list drops its selection, and writes null back here, when a search hides the selected row.
+            // That isn't the user closing the clip, so the clip stays selected and its row is highlighted again once the search shows it.
+            if (value is null && !IsShownInList(SelectedClip))
+            {
+                return;
+            }
+
+            SelectedClip = value;
+        }
+    }
 
     // True while the clip list is being (re)scanned from disk; drives the sidebar loading indicator.
     [ObservableProperty]
@@ -186,6 +207,8 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             || ClipDisplay.ReasonLabel(clip).Contains(term, StringComparison.CurrentCultureIgnoreCase);
     }
 
+    private bool IsShownInList(CamClip clip) => clip is not null && MatchesFilter(clip);
+
     // Restart the debounce on each keystroke; the list is rebound once typing settles.
     partial void OnFilterTextChanged(string value)
     {
@@ -196,8 +219,20 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     private void OnFilterDebounceTick(object sender, EventArgs e)
     {
         _filterDebounceTimer.Stop();
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// Rebinds the list to the current search.
+    /// The debounce timer calls it once typing settles; tests call it directly because the timer never ticks without a message loop.
+    /// </summary>
+    internal void ApplyFilter()
+    {
         OnPropertyChanged(nameof(FilteredClips));
         OnPropertyChanged(nameof(ClipCount));
+
+        // A search that hid the selected clip left its row unhighlighted, and nothing else tells the list to highlight it again once a later search shows it.
+        OnPropertyChanged(nameof(ListSelection));
     }
 
     private ScanResult ScanRoots(IEnumerable<string> roots)

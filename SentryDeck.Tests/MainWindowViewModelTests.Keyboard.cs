@@ -131,7 +131,7 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.SelectedClip = ClipWithChunks(1);
         vm.IsLoading.ShouldBeTrue();
 
-        // Clear the selection before the yield resumes (Ctrl+click deselect, or a search filter dropping the clip).
+        // Clear the selection before the yield resumes (a Ctrl+click deselect).
         // The superseded load must not leave IsLoading stuck true forever.
         vm.Library.SelectedClip = null;
         yieldGate.SetResult();

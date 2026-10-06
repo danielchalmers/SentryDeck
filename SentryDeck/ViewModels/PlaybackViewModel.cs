@@ -416,7 +416,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         // A newer selection superseded this one while we yielded, so drop it and let the latest win and the selection doesn't rubber-band backwards as earlier, slower loads complete.
         if (cancellationToken.IsCancellationRequested || !ReferenceEquals(clip, SelectedClip))
         {
-            // A newer selection's own load owns IsLoading now, but if the selection was cleared outright (deselect, or a filter dropping the clip), no load is in flight and nothing else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
+            // A newer selection's own load owns IsLoading now, but if the selection was cleared outright (a deselect), no load is in flight and nothing else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
             if (SelectedClip is null)
             {
                 IsLoading = false;

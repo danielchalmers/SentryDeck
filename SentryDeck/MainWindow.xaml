@@ -652,7 +652,7 @@
                          PreviewMouseLeftButtonUp="ClipListBox_PreviewMouseLeftButtonUp"
                          PreviewMouseRightButtonDown="ClipListBox_PreviewMouseRightButtonDown"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         SelectedItem="{Binding Library.SelectedClip, Mode=TwoWay}"
+                         SelectedItem="{Binding Library.ListSelection, Mode=TwoWay}"
                          VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                          VirtualizingPanel.VirtualizationMode="Recycling">
                     <ListBox.GroupStyle>

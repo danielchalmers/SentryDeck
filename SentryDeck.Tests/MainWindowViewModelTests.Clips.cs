@@ -145,6 +145,67 @@ public sealed partial class MainWindowViewModelTests
         changed.ShouldContain(nameof(ClipLibraryViewModel.HasFilterText));
     }
 
+    // --- A search that hides the open clip: the list can't keep a hidden row selected, so it writes null back through its selection binding. ---
+
+    [Fact]
+    public async Task Search_HidesTheOpenClip_KeepsItOpenAndInView()
+    {
+        var clips = TestClips.Create(3);
+        var vm = await LoadedViewModelAsync(clips);
+        var open = clips[1];
+        vm.Library.ListSelection = open;
+
+        vm.Library.FilterText = "zzzz";
+        vm.Library.ApplyFilter();
+        vm.Library.ListSelection = null;
+
+        // Treating that null as a deselect blanked the video to "Select a clip to begin" while the clip kept playing out of sight.
+        vm.Library.SelectedClip.ShouldBe(open);
+        vm.Playback.NowPlayingClip.ShouldBe(open);
+        vm.ShowVideoHosts.ShouldBeTrue();
+        vm.HasNoClipSelected.ShouldBeFalse();
+        vm.Library.ListSelection.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Search_ClearedAfterHidingTheOpenClip_HighlightsItsRowWithoutReopeningIt()
+    {
+        var clips = TestClips.Create(3);
+        var vm = await LoadedViewModelAsync(clips);
+        var open = clips[1];
+        vm.Library.ListSelection = open;
+        vm.Library.FilterText = "zzzz";
+        vm.Library.ApplyFilter();
+        vm.Library.ListSelection = null;
+
+        var changed = new List<string>();
+        vm.Library.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        vm.Library.FilterText = string.Empty;
+        vm.Library.ApplyFilter();
+
+        // The list only re-reads its selection when told, so without the notification the row stayed unhighlighted.
+        vm.Library.ListSelection.ShouldBe(open);
+        changed.ShouldContain(nameof(ClipLibraryViewModel.ListSelection));
+
+        // Announcing a new selection instead would reload the clip that is already playing and close an open trim panel.
+        changed.ShouldNotContain(nameof(ClipLibraryViewModel.SelectedClip));
+    }
+
+    [Fact]
+    public async Task ListSelection_ClearedWhileItsRowIsShown_DeselectsTheClip()
+    {
+        var clips = TestClips.Create(3);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.Library.ListSelection = clips[1];
+
+        vm.Library.FilterText = "Clip 1";
+        vm.Library.ApplyFilter();
+        vm.Library.ListSelection = null;
+
+        // Only a row the search hides is protected; deselecting a row the user can see still reaches the selection.
+        vm.Library.SelectedClip.ShouldBeNull();
+    }
+
     [Fact]
     public void ShowOnMap_DisabledWithoutCoordinates()
     {
