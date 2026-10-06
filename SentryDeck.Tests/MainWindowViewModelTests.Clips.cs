@@ -359,6 +359,44 @@ public sealed partial class MainWindowViewModelTests
         changed.ShouldNotContain(nameof(ClipLibraryViewModel.SelectedClip));
     }
 
+    [Fact]
+    public async Task ApplyFilter_SearchChanged_RaisesFilterAppliedOnceTheListIsRebound()
+    {
+        var clips = TestClips.Create(3);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.Library.ListSelection = clips[1];
+        var notifications = new List<string>();
+        vm.Library.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
+        vm.Library.FilterApplied += (_, _) => notifications.Add(nameof(ClipLibraryViewModel.FilterApplied));
+
+        vm.Library.FilterText = "Clip 1";
+        vm.Library.ApplyFilter();
+
+        // The list kept its old scroll offset, so the view scrolls to the highlighted row or the top results, which it can only find once both belong to the new search.
+        notifications.ShouldContain(nameof(ClipLibraryViewModel.FilteredClips));
+        notifications.ShouldContain(nameof(ClipLibraryViewModel.ListSelection));
+        notifications[^1].ShouldBe(nameof(ClipLibraryViewModel.FilterApplied));
+        notifications.Count(name => name == nameof(ClipLibraryViewModel.FilterApplied)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DeleteClip_AnotherClip_DoesNotRaiseFilterApplied()
+    {
+        var clips = ClipsWithDistinctPaths(3);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+        vm.Library.FindFileInUse = _ => null;
+        vm.Library.RecycleClipFolder = _ => { };
+        var raised = 0;
+        vm.Library.FilterApplied += (_, _) => raised++;
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(clips[0]);
+
+        // Tidying old clips deep in the list would otherwise jump it back to the top after every delete.
+        vm.Library.FilteredClips.ShouldNotContain(clips[0]);
+        raised.ShouldBe(0);
+    }
+
     // --- Deselecting the open clip's row (Ctrl+click): the list writes null back through its selection binding while the row is still shown. ---
 
     [Fact]

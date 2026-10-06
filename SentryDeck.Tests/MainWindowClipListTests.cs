@@ -52,6 +52,69 @@ public sealed class MainWindowClipListTests
     }
 
     [Fact]
+    public void ShowSearchResults_SearchKeepsTheSelectedRow_ScrollsToIt()
+    {
+        StaThread.Run(() =>
+        {
+            var rows = CreateRows(120);
+            var list = CreateGroupedList(rows);
+            MainWindow.KeepSelectionInView(list);
+            list.SelectedItem = rows[60];
+            StaThread.DrainDispatcher(list);
+
+            // The search keeps the selected row, so the selection never changes, and the old scroll offset now lands on rows far below it.
+            Rebind(list, rows.Skip(47));
+            MainWindow.ShowSearchResults(list);
+            StaThread.DrainDispatcher(list);
+
+            IsFullyVisible(list, rows[60]).ShouldBeTrue();
+        });
+    }
+
+    [Fact]
+    public void ShowSearchResults_SearchClearedWithARowSelected_ScrollsToIt()
+    {
+        StaThread.Run(() =>
+        {
+            var rows = CreateRows(120);
+            var list = CreateGroupedList(rows.Skip(16).Take(10));
+            MainWindow.KeepSelectionInView(list);
+            list.SelectedItem = rows[16];
+            StaThread.DrainDispatcher(list);
+
+            // The short search list sat at its top, which in the full list is above the selected row.
+            Rebind(list, rows);
+            MainWindow.ShowSearchResults(list);
+            StaThread.DrainDispatcher(list);
+
+            IsFullyVisible(list, rows[16]).ShouldBeTrue();
+        });
+    }
+
+    [Fact]
+    public void ShowSearchResults_NothingSelected_ShowsTheTopResults()
+    {
+        StaThread.Run(() =>
+        {
+            var rows = CreateRows(120);
+            var list = CreateGroupedList(rows);
+            MainWindow.KeepSelectionInView(list);
+
+            // The user scrolled down to browse older days before searching.
+            Descendants(list).OfType<ScrollViewer>().First().ScrollToEnd();
+            StaThread.DrainDispatcher(list);
+
+            var results = rows.Where(row => row.Index % 2 == 0).ToList();
+            Rebind(list, results);
+            MainWindow.ShowSearchResults(list);
+            StaThread.DrainDispatcher(list);
+
+            Descendants(list).OfType<ScrollViewer>().First().VerticalOffset.ShouldBe(0);
+            IsFullyVisible(list, results[0]).ShouldBeTrue();
+        });
+    }
+
+    [Fact]
     public void HighlightRowWhenDeselectIsTurnedDown_DeselectTheSourceRefuses_HighlightsTheRowAgain()
     {
         StaThread.Run(() =>
@@ -104,17 +167,14 @@ public sealed class MainWindowClipListTests
 
     private static List<Row> CreateRows(int count) => [.. Enumerable.Range(0, count).Select(index => new Row(index))];
 
-    // Mirrors the clip list: rows grouped by day, virtualized even while grouping, with recycled containers.
-    private static ListBox CreateGroupedList(List<Row> rows)
+    // Mirrors the clip list: rows grouped by day, virtualized even while grouping, with recycled containers, and a selection that doesn't follow the view's current row.
+    private static ListBox CreateGroupedList(IEnumerable<Row> rows)
     {
-        var view = new ListCollectionView(rows);
-        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(Row.Day)));
-
-        var list = new ListBox();
+        var list = new ListBox { IsSynchronizedWithCurrentItem = false };
 
         // Initializing it the way XAML does is what gives a list outside any window its default template, and with it the ScrollViewer that does the scrolling.
         list.BeginInit();
-        list.ItemsSource = view;
+        list.ItemsSource = GroupedView(rows);
         list.GroupStyle.Add(new GroupStyle());
         VirtualizingPanel.SetIsVirtualizingWhenGrouping(list, true);
         VirtualizingPanel.SetVirtualizationMode(list, VirtualizationMode.Recycling);
@@ -124,6 +184,20 @@ public sealed class MainWindowClipListTests
         list.Arrange(new Rect(0, 0, 200, ListHeight));
         list.UpdateLayout();
         return list;
+    }
+
+    private static ListCollectionView GroupedView(IEnumerable<Row> rows)
+    {
+        var view = new ListCollectionView(rows.ToList());
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(Row.Day)));
+        return view;
+    }
+
+    // A search hands the list a new grouped view of the results, the way the clip list's view source does when the search changes.
+    // The view-model announces the search in the same pass, before the list lays out its new rows, so the tests show the results before draining too.
+    private static void Rebind(ListBox list, IEnumerable<Row> rows)
+    {
+        list.ItemsSource = GroupedView(rows);
     }
 
     private static bool IsFullyVisible(ListBox list, Row row)
@@ -136,7 +210,10 @@ public sealed class MainWindowClipListTests
         }
 
         var bounds = container.TransformToAncestor(scrollViewer).TransformBounds(new Rect(container.RenderSize));
-        return bounds.Top >= 0 && bounds.Bottom <= scrollViewer.ActualHeight;
+
+        // Layout positions carry floating-point error, so a row scrolled flush with the top can sit a hair above it.
+        const double Tolerance = 0.5;
+        return bounds.Top >= -Tolerance && bounds.Bottom <= scrollViewer.ActualHeight + Tolerance;
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)

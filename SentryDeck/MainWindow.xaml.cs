@@ -5,6 +5,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using FlyleafLib.Controls.WPF;
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
         HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
         KeepSelectionInView(ClipListBox);
         HighlightRowWhenDeselectIsTurnedDown(ClipListBox);
+        _viewModel.Library.FilterApplied += (_, _) => ShowSearchResults(ClipListBox);
         HookSearchEscape(SearchBox, _viewModel.Library.ClearFilterCommand, LeaveSearchBox);
         NameSearchClearButton(SearchBox);
     }
@@ -278,6 +280,44 @@ public partial class MainWindow : Window
                     row.IsSelected = true;
                 }
             });
+    }
+
+    /// <summary>
+    /// Shows the start of a new search's results: the selected clip's row when the search kept it, otherwise the top of the list.
+    /// </summary>
+    /// <remarks>
+    /// The list kept the scroll offset it had before the search, which lands on unrelated rows of the new results, so neither the playing clip's row nor the best matches were on screen.
+    /// A search that keeps the selected clip doesn't change the selection, so <see cref="KeepSelectionInView"/> never sees it.
+    /// The scroll waits for the list's next layout, which builds the rows of the new results.
+    /// </remarks>
+    internal static void ShowSearchResults(ListBox list)
+    {
+        list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            if (list.SelectedItem is { } item)
+            {
+                list.ScrollIntoView(item);
+            }
+            else
+            {
+                FindScrollViewer(list)?.ScrollToTop();
+            }
+        });
+    }
+
+    // The list's own ScrollViewer comes before any inside its rows, because the rows are laid out within it.
+    private static ScrollViewer FindScrollViewer(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if ((child as ScrollViewer ?? FindScrollViewer(child)) is { } scrollViewer)
+            {
+                return scrollViewer;
+            }
+        }
+
+        return null;
     }
 
     // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation, whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for the one-off value jump a plain click makes.
