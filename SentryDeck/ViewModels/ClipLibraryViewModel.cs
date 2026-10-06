@@ -222,20 +222,81 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             isEmptyState: true);
     }
 
-    // Matches the clip name, path, event city, and friendly event reason (e.g. "sentry", "honk", "saved").
+    // Each word of the search can match a different part of the clip, so "hutto honk" finds the honks in Hutto and a stray space doesn't empty the list.
     private bool MatchesFilter(CamClip clip)
     {
-        if (string.IsNullOrWhiteSpace(FilterText))
+        var query = FilterText?.Trim();
+        if (string.IsNullOrEmpty(query))
         {
             return true;
         }
 
-        var term = FilterText;
-        return clip.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-            || clip.FullPath.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-            || (clip.Event?.City?.Contains(term, StringComparison.CurrentCultureIgnoreCase) ?? false)
-            || ClipDisplay.ReasonLabel(clip).Contains(term, StringComparison.CurrentCultureIgnoreCase);
+        // A path pasted from "Copy path" is one term, spaces and all, and it is the only search that should reach the parent folders.
+        if (Path.IsPathRooted(query) && clip.FullPath.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var searchable = SearchableText(clip);
+        return SearchTerms(query)
+            .All(term => searchable.Any(text => text?.Contains(term, StringComparison.CurrentCultureIgnoreCase) ?? false));
     }
+
+    /// <summary>
+    /// The parts of a search that must each match some part of the clip: its words, except that a day typed after a month stays with it, as in "October 30".
+    /// On its own, the "30" of "October 30" also matched the minutes of a time like "5:30 PM", which listed every other day that month with such a time.
+    /// The list always shows the month before the day ("Oct 30", "October 30, 2025"), so the pair is matched as the list writes it.
+    /// </summary>
+    private static IEnumerable<string> SearchTerms(string query)
+    {
+        var words = query.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < words.Length; index++)
+        {
+            if (index + 1 < words.Length && IsMonthName(words[index]) && IsDayOfMonth(words[index + 1]))
+            {
+                yield return $"{words[index]} {words[index + 1]}";
+                index++;
+            }
+            else
+            {
+                yield return words[index];
+            }
+        }
+    }
+
+    // Compared with the names the list writes dates with, which some cultures inflect next to a day number.
+    private static bool IsMonthName(string word)
+    {
+        var format = CultureInfo.CurrentCulture.DateTimeFormat;
+        return format.MonthNames
+            .Concat(format.AbbreviatedMonthNames)
+            .Concat(format.MonthGenitiveNames)
+            .Concat(format.AbbreviatedMonthGenitiveNames)
+            .Any(name => name.Length > 0 && string.Equals(name, word, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    // A year such as the 2025 of "October 2025" isn't a day, so that search still finds the whole month.
+    private static bool IsDayOfMonth(string word)
+    {
+        var digits = word.TrimEnd(',', '.');
+        return digits.Length is 1 or 2 && digits.All(char.IsAsciiDigit);
+    }
+
+    /// <summary>
+    /// What a search looks through: the dates, city, and reason the clip's row and day header show, plus the clip's own folder name (e.g. "2025-12-16_15-53-27") and name, so a copied timestamp or folder name still finds it.
+    /// The folders above the clip are left out because every clip under SavedClips, or under a backup folder named for Sentry, would match those words.
+    /// </summary>
+    private static string[] SearchableText(CamClip clip) =>
+    [
+        clip.Name,
+        Path.GetFileName(Path.TrimEndingDirectorySeparator(clip.FullPath)),
+        clip.Event?.City,
+        ClipDisplay.ReasonLabel(clip),
+        ClipDisplay.RowDate(clip.Timestamp),
+        ClipDisplay.RowTime(clip.Timestamp),
+        ClipDisplay.DayHeader(clip.Timestamp),
+        ClipDisplay.LongDate(clip.Timestamp),
+    ];
 
     private bool IsShownInList(CamClip clip) => clip is not null && MatchesFilter(clip);
 

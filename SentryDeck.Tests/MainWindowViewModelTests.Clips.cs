@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
@@ -22,13 +23,18 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public async Task FilteredClips_FiltersByNameCaseInsensitively()
     {
-        var clips = TestClips.Create(3);
+        // Named apart from their dates: each word of a search matches on its own, so the "1" of "Clip 1" would also match every row whose time has a 1 in it.
+        var clips = new List<CamClip>
+        {
+            ClipWithEvent("Driveway", reason: null, city: null),
+            ClipWithEvent("Parking lot", reason: null, city: null),
+        };
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
         await vm.Library.LoadClipsAsync(new[] { "root" });
 
-        vm.Library.FilterText = "clip 1";
+        vm.Library.FilterText = "PARKING LOT";
 
-        vm.Library.FilteredClips.Single().Name.ShouldBe("Clip 1");
+        vm.Library.FilteredClips.Single().Name.ShouldBe("Parking lot");
     }
 
     [Fact]
@@ -42,6 +48,162 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.FilterText = clips[0].FullPath;
 
         vm.Library.FilteredClips.Count.ShouldBe(2);
+    }
+
+    // A clip where Tesla puts it: its own folder sits under SavedClips, below whatever folder the drive was copied to.
+    private static CamClip SavedClip(string copiedTo, DateTime timestamp, string reason, string city = null)
+    {
+        var folder = $"{timestamp:yyyy-MM-dd_HH-mm-ss}";
+        return new CamClip(
+            Path.Combine(copiedTo, "TeslaCam", "SavedClips", folder),
+            timestamp.ToString(CultureInfo.InvariantCulture),
+            timestamp,
+            [],
+            new CamEvent { Reason = reason, City = city, Timestamp = timestamp });
+    }
+
+    private static readonly DateTime Dec16 = new(2025, 12, 16, 15, 53, 27);
+    private static readonly DateTime Oct30 = new(2025, 10, 30, 8, 5, 0);
+
+    [Fact]
+    public async Task FilteredClips_WordsInTheFoldersAboveTheClip_DontMatch()
+    {
+        var honk = SavedClip(@"D:\Sentry backups", Dec16, "user_interaction_honk");
+        var saved = SavedClip(@"D:\Sentry backups", Oct30, "user_interaction_dashcam_launcher_action_tapped");
+        var vm = await LoadedViewModelAsync([honk, saved]);
+
+        // Every clip Tesla saves sits under SavedClips, so matching the whole path returned the Honk clips for "saved" too.
+        Search(vm, "saved");
+        vm.Library.FilteredClips.ShouldBe([saved]);
+
+        // A word in the folder the drive was copied to matched every clip in it.
+        Search(vm, "sentry");
+        vm.Library.FilteredClips.ShouldBeEmpty();
+
+        // The clip's own folder name still counts, so a date typed the way Tesla names its folders finds the clip.
+        Search(vm, "2025-12-16");
+        vm.Library.FilteredClips.ShouldBe([honk]);
+    }
+
+    [Fact]
+    public async Task FilteredClips_PastedPathWithASpace_FindsTheClip()
+    {
+        var honk = SavedClip(@"D:\Sentry backups", Dec16, "user_interaction_honk");
+        var saved = SavedClip(@"D:\Sentry backups", Oct30, "user_interaction_dashcam_launcher_action_tapped");
+        var vm = await LoadedViewModelAsync([honk, saved]);
+
+        // A "Copy path" value is one term even though it has a space in it, and it is the one search that reaches the folders above the clip.
+        Search(vm, honk.FullPath);
+
+        vm.Library.FilteredClips.ShouldBe([honk]);
+    }
+
+    [Theory]
+    [InlineData("hutto honk", "A")]
+    [InlineData("  honk   hutto ", "A")]
+    [InlineData("honk ", "A,C")]
+    public async Task FilteredClips_SeveralWords_MustEachMatchSomePartOfTheClip(string query, string expected)
+    {
+        var vm = await LoadedViewModelAsync(
+        [
+            ClipWithEvent("A", "user_interaction_honk", "Hutto"),
+            ClipWithEvent("B", "user_interaction_dashcam_launcher_action_tapped", "Hutto"),
+            ClipWithEvent("C", "user_interaction_honk", "Kyle"),
+        ]);
+
+        // The whole query used to be one substring, so a city and a reason together, or a stray space, emptied the list.
+        Search(vm, query);
+
+        vm.Library.FilteredClips.Select(clip => clip.Name).ShouldBe(expected.Split(','));
+    }
+
+    [Theory]
+    [InlineData("date")]
+    [InlineData("time")]
+    public async Task FilteredClips_TheDateOrTimeOnTheRow_FindsTheClip(string part)
+    {
+        var shown = SavedClip(@"D:\", Dec16, "user_interaction_honk");
+        var vm = await LoadedViewModelAsync([shown, SavedClip(@"D:\", Oct30, "user_interaction_honk")]);
+
+        // Taken from the row's own converter, so this holds in whatever culture the list is drawn in.
+        Search(vm, (string)new FriendlyDateConverter().Convert(shown.Timestamp, typeof(string), part, null));
+
+        vm.Library.FilteredClips.ShouldBe([shown]);
+    }
+
+    [Fact]
+    public async Task FilteredClips_ADayHeader_FindsThatDaysClips()
+    {
+        var older = SavedClip(@"D:\", Dec16, "user_interaction_honk");
+        var today = SavedClip(@"D:\", DateTime.Today.AddHours(9), "user_interaction_honk");
+        var vm = await LoadedViewModelAsync([older, today]);
+        var header = new DayGroupHeaderConverter();
+
+        Search(vm, (string)header.Convert(older.Timestamp.Date, typeof(string), null, null));
+        vm.Library.FilteredClips.ShouldBe([older]);
+
+        Search(vm, (string)header.Convert(today.Timestamp.Date, typeof(string), null, null));
+        vm.Library.FilteredClips.ShouldBe([today]);
+    }
+
+    [Theory]
+    [InlineData("Dec 16")]
+    [InlineData("tue")]
+    [InlineData("3:53 PM")]
+    [InlineData("December")]
+    public async Task FilteredClips_PartOfADateTypedAsTheListShowsIt_FindsTheClip(string query)
+    {
+        // Pinned to US English so the examples read as they do on screen there; the tests above cover the user's own culture.
+        var culture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("en-US");
+        try
+        {
+            var shown = SavedClip(@"D:\", Dec16, "user_interaction_honk");
+            var vm = await LoadedViewModelAsync([shown, SavedClip(@"D:\", Oct30, "user_interaction_honk")]);
+
+            // Only the hidden invariant name ("12/16/2025 15:53:27") and the folder name used to be searched, so "Dec 16" or "3:53 PM" found nothing.
+            Search(vm, query);
+
+            vm.Library.FilteredClips.ShouldBe([shown]);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
+        }
+    }
+
+    [Theory]
+    [InlineData("October 30", "Oct30")]
+    [InlineData("oct 30", "Oct30")]
+    [InlineData("Thu, Oct 30", "Oct30")]
+    [InlineData("October 30, 2025", "Oct30")]
+    [InlineData("October 30 honk", "Oct30")]
+    [InlineData("October 2025", "Oct30,Oct4")]
+    public async Task FilteredClips_AMonthAndDay_FindsOnlyThatDay(string query, string expected)
+    {
+        // Pinned to US English so the month names read as they do on screen there.
+        var culture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("en-US");
+        try
+        {
+            // Other days that month whose times have a 30 in them.
+            var clips = new Dictionary<string, CamClip>
+            {
+                ["Oct30"] = SavedClip(@"D:\", new DateTime(2025, 10, 30, 20, 57, 0), "user_interaction_honk"),
+                ["Oct4"] = SavedClip(@"D:\", new DateTime(2025, 10, 4, 17, 30, 0), "user_interaction_honk"),
+                ["Oct16"] = SavedClip(@"D:\", new DateTime(2024, 10, 16, 11, 30, 0), "user_interaction_honk"),
+            };
+            var vm = await LoadedViewModelAsync([.. clips.Values]);
+
+            // Each word matched on its own, so the "30" of "October 30" also matched the minutes of 5:30 PM and 11:30 AM.
+            Search(vm, query);
+
+            vm.Library.FilteredClips.ShouldBe(expected.Split(',').Select(key => clips[key]));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
+        }
     }
 
     [Fact]
@@ -98,15 +260,20 @@ public sealed partial class MainWindowViewModelTests
     [Fact]
     public async Task ClipCount_ReflectsFilteredCount()
     {
-        var clips = TestClips.Create(3);
+        var clips = new List<CamClip>
+        {
+            ClipWithEvent("A", "user_interaction_honk", "Hutto"),
+            ClipWithEvent("B", "user_interaction_honk", "Kyle"),
+            ClipWithEvent("C", "user_interaction_honk", "Hutto"),
+        };
         var vm = new MainWindowViewModel(() => null!, clipLoader: _ => clips);
         await vm.Library.LoadClipsAsync(new[] { "root" });
 
         vm.Library.ClipCount.ShouldBe(3);
 
-        vm.Library.FilterText = "Clip 1";
+        vm.Library.FilterText = "hutto";
 
-        vm.Library.ClipCount.ShouldBe(1);
+        vm.Library.ClipCount.ShouldBe(2);
     }
 
     [Fact]

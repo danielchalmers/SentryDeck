@@ -53,12 +53,11 @@ public sealed class FriendlyDateConverter : MarkupExtension, IValueConverter
         if (value is not DateTime dt)
             return string.Empty;
 
-        var c = CultureInfo.CurrentCulture;
         return (parameter as string)?.ToLowerInvariant() switch
         {
-            "date" => dt.ToString("ddd, MMM d", c),
-            "time" => dt.ToString("t", c),
-            _ => $"{dt.ToString("ddd, MMM d", c)} {dt.ToString("t", c)}",
+            "date" => ClipDisplay.RowDate(dt),
+            "time" => ClipDisplay.RowTime(dt),
+            _ => $"{ClipDisplay.RowDate(dt)} {ClipDisplay.RowTime(dt)}",
         };
     }
 
@@ -78,14 +77,7 @@ public sealed class DayGroupHeaderConverter : MarkupExtension, IValueConverter
         if (value is not DateTime dt)
             return string.Empty;
 
-        var date = dt.Date;
-        var today = DateTime.Today;
-        if (date == today)
-            return "Today";
-        if (date == today.AddDays(-1))
-            return "Yesterday";
-
-        return date.ToString("dddd, MMMM d, yyyy", CultureInfo.CurrentCulture);
+        return ClipDisplay.DayHeader(dt);
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
