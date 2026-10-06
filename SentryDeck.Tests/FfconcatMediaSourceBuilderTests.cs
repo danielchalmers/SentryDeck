@@ -520,12 +520,24 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     }
 
     [Fact]
-    public void ToMediaTime_InstantAfterClipEnd_ReturnsNull()
+    public void ToMediaTime_EventStampedJustAfterClipEnd_MapsToTheEndOfTheFootage()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);
         var mediaSource = Build(clipFiles.Clip);
 
-        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(61);
+        // Real saved clips put their event up to about 1.9 s past the last chunk's probed end, because Tesla stamps the save moment and both timestamps are truncated to whole seconds.
+        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(61.88);
+
+        mediaSource.ToMediaTime(instant).ShouldBe(mediaSource.Duration);
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantFarPastClipEnd_ReturnsNull()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var mediaSource = Build(clipFiles.Clip);
+
+        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(90);
 
         mediaSource.ToMediaTime(instant).ShouldBeNull();
     }
