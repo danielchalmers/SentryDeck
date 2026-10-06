@@ -101,6 +101,64 @@ public sealed class CamDiscoveryResilienceTests
     }
 
     [Fact]
+    public void FindClips_FolderDeletedMidScan_StillFindsTheFoldersAfterIt()
+    {
+        // Deleting a clip in Explorer while the app scans must not cut the scan short and hide the clips listed after it.
+        using var temp = new TempDirectory();
+
+        var first = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(first, "2023-01-01_10-00-00-front.mp4");
+
+        var deleted = CreateSubDir(temp.Path, "2023-01-01_11-00-00");
+        Touch(deleted, "2023-01-01_11-00-00-front.mp4");
+
+        var last = CreateSubDir(temp.Path, "2023-01-01_12-00-00");
+        Touch(last, "2023-01-01_12-00-00-front.mp4");
+
+        var found = new List<string>();
+        foreach (var clip in CamClip.FindClips(temp.Path))
+        {
+            found.Add(clip.FullPath);
+            if (found.Count == 1)
+            {
+                Directory.Delete(deleted, recursive: true);
+            }
+        }
+
+        found.ShouldBe([first, last], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void FindClips_FolderThatCanNoLongerBeListed_StillFindsTheFoldersAfterIt()
+    {
+        // The scan lists each event folder before it reaches the ones after it, so one folder it can't list must not hide the rest of the library.
+        // A folder swapped for a file mid-scan stands in for a corrupt directory, which a test can't make on demand.
+        using var temp = new TempDirectory();
+
+        var first = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(first, "2023-01-01_10-00-00-front.mp4");
+
+        var broken = CreateSubDir(temp.Path, "2023-01-01_11-00-00");
+        Touch(broken, "2023-01-01_11-00-00-front.mp4");
+
+        var last = CreateSubDir(temp.Path, "2023-01-01_12-00-00");
+        Touch(last, "2023-01-01_12-00-00-front.mp4");
+
+        var found = new List<string>();
+        foreach (var clip in CamClip.FindClips(temp.Path))
+        {
+            found.Add(clip.FullPath);
+            if (found.Count == 1)
+            {
+                Directory.Delete(broken, recursive: true);
+                File.WriteAllBytes(broken, []);
+            }
+        }
+
+        found.ShouldBe([first, last], ignoreOrder: true);
+    }
+
+    [Fact]
     public void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
     {
         // A folder like Tesla's RecentClips: loose files directly inside, no date-named subfolder and no event.json.
