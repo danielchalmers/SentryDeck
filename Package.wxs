@@ -5,6 +5,8 @@
            UpgradeCode="98E07D4B-45EB-45A6-90A5-2A68E772F2E7"
            Scope="perUser">
     <Property Id="ARPNOMODIFY" Value="1" />
+    <!-- Skips the System Restore point, which can hold a double-click install at "Please wait" for most of a minute and protects nothing in a per-user app folder. -->
+    <Property Id="MSIFASTINSTALL" Value="1" />
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of Sentry Deck is already installed." />
     <MediaTemplate EmbedCab="yes" />
@@ -40,7 +42,7 @@
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="*">
         <File Id="SentryDeckExe" Source="publish/$(var.Arch)/SentryDeck.exe" KeyPath="yes" />
-        <RemoveFile Id="RemoveOldFiles" Name="*.*" On="both" />
+        <!-- No wildcard RemoveFile here: every upgrade uninstalls the old version first, so it would delete anything the app keeps next to the exe. -->
         <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
       </Component>
       <Component Id="StartMenuShortcut" Guid="*">
