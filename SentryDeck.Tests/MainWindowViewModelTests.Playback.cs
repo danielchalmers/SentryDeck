@@ -507,6 +507,33 @@ public sealed partial class MainWindowViewModelTests
         vm.Playback.NowPlayingClip.ShouldBe(clipFiles.Clip);
     }
 
+    [Fact]
+    public void FrameStepAndEventButtons_WhileTheirCommandRuns_StayEnabled()
+    {
+        // WPF disables a button while its command can't execute, and the disabled button loses keyboard focus for good, so pressing Enter on Previous frame left focus nowhere.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        var vm = CreateViewModelPlayingClip(clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+
+        // A resume held at the gate keeps the player busy, so every command below is still running when its button checks it.
+        front.PlayGate = new TaskCompletionSource();
+        var resume = controller.PlayAsync();
+        IAsyncRelayCommand[] commands =
+        [
+            vm.Playback.StepFrameBackwardCommand,
+            vm.Playback.StepFrameForwardCommand,
+            vm.Playback.JumpToEventCommand,
+        ];
+        var running = commands.Select(command => command.ExecuteAsync(null)).ToList();
+
+        running.ShouldAllBe(task => !task.IsCompleted);
+        commands.ShouldAllBe(command => command.CanExecute(null));
+
+        front.PlayGate.SetResult();
+        RunPinnedToTestThread(() => Task.WhenAll(running.Append(resume)));
+    }
+
     // Selects the clip through the list and waits until the player has it open and playing.
     // The view-model's handlers run inline on whichever thread the controller raises them, because the open finishes on a thread-pool continuation.
     private MainWindowViewModel CreateViewModelPlayingClip(CamClip clip, out VideoPlayerController controller, out FakeCameraPlayer front)

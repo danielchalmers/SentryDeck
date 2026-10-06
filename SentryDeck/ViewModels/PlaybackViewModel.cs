@@ -411,13 +411,15 @@ public sealed partial class PlaybackViewModel : ObservableObject
         Stopped?.Invoke(this, EventArgs.Empty);
     }
 
-    [RelayCommand(CanExecute = nameof(CanSeek))]
+    // These buttons stay enabled while their command runs: WPF disables a button whose command can't execute, and a disabled button drops keyboard focus and never gets it back, so a keyboard user's next Enter or Tab would go nowhere.
+    // Overlapping runs are safe because the controller queues every step and seek in order, just as it does for the , . and E keys.
+    [RelayCommand(CanExecute = nameof(CanSeek), AllowConcurrentExecutions = true)]
     private Task StepFrameBackwardAsync() => StepFrameAsync(forward: false);
 
-    [RelayCommand(CanExecute = nameof(CanSeek))]
+    [RelayCommand(CanExecute = nameof(CanSeek), AllowConcurrentExecutions = true)]
     private Task StepFrameForwardAsync() => StepFrameAsync(forward: true);
 
-    [RelayCommand(CanExecute = nameof(CanJumpToEvent))]
+    [RelayCommand(CanExecute = nameof(CanJumpToEvent), AllowConcurrentExecutions = true)]
     private async Task JumpToEventAsync()
     {
         if (!CanJumpToEvent)
