@@ -60,6 +60,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// An accurate Flyleaf seek past a stream's last frame finds no frame to show and leaves that camera's decoder thread parked for good, so the camera stays frozen on every clip until the app restarts.
     /// Tesla files show their last frame up to about 60 ms before the duration they record (the final sample falls outside the file's edit list), so one frame of margin is not enough.
     /// A tenth of a second clears every file measured with room to spare, and stays well inside <see cref="ReplayFromEndWindow"/> so play still replays a clip sent to its end.
+    /// That only holds for a seek that decodes every frame, which is why the Flyleaf player seeks at real time even when playback is fast (see <see cref="PlaybackSpeedGate"/>).
     /// </summary>
     internal static readonly TimeSpan EndSeekMargin = TimeSpan.FromMilliseconds(100);
 
