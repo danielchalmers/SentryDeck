@@ -164,6 +164,31 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ControllerError_ClearedByARetry_HidesErrorOverlay()
+    {
+        // Pressing Play reopens a clip whose file was locked; once it opens, the old error must not cover the video that now plays.
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.ErrorMessage = "The front camera video can't be read because another program is using it.";
+
+        controller.ErrorMessage = null;
+
+        vm.Error.IsVisible.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ControllerError_ClearedWhileAnotherNoticeShows_KeepsThatNotice()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.ErrorMessage = "decode failed";
+        vm.Error.Show("Delete Failed", "Could not delete clip");
+
+        controller.ErrorMessage = null;
+
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Delete Failed");
+    }
+
+    [Fact]
     public void CanGoNextPrevious_ReflectControllerPlaylist()
     {
         var vm = CreateViewModelWithController(out var controller, out _);

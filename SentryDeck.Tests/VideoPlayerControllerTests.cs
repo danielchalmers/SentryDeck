@@ -192,7 +192,7 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task SelectingClip_WhenAllFilesAreTruncated_ReportsNoFootageRatherThanEncryption()
+    public async Task SelectingClip_WhenAllFilesAreTruncated_ReportsDamagedFileRatherThanEncryption()
     {
         // Same all-unreadable shape, but the files still carry MP4 headers (truncated writes): that's ordinary corruption and must NOT be blamed on encryption.
         using var playlists = new TestPlaylistDirectory();
@@ -205,7 +205,59 @@ public sealed partial class VideoPlayerControllerTests
 
         await rig.OpenAsync();
 
-        rig.Controller.ErrorMessage.ShouldBe("No front camera footage found.");
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be read. The file may be damaged or incomplete.");
+        rig.Controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenFrontFileIsEmpty_ReportsDamagedFile()
+    {
+        // The file is right there in the folder, so "no footage found" would send the user hunting for footage they can already see.
+        using var playlists = new TestPlaylistDirectory();
+        using var rig = new Rig(chunkCount: 1, builder: playlists.CreateBuilder());
+        File.WriteAllBytes(rig.Files.GetPath(0, CameraNames.Front), []);
+
+        await rig.OpenAsync();
+
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be read. The file may be damaged or incomplete.");
+        rig.Controller.IsPlaying.ShouldBeFalse();
+        rig.All.ShouldAllBe(player => player.OpenedPaths.Count == 0);
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenFrontFileIsLocked_SaysAnotherProgramHasItAndPlaysOnceReleased()
+    {
+        // A lock is temporary, unlike damage: the user needs to know the clip will play once the other program lets go.
+        using var playlists = new TestPlaylistDirectory();
+        using var rig = new Rig(chunkCount: 1, builder: playlists.CreateBuilder());
+
+        using (new FileStream(rig.Files.GetPath(0, CameraNames.Front), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await rig.OpenAsync();
+        }
+
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be read because another program is using it. Close that program, then press Play to try again.");
+        rig.Controller.IsPlaying.ShouldBeFalse();
+
+        await rig.Controller.PlayAsync();
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Controller.ErrorMessage.ShouldBeNull();
+        rig.Controller.IsPlaying.ShouldBeTrue();
+        rig.Front.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenClipFolderWasMovedAway_SaysTheFootageCantBeFound()
+    {
+        // The list still shows a clip whose folder was moved or deleted after the scan; only a rescan brings the list back in step with the disk.
+        using var playlists = new TestPlaylistDirectory();
+        using var rig = new Rig(chunkCount: 2, builder: playlists.CreateBuilder());
+        Directory.Delete(rig.Files.RootPath, recursive: true);
+
+        await rig.OpenAsync();
+
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be found. The clip may have been moved or deleted; rescan the folder to update the list.");
         rig.Controller.IsPlaying.ShouldBeFalse();
     }
 

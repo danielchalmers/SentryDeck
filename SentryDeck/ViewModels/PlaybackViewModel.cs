@@ -630,6 +630,11 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 {
                     _error.Show("Playback Error", _playerController.ErrorMessage);
                 }
+                else if (_error.IsVisible && _error.Title == "Playback Error")
+                {
+                    // Play retries a clip that failed to open (one whose file another program had locked, say), so the old failure must not stay over the video that now plays.
+                    _error.Clear();
+                }
 
                 break;
 

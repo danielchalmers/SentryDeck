@@ -489,16 +489,20 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         if (!mediaSource.CameraPlaylistPaths.ContainsKey(_primaryCamera))
         {
+            // A fully encrypted clip lands here too: the builder finds no readable moov in any front file and excludes every chunk.
+            // Telling these apart means opening the clip's files, which can stall on a slow or disconnected drive, so it runs off the UI thread like the build.
+            var reason = await Task.Run(
+                () => EncryptedClipDetector.LooksEncrypted(clip) ? EncryptedClipMessage : DescribeUnplayablePrimary(clip),
+                token);
+            token.ThrowIfCancellationRequested();
+            ErrorMessage = reason;
+
             Log.Warning(
-                "Cannot open clip because the primary camera is missing. PrimaryCamera={PrimaryCamera}; ClipName={ClipName}; Cameras={Cameras}",
+                "Cannot open clip because the primary camera is missing. PrimaryCamera={PrimaryCamera}; ClipName={ClipName}; Cameras={Cameras}; Reason={Reason}",
                 _primaryCamera,
                 clip.Name,
-                mediaSource.CameraPlaylistPaths.Keys.Order().ToArray());
-
-            // A fully encrypted clip lands here too: the builder finds no readable moov in any front file and excludes every chunk.
-            ErrorMessage = EncryptedClipDetector.LooksEncrypted(clip)
-                ? EncryptedClipMessage
-                : $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
+                mediaSource.CameraPlaylistPaths.Keys.Order().ToArray(),
+                ErrorMessage);
             return;
         }
 
@@ -551,6 +555,59 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             start,
             IsPlaying,
             results.Where(result => result.Opened).Select(result => result.Key).Order().ToArray());
+    }
+
+    /// <summary>
+    /// Says why a clip has no primary-camera footage to play.
+    /// The builder drops a missing, locked, or damaged file alike, but each needs something different from the user: a locked file plays as soon as the other program lets go of it, and a moved clip needs a rescan.
+    /// </summary>
+    private string DescribeUnplayablePrimary(CamClip clip)
+    {
+        var camera = CameraNames.DisplayName(_primaryCamera);
+        var paths = clip.Chunks
+            .Select(chunk => chunk.Files.GetValueOrDefault(_primaryCamera)?.FullPath)
+            .OfType<string>()
+            .ToList();
+
+        if (paths.Count == 0)
+        {
+            return $"No {camera} camera footage found.";
+        }
+
+        if (paths.Any(IsInUseByAnotherProgram))
+        {
+            return $"The {camera} camera video can't be read because another program is using it. Close that program, then press Play to try again.";
+        }
+
+        if (paths.Any(File.Exists))
+        {
+            return $"The {camera} camera video can't be read. The file may be damaged or incomplete.";
+        }
+
+        return $"The {camera} camera video can't be found. The clip may have been moved or deleted; rescan the folder to update the list.";
+    }
+
+    /// <summary>
+    /// True when another program holds <paramref name="path"/> open without sharing it.
+    /// Opens it the way the duration probe does, so a file this reports as free is one the probe could open too.
+    /// </summary>
+    private static bool IsInUseByAnotherProgram(string path)
+    {
+        const int ErrorSharingViolation = 32;
+
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return false;
+        }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) == ErrorSharingViolation)
+        {
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private async Task<bool> OpenCameraAsync(string camera, ICameraPlayer player, ClipMediaSource mediaSource)
