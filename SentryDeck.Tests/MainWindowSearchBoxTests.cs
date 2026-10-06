@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
 
 namespace SentryDeck.Tests;
@@ -100,16 +99,7 @@ public sealed class MainWindowSearchBoxTests
         });
     }
 
-    private static KeyEventArgs PressKey(UIElement target, Key key)
-    {
-        var args = new KeyEventArgs(Keyboard.PrimaryDevice, new StubPresentationSource(), Environment.TickCount, key)
-        {
-            RoutedEvent = Keyboard.PreviewKeyDownEvent,
-        };
-
-        target.RaiseEvent(args);
-        return args;
-    }
+    private static KeyEventArgs PressKey(UIElement target, Key key) => KeyInput.Raise(target, key, Keyboard.PreviewKeyDownEvent);
 
     // The app styles its TextBoxes with WPF's Fluent theme, whose template supplies the clear button.
     private static TextBox CreateFluentTextBox()
@@ -127,15 +117,5 @@ public sealed class MainWindowSearchBoxTests
 
         searchBox.ApplyTemplate().ShouldBeTrue();
         return searchBox;
-    }
-
-    // A key event must name the window it came from, and these tests have none.
-    private sealed class StubPresentationSource : PresentationSource
-    {
-        public override Visual RootVisual { get; set; }
-
-        public override bool IsDisposed => false;
-
-        protected override CompositionTarget GetCompositionTargetCore() => null;
     }
 }

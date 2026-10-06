@@ -1175,13 +1175,13 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type local:CameraViewOption}">
-                                        <RadioButton Command="{Binding DataContext.Cameras.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                     CommandParameter="{Binding ViewId}"
-                                                     AutomationProperties.Name="{Binding AutomationName}"
-                                                     GroupName="CameraViewMode"
-                                                     IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                                     Style="{StaticResource CameraViewTileButton}"
-                                                     ToolTip="{Binding ToolTip}">
+                                        <local:CameraTileButton Command="{Binding DataContext.Cameras.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding ViewId}"
+                                                                AutomationProperties.Name="{Binding AutomationName}"
+                                                                GroupName="CameraViewMode"
+                                                                IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                                Style="{StaticResource CameraViewTileButton}"
+                                                                ToolTip="{Binding ToolTip}">
                                             <Grid>
                                                 <Grid.RowDefinitions>
                                                     <RowDefinition Height="64" />
@@ -1219,7 +1219,7 @@
                                                            FontSize="12"
                                                            FontWeight="SemiBold" />
                                             </Grid>
-                                        </RadioButton>
+                                        </local:CameraTileButton>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
