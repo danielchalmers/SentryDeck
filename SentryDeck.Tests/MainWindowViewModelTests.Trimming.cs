@@ -214,7 +214,43 @@ public sealed partial class MainWindowViewModelTests
 
         // Half of a 2:00 clip is selected.
         vm.Trim.SelectionDurationText.ShouldBe("1:00");
-        vm.Trim.TrimHintText.ShouldBe("1:00 selected — ready to export.");
+        vm.Trim.TrimHintText.ShouldBe("1:00 of the Front camera selected, ready to export.");
+    }
+
+    [Fact]
+    public void TrimHintText_GridView_NamesTheFrontCameraTheExportSaves()
+    {
+        // Stream copy can't composite the grid, so a grid export saves the front camera alone; the panel must say so before the user exports.
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(2);
+        controller.IsMediaOpen = true;
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraViewsViewModel.GridCameraView);
+
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        vm.Trim.TrimHintText.ShouldBe("1:00 of the Front camera selected, ready to export.");
+    }
+
+    [Fact]
+    public void TrimHintText_CameraSwitchedAfterMarking_NamesTheNewCamera()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.Duration = TimeSpan.FromMinutes(2);
+        controller.IsMediaOpen = true;
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+        var changed = new List<string>();
+        vm.Trim.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        changed.ShouldContain(nameof(TrimViewModel.TrimHintText));
+        vm.Trim.TrimHintText.ShouldBe("1:00 of the Rear camera selected, ready to export.");
     }
 
     [Fact]
@@ -284,6 +320,30 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ExportSelection_DefaultFileName_UsesTheCameraNameFromTheTiles()
+    {
+        // The tiles say "Rear", so a file named after the internal "back" camera reads like a different angle.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        string suggested = null;
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), name =>
+        {
+            suggested = name;
+            return null;
+        });
+
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        Path.GetFileName(suggested).ShouldContain(" rear ");
+        Path.GetFileName(suggested).ShouldNotContain("back");
+    }
+
+    [Fact]
     public void ExportSelection_SaveDialogCanceled_DoesNotExport()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
@@ -344,6 +404,27 @@ public sealed partial class MainWindowViewModelTests
         request.Start.ShouldBe(TimeSpan.FromSeconds(60));
         request.End.ShouldBe(TimeSpan.FromSeconds(120));
         request.OutputPath.ShouldBe(@"C:\out\event.mp4");
+    }
+
+    [Fact]
+    public async Task SaveEventClip_DefaultFileName_NamesTheFrontCamera()
+    {
+        // The app focuses the camera that triggered the event, so a file name that doesn't name the exported camera hides that only the front was saved.
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        string suggested = null;
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: new FakeClipExporter(),
+            savePathPicker: name =>
+            {
+                suggested = name;
+                return null;
+            },
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+
+        Path.GetFileName(suggested).ShouldContain(" front event");
     }
 
     [Fact]

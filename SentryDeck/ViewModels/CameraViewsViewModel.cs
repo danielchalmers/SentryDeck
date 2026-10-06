@@ -120,7 +120,7 @@ public sealed partial class CameraViewsViewModel : ObservableObject
     /// Friendly tile label for a camera.
     /// The classic four keep their short historical names; the HW4/AI4 B-pillars are spelled out to distinguish them from the repeaters.
     /// </summary>
-    private static string CameraLabel(string camera) => camera switch
+    internal static string CameraLabel(string camera) => camera switch
     {
         CameraNames.Front => "Front",
         CameraNames.Back => "Rear",

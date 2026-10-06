@@ -50,6 +50,7 @@ public sealed partial class TrimViewModel : ObservableObject
         _exportMediaSourceBuilder = exportMediaSourceBuilder;
 
         _playback.PropertyChanged += OnPlaybackPropertyChanged;
+        _cameras.PropertyChanged += OnCamerasPropertyChanged;
     }
 
     /// <summary>The selection start as a 0..1 fraction of the clip timeline (0 when unset; pair with <see cref="HasSelectionStart"/>).</summary>
@@ -71,7 +72,7 @@ public sealed partial class TrimViewModel : ObservableObject
     public bool CanExportSelection => HasSelection && !IsExporting && CanSeek;
 
     /// <summary>
-    /// One-line guidance for the trim panel: walks the user through start → end → export, and shows the selected length once the range is complete.
+    /// One-line guidance for the trim panel: walks the user through start → end → export, and shows the selected length and the camera it will be saved from once the range is complete.
     /// </summary>
     public string TrimHintText
     {
@@ -79,7 +80,8 @@ public sealed partial class TrimViewModel : ObservableObject
         {
             if (HasSelection)
             {
-                return $"{SelectionDurationText} selected — ready to export.";
+                // Naming the camera matters most in the grid: stream copy can't composite it, so the export quietly saves the front camera alone.
+                return $"{SelectionDurationText} of the {CameraViewsViewModel.CameraLabel(_cameras.ExportCamera)} camera selected, ready to export.";
             }
 
             if (HasSelectionStart)
@@ -215,7 +217,7 @@ public sealed partial class TrimViewModel : ObservableObject
         var start = TimeSpan.FromSeconds(startFraction * mediaSource.Duration.TotalSeconds);
         var end = TimeSpan.FromSeconds(endFraction * mediaSource.Duration.TotalSeconds);
         var camera = _cameras.ExportCamera;
-        var defaultFileName = $"{clip.Name} {CameraNames.DisplayName(camera)} {FormatTimeSpanForFileName(start)}-{FormatTimeSpanForFileName(end)}.mp4";
+        var defaultFileName = $"{clip.Name} {FileCameraName(camera)} {FormatTimeSpanForFileName(start)}-{FormatTimeSpanForFileName(end)}.mp4";
 
         await ExportAsync(clip, mediaSource, camera, start, end, defaultFileName);
     }
@@ -267,7 +269,7 @@ public sealed partial class TrimViewModel : ObservableObject
             end = mediaSource.Duration;
         }
 
-        await ExportAsync(clip, mediaSource, CameraNames.Front, start, end, $"{clip.Name} event.mp4");
+        await ExportAsync(clip, mediaSource, CameraNames.Front, start, end, $"{clip.Name} {FileCameraName(CameraNames.Front)} event.mp4");
     }
 
     private bool CanSaveEventClip(CamClip clip) =>
@@ -324,6 +326,9 @@ public sealed partial class TrimViewModel : ObservableObject
 
     private static string FormatTimeSpanForFileName(TimeSpan ts) => PlaybackViewModel.FormatTimeSpan(ts).Replace(':', '.');
 
+    // The tiles' names ("rear", "left"), not the file suffixes ("back", "left repeater"), so the saved file names the angle the user picked.
+    private static string FileCameraName(string camera) => CameraViewsViewModel.CameraLabel(camera).ToLowerInvariant();
+
     private static string SanitizeFileName(string name)
     {
         foreach (var invalid in Path.GetInvalidFileNameChars())
@@ -357,6 +362,14 @@ public sealed partial class TrimViewModel : ObservableObject
                 }
 
                 break;
+        }
+    }
+
+    private void OnCamerasPropertyChanged(object sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(CameraViewsViewModel.ExportCamera))
+        {
+            OnPropertyChanged(nameof(TrimHintText));
         }
     }
 
