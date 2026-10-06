@@ -34,6 +34,9 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private IReadOnlyList<double> _chunkBoundaries = [];
     private IReadOnlyList<double> _gapPositions = [];
 
+    // The clip whose opened media the overlays above were measured from, or null while they are an estimate.
+    private CamClip _measuredOverlaysClip;
+
     /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param>
     /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive.</param>
     /// <param name="uiInvoker">Runs an action on the UI thread.</param>
@@ -124,6 +127,12 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public bool HasEventMarker => _eventPosition.HasValue;
 
     /// <summary>
+    /// True when the player can jump to the event marker.
+    /// A stopped or still-loading clip has nothing to seek, so a jump would only move the thumb on a disabled seek bar.
+    /// </summary>
+    public bool CanJumpToEvent => HasEventMarker && CanSeek;
+
+    /// <summary>
     /// Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".
     /// The reason comes from the clip rather than its event, so a saved clip whose event.json has no reason is called Saved here, as on its card.
     /// </summary>
@@ -145,8 +154,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     [NotifyPropertyChangedFor(nameof(CanStop))]
     [NotifyPropertyChangedFor(nameof(CanSeek))]
+    [NotifyPropertyChangedFor(nameof(CanJumpToEvent))]
     [NotifyCanExecuteChangedFor(nameof(StepFrameBackwardCommand))]
     [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(JumpToEventCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -394,10 +405,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSeek))]
     private Task StepFrameForwardAsync() => StepFrameAsync(forward: true);
 
-    [RelayCommand(CanExecute = nameof(HasEventMarker))]
+    [RelayCommand(CanExecute = nameof(CanJumpToEvent))]
     private async Task JumpToEventAsync()
     {
-        if (!HasEventMarker)
+        if (!CanJumpToEvent)
             return;
 
         Log.Debug("Jumping to event moment. Position={EventMarkerPosition}", EventMarkerPosition);
@@ -552,6 +563,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     //
     // Prefers the controller's actually-opened ClipMediaSource when it belongs to this clip: that source has real probed durations and gap-aware wall-clock mapping (see ClipMediaSource.ToMediaTime), so its positions match what's actually playing.
     // Selecting a clip is synchronous but opening its media is not, so immediately after selection (or for a clip that never opens, e.g. in tests with no controller) there is no opened source yet; a ClipTimeline estimate (uniform assumed chunk length) is used as a same-frame placeholder so the markers don't flash empty, and is superseded once OpenedMediaSource changes.
+    // Once a clip's media has been measured, its overlays outlive that media closing (Stop, or a recovery rebuild in progress): they still describe its footage, whereas the estimate would move the seams and the event marker, or show a marker the footage doesn't reach.
     private void RecomputeSelectedClipTimeline()
     {
         var clip = SelectedClip;
@@ -560,6 +572,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
             _eventPosition = null;
             _chunkBoundaries = [];
             _gapPositions = [];
+            _measuredOverlaysClip = null;
             return;
         }
 
@@ -568,10 +581,12 @@ public sealed partial class PlaybackViewModel : ObservableObject
         if (mediaSource is not null && mediaSource.Duration > TimeSpan.Zero)
         {
             RecomputeFromMediaSource(clip, mediaSource);
+            _measuredOverlaysClip = clip;
         }
-        else
+        else if (_measuredOverlaysClip != clip)
         {
             RecomputeFromEstimatedTimeline(clip);
+            _measuredOverlaysClip = null;
         }
     }
 
@@ -626,6 +641,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(EventMarkerPosition));
         OnPropertyChanged(nameof(HasEventMarker));
+        OnPropertyChanged(nameof(CanJumpToEvent));
         OnPropertyChanged(nameof(EventMarkerTooltip));
         OnPropertyChanged(nameof(ChunkBoundaries));
         OnPropertyChanged(nameof(GapPositions));
@@ -636,8 +652,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private void NotifyCanSeekChanged()
     {
         OnPropertyChanged(nameof(CanSeek));
+        OnPropertyChanged(nameof(CanJumpToEvent));
         StepFrameBackwardCommand.NotifyCanExecuteChanged();
         StepFrameForwardCommand.NotifyCanExecuteChanged();
+        JumpToEventCommand.NotifyCanExecuteChanged();
     }
 
     private void NotifyNavigationChanged()

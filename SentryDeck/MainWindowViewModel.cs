@@ -312,7 +312,7 @@ public partial class MainWindowViewModel : ObservableObject
                 return Run(() => Cameras.SelectCameraViewCommand.Execute(numberedOption.ViewId));
             }
 
-            if (key == Key.E && Playback.HasEventMarker)
+            if (key == Key.E && Playback.CanJumpToEvent)
             {
                 return () => Playback.JumpToEventCommand.ExecuteAsync(null);
             }
