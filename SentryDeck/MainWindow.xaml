@@ -668,6 +668,7 @@
                          Grid.Row="1"
                          Margin="4,0"
                          Padding="0,0,6,0"
+                         AutomationProperties.Name="Clips"
                          Background="Transparent"
                          BorderThickness="0"
                          IsSynchronizedWithCurrentItem="False"
@@ -680,6 +681,13 @@
                          VirtualizingPanel.VirtualizationMode="Recycling">
                     <ListBox.GroupStyle>
                         <GroupStyle>
+                            <!--  Screen readers name a day group by its raw date value ("12/16/2025 12:00:00 AM") and skip its header, so the group takes the header's wording as its name.  -->
+                            <GroupStyle.ContainerStyle>
+                                <Style TargetType="GroupItem"
+                                       BasedOn="{StaticResource {x:Type GroupItem}}">
+                                    <Setter Property="AutomationProperties.Name" Value="{Binding Name, Converter={local:DayGroupHeaderConverter}}" />
+                                </Style>
+                            </GroupStyle.ContainerStyle>
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding Name, Converter={local:DayGroupHeaderConverter}}"
@@ -698,6 +706,17 @@
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="ContextMenu" Value="{StaticResource ClipContextMenu}" />
                             <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                            <!--  Without a name, screen readers read a row as the clip's raw timestamp and nothing else; this reads what the card shows.  -->
+                            <Setter Property="AutomationProperties.Name">
+                                <Setter.Value>
+                                    <MultiBinding Converter="{local:ClipAutomationNameConverter}">
+                                        <Binding Path="Timestamp" />
+                                        <Binding Converter="{local:ReasonLabelConverter}" />
+                                        <Binding Path="Event.City" />
+                                        <Binding Converter="{local:ClipDurationConverter}" />
+                                    </MultiBinding>
+                                </Setter.Value>
+                            </Setter>
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
