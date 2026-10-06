@@ -285,6 +285,89 @@ public sealed partial class MainWindowViewModelTests
         vm.Error.Title.ShouldBe("Error Loading Clips");
     }
 
+    // --- Next/Previous order: the player's playlist must be the list's exact reverse, since Next and Previous step through it by index. ---
+
+    private static CamClip ClipAt(string folder, string name, DateTime timestamp) =>
+        new(folder, name, timestamp, [], camEvent: null);
+
+    // Wires a real controller so the playlist Next/Previous walk can be inspected.
+    // Each root is mapped the way the app maps it (CamStorage sorts its own clips), so the test sees the same per-root order the real scan produces.
+    private (MainWindowViewModel Vm, VideoPlayerController Controller) CreateViewModelWithRoots(Dictionary<string, List<CamClip>> clipsByRoot)
+    {
+        var controller = BuildFourCameraController(new FakeCameraPlayer());
+        var vm = new MainWindowViewModel(
+            () => controller,
+            clipLoader: root => new CamStorage(root, clipsByRoot[root]).Clips,
+            backgroundYield: () => Task.CompletedTask,
+            uiInvoker: action => action());
+        vm.InitializePlayer();
+        return (vm, controller);
+    }
+
+    [Fact]
+    public async Task LoadClips_SeveralFolders_PlaylistFollowsTheDateOrderOfTheList()
+    {
+        var (vm, controller) = CreateViewModelWithRoots(new()
+        {
+            [@"D:\TeslaCam"] =
+            [
+                ClipAt(@"D:\TeslaCam\a", "2024-04-01", new DateTime(2024, 4, 1)),
+                ClipAt(@"D:\TeslaCam\b", "2025-05-10", new DateTime(2025, 5, 10)),
+            ],
+            [@"E:\TeslaCam"] = [ClipAt(@"E:\TeslaCam\c", "2025-04-11", new DateTime(2025, 4, 11))],
+        });
+
+        await vm.Library.LoadClipsAsync([@"D:\TeslaCam", @"E:\TeslaCam"]);
+
+        // Concatenating the folders in pick order made Next from 2025-05-10 jump back to 2025-04-11 and skip it going forward from 2024-04-01.
+        controller.Playlist.Clips.Select(clip => clip.Name).ShouldBe(["2024-04-01", "2025-04-11", "2025-05-10"]);
+        controller.Playlist.Clips.ShouldBe(vm.Library.FilteredClips.Reverse());
+    }
+
+    [Fact]
+    public async Task LoadClips_ClipsShareATimestamp_PlaylistIsTheListReversed()
+    {
+        var tied = new DateTime(2023, 9, 7, 11, 58, 26);
+        var (vm, controller) = CreateViewModelWithRoots(new()
+        {
+            [@"D:\TeslaCam"] =
+            [
+                ClipAt(@"D:\TeslaCam\older", "Older", tied.AddMinutes(-1)),
+                ClipAt(@"D:\TeslaCam\a", "Copy A", tied),
+                ClipAt(@"D:\TeslaCam\b", "Copy B", tied),
+                ClipAt(@"D:\TeslaCam\newer", "Newer", tied.AddMinutes(1)),
+            ],
+        });
+
+        await vm.Library.LoadClipsAsync([@"D:\TeslaCam"]);
+
+        // Tied clips sorted the same way in both lists made Previous skip a row down the list, then step back up to it.
+        vm.Library.FilteredClips.Select(clip => clip.Name).ShouldBe(["Newer", "Copy A", "Copy B", "Older"]);
+        controller.Playlist.Clips.Select(clip => clip.Name).ShouldBe(["Older", "Copy B", "Copy A", "Newer"]);
+    }
+
+    [Theory]
+    [InlineData(new[] { @"D:\TeslaCam", @"D:\TeslaCam\SavedClips" }, new[] { @"D:\TeslaCam" })]
+    [InlineData(new[] { @"D:\TeslaCam\SavedClips", @"D:\TeslaCam" }, new[] { @"D:\TeslaCam" })]
+    [InlineData(new[] { @"D:\TeslaCam", @"d:\teslacam\" }, new[] { @"D:\TeslaCam" })]
+    [InlineData(new[] { @"D:\", @"D:\TeslaCam" }, new[] { @"D:\" })]
+    [InlineData(new[] { @"D:\TeslaCam", @"D:\TeslaCam2" }, new[] { @"D:\TeslaCam", @"D:\TeslaCam2" })]
+    public async Task LoadClips_OverlappingFolders_ScansEachFolderOnce(string[] pickedRoots, string[] expectedScans)
+    {
+        var scanned = new List<string>();
+        var vm = new MainWindowViewModel(() => null!, clipLoader: root =>
+        {
+            scanned.Add(root);
+            return [ClipAt(Path.Combine(root, "clip"), root, new DateTime(2025, 1, 1))];
+        });
+
+        await vm.Library.LoadClipsAsync(pickedRoots);
+
+        // A folder inside another picked folder is already covered by the outer scan, so scanning it too listed every clip in it twice.
+        scanned.ShouldBe(expectedScans);
+        vm.Library.ClipCount.ShouldBe(expectedScans.Length);
+    }
+
     // --- Delete to Recycle Bin: the injectable confirm/recycle delegates keep this off the shell ---
 
     private static List<CamClip> ClipsWithDistinctPaths(int count) =>

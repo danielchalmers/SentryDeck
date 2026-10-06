@@ -16,6 +16,7 @@ namespace SentryDeck;
 /// </summary>
 public sealed partial class ClipLibraryViewModel : ObservableObject
 {
+    // Kept in the order the list shows (newest first), so the list and the player's playlist come from one ordering and can't disagree about what Next and Previous mean.
     private readonly List<CamClip> _allClips = [];
     private readonly Func<string, IReadOnlyList<CamClip>> _clipLoader;
     private readonly PlaybackViewModel _playback;
@@ -50,8 +51,6 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
 
     public IReadOnlyList<CamClip> FilteredClips => _allClips
         .Where(MatchesFilter)
-        .OrderByDescending(c => c.Timestamp)
-        .ThenBy(c => c.Name)
         .ToList();
 
     /// <summary>Number of clips currently shown (drives the sidebar count).</summary>
@@ -151,7 +150,9 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
                 }
             }
 
-            _playback.SetPlaylist(_allClips);
+            // Next and Previous step through the playlist from oldest to newest, so it has to be the list's exact reverse.
+            // Any other ordering sends them out of list order when several folders are loaded or clips share a timestamp.
+            _playback.SetPlaylist(Enumerable.Reverse(_allClips));
 
             // Hold the loading state briefly so a fast rescan still reads as a deliberate refresh (clear -> loading -> refill) instead of an imperceptible flicker.
             var remaining = minimumLoadingDuration - stopwatch.Elapsed;
@@ -201,7 +202,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
 
     private ScanResult ScanRoots(IEnumerable<string> roots)
     {
-        var rootList = roots?.Where(root => !string.IsNullOrWhiteSpace(root)).ToList() ?? [];
+        var rootList = WithoutOverlappingRoots(roots?.Where(root => !string.IsNullOrWhiteSpace(root)) ?? []);
         if (rootList.Count == 0)
         {
             Log.Information("No dashcam roots found");
@@ -246,7 +247,64 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             rootList.Count,
             errors.Count,
             totalStopwatch.ElapsedMilliseconds);
-        return new ScanResult(clips, errors, HadRoots: true);
+
+        // Each root comes back sorted on its own, so the merged list is sorted again across roots.
+        // The full path settles clips that share a timestamp and name (copies of one clip in two folders), so they keep the same order on every scan.
+        var newestFirst = clips
+            .OrderByDescending(clip => clip.Timestamp)
+            .ThenBy(clip => clip.Name)
+            .ThenBy(clip => clip.FullPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new ScanResult(newestFirst, errors, HadRoots: true);
+    }
+
+    /// <summary>
+    /// Drops roots that repeat another root or sit inside one, keeping the first spelling the user picked.
+    /// The scan already recurses, so a folder inside another picked folder would list every clip in it twice.
+    /// </summary>
+    private static List<string> WithoutOverlappingRoots(IEnumerable<string> roots)
+    {
+        var normalized = roots
+            .Select(root => (Root: root, FullPath: NormalizeRoot(root)))
+            .DistinctBy(root => root.FullPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var kept = new List<string>();
+        foreach (var root in normalized)
+        {
+            var outerRoot = normalized.FirstOrDefault(other => IsInside(root.FullPath, other.FullPath)).Root;
+            if (outerRoot is null)
+            {
+                kept.Add(root.Root);
+            }
+            else
+            {
+                Log.Information("Skipping dashcam root inside another picked root. Root={Root}; OuterRoot={OuterRoot}", root.Root, outerRoot);
+            }
+        }
+
+        return kept;
+    }
+
+    // Falls back to the root as given when it isn't a valid path, so the scan still reports that root's own error.
+    private static string NormalizeRoot(string root)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+        {
+            return root;
+        }
+    }
+
+    private static bool IsInside(string path, string folder)
+    {
+        // A drive root keeps its trailing separator; anything else needs one so D:\TeslaCam2 doesn't count as inside D:\TeslaCam.
+        // The length check keeps a drive root from counting as inside itself.
+        var prefix = Path.EndsInDirectorySeparator(folder) ? folder : folder + Path.DirectorySeparatorChar;
+        return path.Length > prefix.Length && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record ScanResult(IReadOnlyList<CamClip> Clips, IReadOnlyList<ClipLoadError> Errors, bool HadRoots);
