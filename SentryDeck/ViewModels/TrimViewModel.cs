@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -28,11 +29,14 @@ public sealed partial class TrimViewModel : ObservableObject
     private double? _selectionStart;
     private double? _selectionEnd;
 
+    // Where the user saved their last export this session, so a run of exports from one drive doesn't make them browse back each time.
+    private string _lastExportDirectory;
+
     /// <param name="playback">Supplies the playhead the marks are set at, and the open clip an export reads from.</param>
     /// <param name="cameras">Decides which camera a range export uses.</param>
     /// <param name="error">Where export failures are reported.</param>
     /// <param name="clipExporter">Exports trimmed clip ranges.</param>
-    /// <param name="savePathPicker">Maps a suggested file name to the chosen save path (null = canceled).</param>
+    /// <param name="savePathPicker">Maps a suggested save path (folder and file name) to the chosen one (null = canceled).</param>
     /// <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open.</param>
     public TrimViewModel(
         PlaybackViewModel playback,
@@ -217,7 +221,7 @@ public sealed partial class TrimViewModel : ObservableObject
         var start = TimeSpan.FromSeconds(startFraction * mediaSource.Duration.TotalSeconds);
         var end = TimeSpan.FromSeconds(endFraction * mediaSource.Duration.TotalSeconds);
         var camera = _cameras.ExportCamera;
-        var defaultFileName = $"{clip.Name} {FileCameraName(camera)} {FormatTimeSpanForFileName(start)}-{FormatTimeSpanForFileName(end)}.mp4";
+        var defaultFileName = $"{FileNameStamp(clip)} {FileCameraName(camera)} {FormatRangeForFileName(start, end)}.mp4";
 
         await ExportAsync(clip, mediaSource, camera, start, end, defaultFileName);
     }
@@ -269,7 +273,7 @@ public sealed partial class TrimViewModel : ObservableObject
             end = mediaSource.Duration;
         }
 
-        await ExportAsync(clip, mediaSource, CameraNames.Front, start, end, $"{clip.Name} {FileCameraName(CameraNames.Front)} event.mp4");
+        await ExportAsync(clip, mediaSource, CameraNames.Front, start, end, $"{FileNameStamp(clip)} {FileCameraName(CameraNames.Front)} event {FormatRangeForFileName(start, end)}.mp4");
     }
 
     private bool CanSaveEventClip(CamClip clip) =>
@@ -277,11 +281,13 @@ public sealed partial class TrimViewModel : ObservableObject
 
     private async Task ExportAsync(CamClip clip, ClipMediaSource mediaSource, string camera, TimeSpan start, TimeSpan end, string defaultFileName)
     {
-        var outputPath = _savePathPicker(SanitizeFileName(defaultFileName));
+        var outputPath = _savePathPicker(Path.Combine(SuggestExportDirectory(), SanitizeFileName(defaultFileName)));
         if (string.IsNullOrEmpty(outputPath))
         {
             return;
         }
+
+        _lastExportDirectory = Path.GetDirectoryName(outputPath);
 
         IsExporting = true;
 
@@ -311,12 +317,20 @@ public sealed partial class TrimViewModel : ObservableObject
         }
     }
 
-    private static string PickSavePathWithDialog(string defaultFileName)
+    // Without a folder of its own, the save dialog reopens wherever the app last browsed, which is usually the dashcam drive the car may reformat.
+    // So exports start in the user's Videos folder, or where they last saved one while that folder still exists (a drive may have been unplugged since).
+    private string SuggestExportDirectory() =>
+        _lastExportDirectory is { } last && Directory.Exists(last)
+            ? last
+            : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+
+    private static string PickSavePathWithDialog(string suggestedPath)
     {
         var dialog = new SaveFileDialog
         {
             Title = "Export clip",
-            FileName = defaultFileName,
+            InitialDirectory = Path.GetDirectoryName(suggestedPath),
+            FileName = Path.GetFileName(suggestedPath),
             DefaultExt = ".mp4",
             Filter = "MP4 video|*.mp4",
         };
@@ -324,7 +338,19 @@ public sealed partial class TrimViewModel : ObservableObject
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
-    private static string FormatTimeSpanForFileName(TimeSpan ts) => PlaybackViewModel.FormatTimeSpan(ts).Replace(':', '.');
+    // Year-first, like Tesla's own folder names, so exports sort by date in Explorer whatever the user's locale.
+    private static string FileNameStamp(CamClip clip) =>
+        clip.Timestamp == default ? clip.Name : clip.Timestamp.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
+
+    // "0m39s-2m01s": colons aren't allowed in file names, and the old "0.39" for 0:39 read like a decimal.
+    private static string FormatRangeForFileName(TimeSpan start, TimeSpan end) =>
+        $"{FormatOffsetForFileName(start)}-{FormatOffsetForFileName(end)}";
+
+    private static string FormatOffsetForFileName(TimeSpan offset)
+    {
+        var seconds = (long)Math.Round(offset.TotalSeconds, MidpointRounding.AwayFromZero);
+        return string.Create(CultureInfo.InvariantCulture, $"{seconds / 60}m{seconds % 60:00}s");
+    }
 
     // The tiles' names ("rear", "left"), not the file suffixes ("back", "left repeater"), so the saved file names the angle the user picked.
     private static string FileCameraName(string camera) => CameraViewsViewModel.CameraLabel(camera).ToLowerInvariant();

@@ -344,6 +344,75 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ExportSelection_FirstExport_SuggestsASortableNameInTheVideosFolder()
+    {
+        // Without a folder of its own, the save dialog reopens wherever the app last browsed, which is the dashcam drive the car may reformat.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3); // 3:00 of footage from 2023-02-23 14:14:48
+        string suggested = null;
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), path =>
+        {
+            suggested = path;
+            return null;
+        });
+
+        vm.Playback.SeekPosition = 39.4 / 180;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 120.6 / 180;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        var videos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+        suggested.ShouldBe(Path.Combine(videos, "2023-02-23_14-14-48 front 0m39s-2m01s.mp4"));
+    }
+
+    [Fact]
+    public void ExportSelection_AfterAnExport_SuggestsTheFolderLastExportedTo()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var exportFolder = clipFiles.RootPath;
+        var suggestions = new List<string>();
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), path =>
+        {
+            suggestions.Add(path);
+            return Path.Combine(exportFolder, "first.mp4");
+        });
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        suggestions.Count.ShouldBe(2);
+        Path.GetDirectoryName(suggestions[1]).ShouldBe(exportFolder);
+    }
+
+    [Fact]
+    public void ExportSelection_LastExportFolderIsGone_SuggestsTheVideosFolderAgain()
+    {
+        // A folder on a drive that has since been unplugged can't open in the dialog.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var missingFolder = Path.Combine(clipFiles.RootPath, "unplugged");
+        var suggestions = new List<string>();
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), path =>
+        {
+            suggestions.Add(path);
+            return Path.Combine(missingFolder, "first.mp4");
+        });
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        Path.GetDirectoryName(suggestions[1]).ShouldBe(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos));
+    }
+
+    [Fact]
     public void ExportSelection_SaveDialogCanceled_DoesNotExport()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
@@ -425,6 +494,27 @@ public sealed partial class MainWindowViewModelTests
         await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
 
         Path.GetFileName(suggested).ShouldContain(" front event");
+    }
+
+    [Fact]
+    public async Task SaveEventClip_DefaultFileName_IsSortableAndNamesTheRange()
+    {
+        // 3-chunk clip from 2025-01-01 12:00:00 with the event 90s in: the ±30s window is 1:00-2:00.
+        var clip = ClipWithChunksAndEvent(chunkCount: 3, eventOffset: TimeSpan.FromSeconds(90));
+        string suggested = null;
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: new FakeClipExporter(),
+            savePathPicker: path =>
+            {
+                suggested = path;
+                return null;
+            },
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+
+        Path.GetFileName(suggested).ShouldBe("2025-01-01_12-00-00 front event 1m00s-2m00s.mp4");
     }
 
     [Fact]

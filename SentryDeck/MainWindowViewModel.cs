@@ -28,7 +28,7 @@ public partial class MainWindowViewModel : ObservableObject
     /// Overridable for tests.</param>
     /// <param name="clipExporter">Exports trimmed clip ranges.
     /// Defaults to the FFmpeg-backed exporter; overridable for tests.</param>
-    /// <param name="savePathPicker">Maps a suggested file name to the chosen save path (null = canceled).
+    /// <param name="savePathPicker">Maps a suggested save path (folder and file name) to the chosen one (null = canceled).
     /// Defaults to a save dialog; overridable for tests.</param>
     /// <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open.
     /// Overridable for tests.</param>
