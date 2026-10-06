@@ -232,10 +232,11 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task FrontFailed_MidClip_WhenTheProbeFindsTheRealCulprit_KeepsTheHealthyChunk()
+    public async Task FrontFailed_MidClip_WhenTheProbeFindsTheRealCulprit_KeepsTheHealthyChunkAndResumesWhereItFailed()
     {
         // The demuxer reads ahead, so the failure position can sit in a healthy chunk while the corrupt file is the next one.
         // A probe that now flags chunk 2 must win over the position-derived guess of chunk 1.
+        // Chunk 1 is still there, so rewinding to its start would only replay what was just watched.
         using var rig = new Rig(chunkCount: 3);
         await rig.OpenAsync();
         rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(100));
@@ -247,8 +248,70 @@ public sealed partial class VideoPlayerControllerTests
         rig.FakeBuilder.BuildCount.ShouldBe(2);
         rig.FakeBuilder.Exclusions()[1].ShouldBeEmpty();
         rig.Controller.Duration.ShouldBe(ChunkDuration * 2);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(100));
         rig.Controller.IsPlaying.ShouldBeTrue();
         rig.Controller.ErrorMessage.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task FrontFailed_AtTheEndOfAChunk_WhenTheNextFileTurnedUnreadable_PlaysOnFromThereIntoTheChunkAfterIt()
+    {
+        // A file locked or moved after the clip opened fails as the demuxer reaches it, which surfaces at the end of the healthy chunk before it.
+        // Dropping that file must carry playback straight on into the chunk after it rather than rewinding the minute just watched.
+        using var rig = new Rig(chunkCount: 3);
+        await rig.OpenAsync();
+        var failurePosition = ChunkDuration - TimeSpan.FromMilliseconds(130);
+        rig.Front.RaisePositionChanged(failurePosition);
+        rig.FakeBuilder.AutoExcludeChunk(1);
+
+        rig.Front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
+        await rig.Controller.WhenIdleAsync();
+
+        rig.FakeBuilder.Exclusions()[^1].ShouldBeEmpty();
+        rig.Controller.Duration.ShouldBe(ChunkDuration * 2);
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Seeks.ShouldHaveSingleItem(camera).Position.ShouldBe(failurePosition, camera);
+            player.IsPlaying.ShouldBeTrue(camera);
+        }
+
+        rig.Controller.Position.ShouldBe(failurePosition);
+        rig.Controller.IsPlaying.ShouldBeTrue();
+        rig.Controller.ErrorMessage.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task FrontFailed_WhenTheProbeDropsTheChunkThatWasPlaying_ResumesWhereTheNextChunkNowBegins()
+    {
+        // Nothing of the failed chunk is left to play, so playback continues with the footage that followed it.
+        using var rig = new Rig(chunkCount: 3);
+        await rig.OpenAsync();
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        rig.FakeBuilder.AutoExcludeChunk(1);
+
+        rig.Front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Controller.Duration.ShouldBe(ChunkDuration * 2);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(60));
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task FrontFailed_WhenTheProbeDropsAnEarlierChunk_ResumesOnTheSameFootage()
+    {
+        // Dropping a chunk ahead of the failure shortens the timeline before it, so the same moment of footage now sits one chunk earlier.
+        using var rig = new Rig(chunkCount: 3);
+        await rig.OpenAsync();
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(130));
+        rig.FakeBuilder.AutoExcludeChunk(0);
+
+        rig.Front.RaiseFailed(new InvalidOperationException("Playback stopped unexpectedly"));
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Controller.Duration.ShouldBe(ChunkDuration * 2);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(70));
+        rig.Controller.IsPlaying.ShouldBeTrue();
     }
 
     [Fact]

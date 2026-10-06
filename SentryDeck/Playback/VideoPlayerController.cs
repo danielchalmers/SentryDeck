@@ -965,7 +965,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// Handles the front camera stopping well short of <see cref="Duration"/>, which means the concat demuxer hit a corrupt or truncated chunk.
     /// Recovery is probe-first: rebuild with the current exclusions and let the builder's per-file probe find the culprit (the demuxer reads ahead of the presentation position, so the failure position can sit inside a healthy chunk).
     /// Only when the probe finds nothing new is the chunk containing the failure position excluded.
-    /// Playback resumes at the start of the chunk that failed, and gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on one clip.
+    /// Playback resumes on the footage where it failed, or where the following footage now begins when the chunk under the failure was excluded, and gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on one clip.
     /// </summary>
     private async Task RecoverAsync(Session session, TimeSpan failurePosition, bool wasPlaying, CancellationToken token)
     {
@@ -979,7 +979,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             badChunkTimelineIndex = i;
         }
 
-        var resumePosition = mediaSource.ChunkStarts.Count > 0 ? mediaSource.ChunkStarts[badChunkTimelineIndex] : TimeSpan.Zero;
+        var offsetInBadChunk = mediaSource.ChunkStarts.Count > 0 ? failurePosition - mediaSource.ChunkStarts[badChunkTimelineIndex] : TimeSpan.Zero;
         var positionDerivedIndex = MapTimelineIndexToOriginalChunkIndex(clip, session.ExcludedChunks, badChunkTimelineIndex);
 
         if (session.RecoveryAttempts >= MaxRecoveryAttemptsPerClip)
@@ -1025,6 +1025,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         token.ThrowIfCancellationRequested();
+
+        // A file that turns unreadable mid-playback fails as the demuxer reaches it, at the end of the healthy chunk before it.
+        // Resuming at that chunk's start would replay up to a minute the user just watched, so playback picks up on the same footage instead.
+        var excludedAfter = session.ExcludedChunks.Union(rebuilt.AutoExcludedChunkIndices).ToHashSet();
+        var resumePosition = MapChunkOffsetToTimeline(rebuilt, excludedAfter, positionDerivedIndex, offsetInBadChunk);
         await OpenSourceAsync(session, rebuilt, resumePosition, wasPlaying, token);
     }
 
@@ -1068,6 +1073,36 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// Finds where the footage <paramref name="offsetInChunk"/> into the clip's chunk <paramref name="chunkIndex"/> sits on <paramref name="source"/>, a timeline built without the chunks in <paramref name="excluded"/>.
+    /// An excluded chunk has no footage left to show, so a moment inside one lands where the next surviving chunk begins, or at the end when none follows.
+    /// </summary>
+    private static TimeSpan MapChunkOffsetToTimeline(ClipMediaSource source, IReadOnlySet<int> excluded, int chunkIndex, TimeSpan offsetInChunk)
+    {
+        var timelineIndex = 0;
+        for (var index = 0; index < chunkIndex; index++)
+        {
+            if (!excluded.Contains(index))
+            {
+                timelineIndex++;
+            }
+        }
+
+        if (timelineIndex >= source.ChunkStarts.Count)
+        {
+            return source.Duration;
+        }
+
+        var chunkStart = source.ChunkStarts[timelineIndex];
+        if (excluded.Contains(chunkIndex))
+        {
+            return chunkStart;
+        }
+
+        var chunkEnd = timelineIndex + 1 < source.ChunkStarts.Count ? source.ChunkStarts[timelineIndex + 1] : source.Duration;
+        return Clamp(chunkStart + offsetInChunk, chunkStart, chunkEnd);
     }
 
     private void OnPositionChanged(object sender, CameraPositionChangedEventArgs e)
