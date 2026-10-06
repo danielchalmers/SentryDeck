@@ -40,6 +40,12 @@ public partial record class CamClip
     /// </summary>
     public string ThumbnailPath { get; private init; }
 
+    /// <summary>
+    /// Rough length of the footage for the clip list, known before any media is opened.
+    /// A scanned clip counts its final chunk, and any chunk whose successor doesn't start about a minute later, at its recorded length; otherwise every chunk counts as <see cref="ClipTimeline.EstimatedChunkSeconds"/>.
+    /// </summary>
+    public TimeSpan EstimatedDuration { get; private init; }
+
     public CamClip(string path, string name, DateTime timestamp, IEnumerable<CamChunk> chunks, CamEvent camEvent)
     {
         FullPath = Path.GetFullPath(path);
@@ -48,6 +54,7 @@ public partial record class CamClip
         Chunks = chunks.ToList();
         Event = camEvent;
         ThumbnailPath = Path.Combine(FullPath, "thumb.png");
+        EstimatedDuration = new ClipTimeline(Chunks).Duration;
     }
 
     /// <summary>
@@ -84,7 +91,49 @@ public partial record class CamClip
             timestamp = chunks[0].Timestamp;
         }
 
-        return new(directory, title, timestamp, chunks, eventData);
+        return new(directory, title, timestamp, chunks, eventData)
+        {
+            EstimatedDuration = EstimateDuration(chunks),
+        };
+    }
+
+    /// <summary>
+    /// Tesla almost always cuts a chunk short when recording stops, so counting it as a full minute made rows in the list read a minute or more longer than the player.
+    /// That happens to the last chunk and to chunks around a gap in the recording, and a next chunk that doesn't start about a minute later is the only sign of a gap the file names give.
+    /// Reading only those chunks' headers keeps the scan to a few reads per clip, since the other chunks are nearly always full minutes.
+    /// The spacing alone can't stand in for a chunk's length: the car's clock can jump, so a full chunk can be followed by the next one a few seconds later.
+    /// </summary>
+    private static TimeSpan EstimateDuration(IReadOnlyList<CamChunk> chunks)
+    {
+        var nominalChunk = TimeSpan.FromSeconds(ClipTimeline.EstimatedChunkSeconds);
+        var total = TimeSpan.Zero;
+
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            var ranFullMinute = i + 1 < chunks.Count
+                && (chunks[i + 1].Timestamp - chunks[i].Timestamp - nominalChunk).Duration() <= RegularChunkSpacingTolerance;
+            total += ranFullMinute ? nominalChunk : RecordedLengthOrNominal(chunks[i], nominalChunk);
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// Consecutive full chunks start 60 to 62 s apart on real drives, so a next chunk within a couple of seconds of a minute later means this one ran its full length.
+    /// </summary>
+    private static readonly TimeSpan RegularChunkSpacingTolerance = TimeSpan.FromSeconds(2);
+
+    private static TimeSpan RecordedLengthOrNominal(CamChunk chunk, TimeSpan nominalChunk)
+    {
+        if (chunk.Files.TryGetValue(CameraNames.Front, out var front)
+            && Mp4DurationReader.TryReadDuration(front.FullPath) is { } recorded
+            && recorded > TimeSpan.Zero)
+        {
+            // Capped at the nominal length so a corrupt header claiming hours can only shorten the estimate, never inflate it.
+            return recorded < nominalChunk ? recorded : nominalChunk;
+        }
+
+        return nominalChunk;
     }
 
     /// <summary>

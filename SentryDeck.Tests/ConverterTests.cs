@@ -172,10 +172,34 @@ public sealed class ConverterTests
     [InlineData(95, "~1h 35m")]
     public void ClipDurationConverter_RendersTheModeledChunkDuration(int chunkCount, string expected)
     {
-        // Every chunk models 60s (ClipTimeline.EstimatedChunkSeconds), so the chunk count is the estimate in minutes; a clip whose chunks were all filtered out has nothing to estimate.
+        // A clip built without a scan has no measured final chunk, so every chunk models 60s and the chunk count is the estimate in minutes.
+        // A clip whose chunks were all filtered out has nothing to estimate.
         var result = new ClipDurationConverter().Convert(ClipWithChunks(chunkCount), typeof(string), null, null);
 
         result.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ClipDurationConverter_ScannedClipEndingInAPartialChunk_ReadsTheRecordedLength()
+    {
+        // Ten full minutes plus the short tail Tesla writes when recording stops: the player shows about 10:08, so the list must not say "~11 min".
+        var durations = Enumerable.Repeat(TimeSpan.FromSeconds(60), 10).Append(TimeSpan.FromSeconds(8.5)).ToList();
+        using var files = TestClipFiles.Create(durations.Count, chunkDurations: durations);
+
+        var result = new ClipDurationConverter().Convert(CamClip.Map(files.RootPath), typeof(string), null, null);
+
+        result.ShouldBe("~10 min");
+    }
+
+    [Fact]
+    public void ClipDurationConverter_ScannedClipShorterThanHalfAMinute_ReadsLessThanAMinute()
+    {
+        // A 10s clip used to read "~1 min"; rounding it down to "0 min" or the no-footage dash would be just as wrong.
+        using var files = TestClipFiles.Create(1, chunkDurations: [TimeSpan.FromSeconds(10)]);
+
+        var result = new ClipDurationConverter().Convert(CamClip.Map(files.RootPath), typeof(string), null, null);
+
+        result.ShouldBe("<1 min");
     }
 
     [Fact]

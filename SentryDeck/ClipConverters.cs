@@ -106,7 +106,7 @@ public sealed class DateOnlyConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Estimated clip duration as a human string, e.g. "~5 min" (uses the modeled <see cref="ClipTimeline.Duration"/> = chunk count × 60s).
+/// Estimated clip duration as a human string, e.g. "~5 min" (from <see cref="CamClip.EstimatedDuration"/>).
 /// </summary>
 public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
 {
@@ -117,10 +117,14 @@ public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
         if (value is not CamClip clip)
             return string.Empty;
 
-        var duration = new ClipTimeline(clip.Chunks).Duration;
-        var minutes = (int)Math.Round(duration.TotalMinutes);
-        if (minutes <= 0)
+        var duration = clip.EstimatedDuration;
+        if (duration <= TimeSpan.Zero)
             return "—";
+
+        // A clip of a few seconds has footage, so it must not round down to the dash that means there is none.
+        var minutes = (int)Math.Round(duration.TotalMinutes);
+        if (minutes == 0)
+            return "<1 min";
 
         return minutes < 60
             ? $"~{minutes} min"
