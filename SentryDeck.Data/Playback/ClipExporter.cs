@@ -40,6 +40,14 @@ public sealed class ClipExporter(
     private static readonly string ExportScriptDirectory =
         Path.Combine(Path.GetTempPath(), "SentryDeck", "exports");
 
+    // A killed process exits within milliseconds; the cap only keeps a wedged one from holding up the app's exit.
+    private static readonly TimeSpan KillTimeout = TimeSpan.FromSeconds(5);
+
+    // Antivirus and the search indexer often open a file the moment its writer closes it, so a delete right after FFmpeg exits can hit a sharing violation for a short while.
+    // A few short waits let them finish instead of leaving a partial export or a temporary script behind.
+    private const int DeleteAttempts = 10;
+    private static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(100);
+
     public async Task ExportAsync(ClipExportRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -75,12 +83,12 @@ public sealed class ClipExporter(
         catch
         {
             // Don't leave a broken half-written file where the user asked to save.
-            TryDelete(request.OutputPath);
+            await TryDeleteAsync(request.OutputPath);
             throw;
         }
         finally
         {
-            TryDelete(scriptPath);
+            await TryDeleteAsync(scriptPath);
         }
     }
 
@@ -175,7 +183,8 @@ public sealed class ClipExporter(
         return $"-hide_banner -loglevel error -y -f concat -safe 0 -i \"{scriptPath}\" -c copy -movflags +faststart \"{outputPath}\"";
     }
 
-    private static async Task RunFfmpegAsync(string ffmpegPath, string arguments, CancellationToken cancellationToken)
+    /// <summary>Runs FFmpeg to completion, or kills it and waits for it to exit when canceled.</summary>
+    internal static async Task RunFfmpegAsync(string ffmpegPath, string arguments, CancellationToken cancellationToken)
     {
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo(ffmpegPath, arguments)
@@ -207,6 +216,19 @@ public sealed class ClipExporter(
                 // Already exited between the cancellation and the kill.
             }
 
+            // Kill only starts the termination, and FFmpeg keeps the output and the script open until it is gone.
+            // Deleting them straight away would fail, leaving an unfinished export where the user asked to save.
+            // Awaited rather than blocking, because the export runs from the UI thread and a process with a write in flight to a slow drive can take a moment to exit.
+            using var killWait = new CancellationTokenSource(KillTimeout);
+            try
+            {
+                await process.WaitForExitAsync(killWait.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Still running after the cap; the cleanup logs whatever it then can't delete.
+            }
+
             throw;
         }
 
@@ -217,18 +239,29 @@ public sealed class ClipExporter(
         }
     }
 
-    private static void TryDelete(string path)
+    // Awaited rather than sleeping, because the export runs from the UI thread.
+    private static async Task TryDeleteAsync(string path)
     {
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            if (File.Exists(path))
+            try
             {
-                File.Delete(path);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+
+                return;
             }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Log.Warning(ex, "Failed to delete export temp/partial file. Path={Path}", path);
+            catch (IOException) when (attempt < DeleteAttempts)
+            {
+                await Task.Delay(DeleteRetryDelay);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Warning(ex, "Failed to delete export temp/partial file. Path={Path}", path);
+                return;
+            }
         }
     }
 }

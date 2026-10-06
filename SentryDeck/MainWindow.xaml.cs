@@ -90,17 +90,34 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Closing stops a running export, so the file the user is waiting for is lost unless they choose to stay.
+        if (_viewModel.Trim.IsExporting && !ConfirmCloseDuringExport())
+        {
+            return;
+        }
+
         _isClosing = true;
         IsEnabled = false;
 
         // Let WPF finish this Closing callback before requesting the real close.
-        _ = Dispatcher.InvokeAsync(CloseAfterShutdown);
+        _ = Dispatcher.InvokeAsync(CloseAfterShutdownAsync);
     }
 
-    private void CloseAfterShutdown()
+    private bool ConfirmCloseDuringExport() =>
+        MessageBox.Show(
+            this,
+            "An export is still being saved. Close Sentry Deck anyway?\n\nThe export will be canceled and its unfinished file deleted.",
+            "Export in progress",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
+
+    private async Task CloseAfterShutdownAsync()
     {
         try
         {
+            // FFmpeg runs as its own process, so it would outlive the app and leave its temporary script behind.
+            await _viewModel.Trim.CancelExportAsync();
             _viewModel.Shutdown();
         }
         catch (Exception ex)

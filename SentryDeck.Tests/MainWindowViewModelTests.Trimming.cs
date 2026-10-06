@@ -610,6 +610,148 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ExportSelection_WhenSaved_ConfirmsItAndStopsSayingReadyToExport()
+    {
+        // The only sign of a finished export used to be an Explorer window, which can open on another monitor, while the panel still read "ready to export".
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1); // one 60s chunk
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), _ => @"C:\out\clip.mp4");
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        vm.Trim.HasSavedExport.ShouldBeTrue();
+        vm.Trim.SavedExportText.ShouldBe("Saved clip.mp4.");
+        vm.Trim.TrimHintText.ShouldBe("0:30 of the Front camera saved. Switch cameras to save it from another angle.");
+    }
+
+    [Fact]
+    public void ExportSelection_SavedButExplorerCannotOpen_StillConfirmsTheSave()
+    {
+        // Reporting the reveal's failure as a failed export would show "Saved" and "Couldn't export" for the same file.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), _ => @"C:\out\clip.mp4");
+        vm.Trim.RevealInExplorer = _ => throw new InvalidOperationException("No shell to open Explorer.");
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        vm.Trim.HasSavedExport.ShouldBeTrue();
+        vm.Trim.HasExportNotice.ShouldBeFalse();
+        vm.Trim.TrimHintText.ShouldBe("0:30 of the Front camera saved. Switch cameras to save it from another angle.");
+    }
+
+    [Fact]
+    public void TrimHintText_AfterASavedExport_OffersTheSameRangeFromAnotherCamera()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, new FakeClipExporter(), _ => @"C:\out\clip.mp4");
+        vm.Playback.SeekPosition = 0.25;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.75;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+        RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
+
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        vm.Trim.TrimHintText.ShouldBe("0:30 of the Rear camera selected, ready to export.");
+    }
+
+    [Fact]
+    public async Task Export_WhileFfmpegRuns_ShowsItsProgressAndCanBeCanceled()
+    {
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        var exporter = new FakeClipExporter();
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: exporter,
+            savePathPicker: _ => @"C:\out\event.mp4",
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
+        {
+            Trim = { RevealInExplorer = _ => { } },
+        };
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+        exporter.RunsUntilCanceled = true;
+
+        var export = vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+        await Wait.UntilAsync(() => vm.Trim.IsExporting);
+
+        vm.Trim.ExportProgressText.ShouldBe("Exporting event.mp4…");
+        vm.Trim.HasSavedExport.ShouldBeFalse(); // the last export's confirmation would read as this one's
+        vm.Trim.CancelExportCommand.CanExecute(null).ShouldBeTrue();
+
+        vm.Trim.CancelExportCommand.Execute(null);
+        await export.WaitAsync(TimeSpan.FromSeconds(20));
+
+        exporter.LastCancellationToken.IsCancellationRequested.ShouldBeTrue();
+        vm.Trim.IsExporting.ShouldBeFalse();
+        vm.Trim.ExportProgressText.ShouldBeNull();
+        vm.Trim.HasExportNotice.ShouldBeFalse(); // the user stopped it, so it didn't fail
+        vm.Trim.HasSavedExport.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CancelExportAsync_WhileExporting_StopsFfmpegAndWaitsForTheExportToEnd()
+    {
+        // The app calls this on close: an export it doesn't stop keeps FFmpeg running after the app exits and leaves its temporary script behind.
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        var exporter = new FakeClipExporter { RunsUntilCanceled = true };
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: exporter,
+            savePathPicker: _ => @"C:\out\event.mp4",
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
+        {
+            Trim = { RevealInExplorer = _ => { } },
+        };
+        var export = vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+        await Wait.UntilAsync(() => vm.Trim.IsExporting);
+
+        await vm.Trim.CancelExportAsync().WaitAsync(TimeSpan.FromSeconds(20));
+
+        exporter.LastCancellationToken.IsCancellationRequested.ShouldBeTrue();
+        vm.Trim.IsExporting.ShouldBeFalse();
+        await export.WaitAsync(TimeSpan.FromSeconds(20));
+    }
+
+    [Fact]
+    public async Task CancelExportAsync_NothingExporting_ReturnsAtOnce()
+    {
+        // Closing the app always calls it.
+        var vm = CreateViewModel();
+
+        await vm.Trim.CancelExportAsync().WaitAsync(TimeSpan.FromSeconds(20));
+    }
+
+    [Fact]
+    public async Task SavedExportConfirmation_ShowInFolderThenDismiss_RevealsTheFileAndHides()
+    {
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        var revealed = new List<string>();
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: new FakeClipExporter(),
+            savePathPicker: _ => @"C:\out\event.mp4",
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder())
+        {
+            Trim = { RevealInExplorer = revealed.Add },
+        };
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+        revealed.Clear();
+
+        vm.Trim.ShowSavedExportCommand.Execute(null);
+        vm.Trim.DismissExportNoticeCommand.Execute(null);
+
+        revealed.ShouldBe([@"C:\out\event.mp4"]);
+        vm.Trim.HasSavedExport.ShouldBeFalse();
+    }
+
+    [Fact]
     public void SaveEventClip_OpenClipWhoseEventIsOutsideItsFootage_IsDisabled()
     {
         // The open clip's footage is already probed, so the menu can tell up front instead of failing after the click.

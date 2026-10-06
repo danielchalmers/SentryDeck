@@ -1350,6 +1350,80 @@
 
                 <StackPanel Grid.Row="1">
                     <!--
+                        Export progress: FFmpeg can take a while on a slow drive, and nothing else in the window changes while it runs.
+                        Cancel stops FFmpeg and deletes the unfinished file.
+                    -->
+                    <Border Padding="16,8"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0"
+                            Visibility="{Binding Trim.IsExporting, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <ProgressBar Width="48"
+                                         Margin="0,0,12,0"
+                                         VerticalAlignment="Center"
+                                         AutomationProperties.Name="Exporting"
+                                         IsIndeterminate="True" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Trim.ExportProgressText}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap" />
+                            <Button Grid.Column="2"
+                                    Content="Cancel export"
+                                    Command="{Binding Trim.CancelExportCommand}"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <!--  Export confirmation: the Explorer window an export opens can land on another monitor, so the app says itself that the file was saved.  -->
+                    <Border Padding="16,8"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0"
+                            Visibility="{Binding Trim.HasSavedExport, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Text="&#xE73E;"
+                                       Margin="0,0,10,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                       Style="{StaticResource AppGlyph}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Trim.SavedExportText}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       ToolTip="{Binding Trim.SavedExportPath}" />
+                            <Button Grid.Column="2"
+                                    Content="Show in folder"
+                                    Command="{Binding Trim.ShowSavedExportCommand}"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                            <Button Grid.Column="3"
+                                    Content="Dismiss"
+                                    Command="{Binding Trim.DismissExportNoticeCommand}"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Dismiss export confirmation"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <!--
                         Export notice: why the last export didn't happen.
                         It lives here, not in the status overlay, because the overlay can't draw over the native video surface and would hide a clip that is still playing.
                     -->

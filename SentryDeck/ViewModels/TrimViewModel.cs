@@ -31,6 +31,14 @@ public sealed partial class TrimViewModel : ObservableObject
     // Where the user saved their last export this session, so a run of exports from one drive doesn't make them browse back each time.
     private string _lastExportDirectory;
 
+    // The marks and camera of the last range saved from the panel, so the hint stops offering to export what is already saved.
+    private (double? Start, double? End, string Camera)? _savedSelection;
+
+    // FFmpeg runs as its own process, so an export the app doesn't stop keeps running after the app exits and leaves its temporary script behind.
+    // Both are null when no export is running.
+    private CancellationTokenSource _exportCancellation;
+    private TaskCompletionSource _exportEnded;
+
     /// <param name="playback">Supplies the playhead the marks are set at, and the open clip an export reads from.</param>
     /// <param name="cameras">Decides which camera a range export uses.</param>
     /// <param name="clipExporter">Exports trimmed clip ranges.</param>
@@ -80,8 +88,16 @@ public sealed partial class TrimViewModel : ObservableObject
         {
             if (HasSelection)
             {
+                var camera = CameraViewsViewModel.CameraLabel(_cameras.ExportCamera);
+
+                // Still saying "ready to export" after the export finished reads as if it hadn't happened.
+                if (_savedSelection == (_selectionStart, _selectionEnd, _cameras.ExportCamera))
+                {
+                    return $"{SelectionDurationText} of the {camera} camera saved. Switch cameras to save it from another angle.";
+                }
+
                 // Naming the camera matters most in the grid: stream copy can't composite it, so the export quietly saves the front camera alone.
-                return $"{SelectionDurationText} of the {CameraViewsViewModel.CameraLabel(_cameras.ExportCamera)} camera selected, ready to export.";
+                return $"{SelectionDurationText} of the {camera} camera selected, ready to export.";
             }
 
             if (HasSelectionStart)
@@ -125,11 +141,30 @@ public sealed partial class TrimViewModel : ObservableObject
     [ObservableProperty]
     private bool _isTrimming;
 
+    /// <summary>True while FFmpeg writes an export, which takes a while from a slow drive and changes nothing else in the window.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanExportSelection))]
     [NotifyCanExecuteChangedFor(nameof(ExportSelectionCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveEventClipCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelExportCommand))]
     private bool _isExporting;
+
+    /// <summary>Which file the running export is writing, e.g. "Exporting clip.mp4…" (null when no export is running).</summary>
+    [ObservableProperty]
+    private string _exportProgressText;
+
+    /// <summary>
+    /// Where the last export was saved, confirmed in a strip under the video until dismissed or superseded (null when there is nothing to confirm).
+    /// The Explorer window an export opens can land on another monitor, so without this the app itself never says the export finished.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSavedExport))]
+    [NotifyPropertyChangedFor(nameof(SavedExportText))]
+    private string _savedExportPath;
+
+    public bool HasSavedExport => SavedExportPath is not null;
+
+    public string SavedExportText => HasSavedExport ? $"Saved {Path.GetFileName(SavedExportPath)}." : null;
 
     /// <summary>
     /// Why the last export didn't happen, shown in a strip under the video (null when there is nothing to report).
@@ -185,6 +220,7 @@ public sealed partial class TrimViewModel : ObservableObject
     {
         _selectionStart = null;
         _selectionEnd = null;
+        _savedSelection = null;
         NotifySelectionChanged();
     }
 
@@ -213,8 +249,35 @@ public sealed partial class TrimViewModel : ObservableObject
         }
     }
 
+    /// <summary>Hides the export strip, whether it reports a failure or confirms a save.</summary>
     [RelayCommand]
-    private void DismissExportNotice() => ExportNotice = null;
+    private void DismissExportNotice()
+    {
+        ExportNotice = null;
+        SavedExportPath = null;
+    }
+
+    [RelayCommand]
+    private void ShowSavedExport()
+    {
+        if (SavedExportPath is { } path)
+        {
+            RevealInExplorer(path);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(IsExporting))]
+    private void CancelExport() => _exportCancellation?.Cancel();
+
+    /// <summary>
+    /// Stops a running export and waits until FFmpeg has exited and the unfinished file and temporary script are deleted.
+    /// The app calls this before it exits, because FFmpeg would otherwise keep running on its own and leave those files behind.
+    /// </summary>
+    public Task CancelExportAsync()
+    {
+        _exportCancellation?.Cancel();
+        return _exportEnded?.Task ?? Task.CompletedTask;
+    }
 
     [RelayCommand(CanExecute = nameof(CanExportSelection))]
     private async Task ExportSelectionAsync()
@@ -233,7 +296,11 @@ public sealed partial class TrimViewModel : ObservableObject
         var camera = _cameras.ExportCamera;
         var defaultFileName = $"{FileNameStamp(clip)} {FileCameraName(camera)} {FormatRangeForFileName(start, end)}.mp4";
 
-        await ExportAsync(clip, mediaSource, camera, start, end, defaultFileName);
+        if (await ExportAsync(clip, mediaSource, camera, start, end, defaultFileName))
+        {
+            _savedSelection = (startFraction, endFraction, camera);
+            OnPropertyChanged(nameof(TrimHintText));
+        }
     }
 
     /// <summary>
@@ -303,16 +370,23 @@ public sealed partial class TrimViewModel : ObservableObject
         && mediaSource.Duration > TimeSpan.Zero
         && mediaSource.ToMediaTime(clip.Event.Timestamp) is null;
 
-    private async Task ExportAsync(CamClip clip, ClipMediaSource mediaSource, string camera, TimeSpan start, TimeSpan end, string defaultFileName)
+    /// <returns>True when the export was saved.</returns>
+    private async Task<bool> ExportAsync(CamClip clip, ClipMediaSource mediaSource, string camera, TimeSpan start, TimeSpan end, string defaultFileName)
     {
         var outputPath = _savePathPicker(Path.Combine(SuggestExportDirectory(), SanitizeFileName(defaultFileName)));
         if (string.IsNullOrEmpty(outputPath))
         {
-            return;
+            return false;
         }
 
         _lastExportDirectory = Path.GetDirectoryName(outputPath);
 
+        using var cancellation = new CancellationTokenSource();
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _exportCancellation = cancellation;
+        _exportEnded = ended;
+        SavedExportPath = null;
+        ExportProgressText = $"Exporting {Path.GetFileName(outputPath)}…";
         IsExporting = true;
 
         try
@@ -324,20 +398,42 @@ public sealed partial class TrimViewModel : ObservableObject
                 start,
                 end,
                 outputPath);
-            await _clipExporter.ExportAsync(new ClipExportRequest(clip, mediaSource, camera, start, end, outputPath));
-            RevealInExplorer(outputPath);
+            await _clipExporter.ExportAsync(new ClipExportRequest(clip, mediaSource, camera, start, end, outputPath), cancellation.Token);
+            SavedExportPath = outputPath;
+            TryRevealInExplorer(outputPath);
+            return true;
         }
         catch (OperationCanceledException)
         {
+            Log.Information("Export canceled. Clip={ClipName}; Camera={Camera}; Output={Output}", clip.Name, camera, outputPath);
+            return false;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Export failed. Clip={ClipName}; Camera={Camera}; Output={Output}", clip.Name, camera, outputPath);
             ExportNotice = $"Couldn't export {clip.Name}: {ex.Message}";
+            return false;
         }
         finally
         {
+            _exportCancellation = null;
+            _exportEnded = null;
+            ExportProgressText = null;
             IsExporting = false;
+            ended.SetResult();
+        }
+    }
+
+    // The file is saved by now and the strip under the video confirms it, so Explorer failing to open mustn't report the export as failed.
+    private void TryRevealInExplorer(string path)
+    {
+        try
+        {
+            RevealInExplorer(path);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Couldn't show the exported file in Explorer. Output={Output}", path);
         }
     }
 
