@@ -976,7 +976,7 @@
                             <Button Command="{Binding ToggleAboutCommand}"
                                     AutomationProperties.Name="About and help"
                                     Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="About / Help">
+                                    ToolTip="About / Help (F1)">
                                 <TextBlock Text="&#xE946;"
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
@@ -1812,7 +1812,7 @@
                     <Button Command="{Binding ToggleAboutCommand}"
                             AutomationProperties.Name="Back to player"
                             Style="{StaticResource SubtleIconButton}"
-                            ToolTip="Back to player">
+                            ToolTip="Back to player (Esc)">
                         <TextBlock Text="&#xE72B;"
                                    Style="{StaticResource AppGlyph}" />
                     </Button>
@@ -2018,7 +2018,7 @@
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="1 – 7" Style="{StaticResource KeycapText}" />
                                     </Border>
-                                    <TextBlock Text="Switch camera view (one key per tile)" Style="{StaticResource AboutShortcutLabel}" />
+                                    <TextBlock Text="Switch camera view (one key per tile, also on the numpad)" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,8"
                                             Orientation="Horizontal">
@@ -2040,11 +2040,21 @@
                                     </Border>
                                     <TextBlock Text="Export the trimmed section as MP4" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="Esc" Style="{StaticResource KeycapText}" />
                                     </Border>
                                     <TextBlock Text="Cancel the trim" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="F1" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="Esc" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Open / close this help page" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                             </StackPanel>
 
