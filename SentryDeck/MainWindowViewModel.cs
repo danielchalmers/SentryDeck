@@ -76,6 +76,9 @@ public partial class MainWindowViewModel : ObservableObject
         Playback.PropertyChanged += OnPlaybackPropertyChanged;
         Playback.CurrentClipChanged += (_, clip) => Library.SelectedClip = clip;
         Library.PropertyChanged += OnLibraryPropertyChanged;
+
+        // Stop drops the media the in/out marks were set against, and a trim panel left open over a stopped player could neither mark, export, nor be closed with the Trim button.
+        Playback.Stopped += (_, _) => Trim.CancelTrimCommand.Execute(null);
     }
 
     /// <summary>

@@ -178,6 +178,25 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void StopCommand_WhileTrimming_ClosesTheTrimPanel()
+    {
+        // Stop closes the media the marks were set against, and a panel left open over a stopped player could neither mark, export, nor be closed with the Trim button.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+        vm.Library.SelectedClip = clipFiles.Clip;
+        vm.Playback.SeekPosition = 0.2;
+        vm.Trim.MarkSelectionStartCommand.Execute(null);
+        vm.Playback.SeekPosition = 0.4;
+        vm.Trim.MarkSelectionEndCommand.Execute(null);
+        vm.Trim.IsTrimming.ShouldBeTrue();
+
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Trim.IsTrimming.ShouldBeFalse();
+        vm.Trim.HasAnySelectionMark.ShouldBeFalse();
+    }
+
+    [Fact]
     public void TrimHintText_WalksThroughStartEndExport()
     {
         var vm = CreateViewModelWithController(out var controller, out _);

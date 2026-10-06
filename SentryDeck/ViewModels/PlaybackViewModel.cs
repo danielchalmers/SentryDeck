@@ -63,6 +63,11 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public event EventHandler<CamClip> CurrentClipChanged;
 
     /// <summary>
+    /// Raised after the user stops playback, so features working on the open media can close along with it.
+    /// </summary>
+    public event EventHandler Stopped;
+
+    /// <summary>
     /// Ladder the speed stepper walks: fine increments around 1x, doubling above.
     /// Flyleaf clamps Player.Speed to [0.125, 16], so 16x is the hard ceiling.
     /// </summary>
@@ -397,6 +402,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         IsLoading = false;
         SeekPosition = 0;
         NowPlayingClip = null;
+        Stopped?.Invoke(this, EventArgs.Empty);
     }
 
     [RelayCommand(CanExecute = nameof(CanSeek))]
