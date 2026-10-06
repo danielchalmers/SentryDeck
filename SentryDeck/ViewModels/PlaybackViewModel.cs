@@ -243,6 +243,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// <summary>Closes whatever the player has open, releasing its file handles.</summary>
     public Task StopPlayerAsync() => _playerController?.StopAsync() ?? Task.CompletedTask;
 
+    /// <summary>
+    /// Puts <paramref name="clip"/> back in the player at <paramref name="position"/> after <see cref="StopPlayerAsync"/> released its files for a change that didn't happen.
+    /// Unlike selecting it, this keeps the user's place and camera instead of jumping to the event.
+    /// </summary>
+    public Task ReopenAsync(CamClip clip, TimeSpan position, bool play) =>
+        _playerController?.ReopenAsync(clip, position, play) ?? Task.CompletedTask;
+
     public Task TogglePlayPauseAsync() => _playerController?.TogglePlayPauseAsync() ?? Task.CompletedTask;
 
     public Task StepFrameAsync(bool forward) => _playerController?.StepFrameAsync(forward) ?? Task.CompletedTask;

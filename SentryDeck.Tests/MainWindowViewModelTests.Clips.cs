@@ -446,6 +446,42 @@ public sealed partial class MainWindowViewModelTests
         vm.Error.Details.ShouldContain(Path.GetFileName(front));
     }
 
+    [Fact]
+    public async Task DeleteClip_CanceledInTheShellDialog_KeepsClipWithoutAnError()
+    {
+        var clips = ClipsWithDistinctPaths(2);
+        var vm = await LoadedViewModelAsync(clips);
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+
+        // What the shell delete throws when the user picks Cancel or Skip in its own error dialog.
+        vm.Library.RecycleClipFolder = _ => throw new OperationCanceledException();
+
+        var target = vm.Library.FilteredClips[0];
+        await vm.Library.DeleteClipCommand.ExecuteAsync(target);
+
+        // The user chose not to delete it, so "Delete Failed: The operation was canceled." misreported their choice and covered the video.
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Library.FilteredClips.ShouldContain(target);
+    }
+
+    [Fact]
+    public async Task DeleteClip_FolderAlreadyGone_RemovesClipWithoutAnError()
+    {
+        using var folder = new TempDirectory();
+        var gone = new CamClip(folder.Path, "Gone", new DateTime(2025, 1, 1, 12, 0, 0), [], camEvent: null);
+        var kept = ClipsWithDistinctPaths(1)[0];
+        var vm = await LoadedViewModelAsync([gone, kept]);
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+
+        // Removed outside the app after the scan; the delete runs the real shell call, which reports the missing folder before it shows any UI.
+        Directory.Delete(folder.Path);
+        await vm.Library.DeleteClipCommand.ExecuteAsync(gone);
+
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Library.FilteredClips.ShouldNotContain(gone);
+        vm.Library.FilteredClips.ShouldContain(kept);
+    }
+
     // --- Deleting the clip that is actually open: the point of the feature, and the only path that touches the player.
     // These drive a real controller, and the recycle runs behind a Task.Run whose continuation lands off the test thread -- hence the uiInvoker seam instead of the dispatcher hop. ---
 
@@ -488,6 +524,55 @@ public sealed partial class MainWindowViewModelTests
 
         // The app's own players hold the open clip's files, so checking before they close would always report the clip as in use.
         closesWhenChecked.ShouldBeGreaterThan(closesBeforeDelete);
+    }
+
+    [Fact]
+    public async Task DeleteClip_TheOpenClipIsInUse_ReopensItPausedWhereItWas()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
+        PlayFrom(controller, front, TimeSpan.FromSeconds(25));
+        vm.Library.WhyCannotRecycle = _ => null;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+        vm.Library.FindFileInUse = _ => clipFiles.GetPath(0, CameraNames.Back);
+        vm.Library.RecycleClipFolder = _ => { };
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
+
+        // Nothing was deleted, so leaving the player stopped and black at 0:00 lost the user's place for nothing.
+        vm.Error.Title.ShouldBe("Clip In Use");
+        controller.IsMediaOpen.ShouldBeTrue();
+        controller.Position.TotalSeconds.ShouldBe(25, 0.01);
+        vm.Playback.SeekPosition.ShouldBe(25.0 / 60, 0.001);
+
+        // The notice covers the video, so playing on behind it would skip footage the user never sees.
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task DeleteClip_TheOpenClipCanceledInTheShellDialog_KeepsPlayingWhereItWas()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip, uiInvoker: action => action());
+        PlayFrom(controller, front, TimeSpan.FromSeconds(25));
+        vm.Library.WhyCannotRecycle = _ => null;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+        vm.Library.RecycleClipFolder = _ => throw new OperationCanceledException();
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(clipFiles.Clip);
+
+        vm.Error.IsVisible.ShouldBeFalse();
+        controller.IsPlaying.ShouldBeTrue();
+        controller.Position.TotalSeconds.ShouldBe(25, 0.01);
+        vm.Playback.SeekPosition.ShouldBe(25.0 / 60, 0.001);
+    }
+
+    // The view-model subscribes after the clip opened and started, so a pause and resume lets it see playback the way it would in the app.
+    private static void PlayFrom(VideoPlayerController controller, FakeCameraPlayer front, TimeSpan position)
+    {
+        RunPinnedToTestThread(controller.PauseAsync);
+        RunPinnedToTestThread(controller.PlayAsync);
+        front.RaisePositionChanged(position);
     }
 
     [Fact]

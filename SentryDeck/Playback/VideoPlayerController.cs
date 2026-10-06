@@ -359,6 +359,19 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Opens <paramref name="clip"/> again at <paramref name="position"/>, after <see cref="StopAsync"/> closed it to release its files for something that then didn't happen.
+    /// A plain open starts at the event instead, which would lose the user's place.
+    /// Does nothing once anything has been opened since the stop, so a late call can't take the player back from what the user moved on to.
+    /// </summary>
+    public Task ReopenAsync(CamClip clip, TimeSpan position, bool play)
+    {
+        if (_session is not null || clip is null || !ReferenceEquals(CurrentClip, clip))
+            return Task.CompletedTask;
+
+        return OpenClipAsync(clip, position, play);
+    }
+
     public async Task LoadClipsAsync(IEnumerable<CamClip> clips)
     {
         await StopAsync();
@@ -411,7 +424,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
     }
 
-    private async Task OpenClipAsync(CamClip clip)
+    private async Task OpenClipAsync(CamClip clip, TimeSpan? startPosition = null, bool play = true)
     {
         _session?.Cancel();
         var session = new Session(clip);
@@ -426,7 +439,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             try
             {
-                await OpenClipCoreAsync(session, token);
+                await OpenClipCoreAsync(session, startPosition, play, token);
             }
             finally
             {
@@ -438,7 +451,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         });
     }
 
-    private async Task OpenClipCoreAsync(Session session, CancellationToken token)
+    private async Task OpenClipCoreAsync(Session session, TimeSpan? startPosition, bool play, CancellationToken token)
     {
         var clip = session.Clip;
 
@@ -463,7 +476,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             clip.Chunks.Count,
             mediaSource.Duration);
 
-        await OpenSourceAsync(session, mediaSource, ResolveEventStartPosition(clip, mediaSource), play: true, token);
+        await OpenSourceAsync(session, mediaSource, startPosition ?? ResolveEventStartPosition(clip, mediaSource), play, token);
     }
 
     /// <summary>

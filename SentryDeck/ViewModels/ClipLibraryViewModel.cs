@@ -358,6 +358,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     /// Sends the clip's folder to the Recycle Bin so the timeline can be tidied without leaving the app.
     /// Confirms first, warning when Windows would delete the folder permanently instead.
     /// If the clip is the one currently open, it then stops playback so Flyleaf releases its file handles before the shell tries to delete the (otherwise locked) folder.
+    /// When the delete doesn't happen, the clip is reopened where it was.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanUseClip))]
     private async Task DeleteClipAsync(CamClip clip)
@@ -389,11 +390,25 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         var isCurrent = ReferenceEquals(SelectedClip, clip)
             || ReferenceEquals(_playback.NowPlayingClip, clip)
             || _playback.CurrentClip == clip;
+
+        // Where the open clip was, so a delete that doesn't happen puts the user back there instead of on a stopped, black player at 0:00.
+        TimeSpan? reopenAt = null;
+        var wasPlaying = false;
         if (isCurrent && _playback.HasPlayer)
         {
+            if (_playback.CanSeek && ReferenceEquals(_playback.CurrentClip, clip))
+            {
+                reopenAt = _playback.Duration * _playback.SeekPosition;
+                wasPlaying = _playback.IsPlaying;
+            }
+
             await _playback.StopPlayerAsync();
             _playback.SeekPosition = 0;
         }
+
+        Task ReopenAsync(bool play) => reopenAt is { } position
+            ? _playback.ReopenAsync(clip, position, play)
+            : Task.CompletedTask;
 
         string fileInUse;
         try
@@ -416,14 +431,34 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
                     Log.Information("Permanently deleting clip, because it can't be recycled. ClipName={ClipName}; ClipPath={ClipPath}; Reason={Reason}", clip.Name, clip.FullPath, whyPermanent);
                 }
 
-                RecycleClipFolder(clip.FullPath);
+                try
+                {
+                    RecycleClipFolder(clip.FullPath);
+                }
+                catch (DirectoryNotFoundException) when (!Directory.Exists(clip.FullPath))
+                {
+                    // Removed outside the app since the last scan, so there is nothing left to delete and only the list is out of date.
+                    // Checked here rather than in a filter on the UI thread, because asking a network share that has gone offline can stall for seconds.
+                    Log.Information("Clip folder is already gone, so it is only removed from the list. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+                }
+
                 return null;
             });
+        }
+        catch (OperationCanceledException)
+        {
+            // The shell throws this when the user picks Cancel or Skip in its own error dialog, so they already know the clip is still there.
+            Log.Information("Clip delete was canceled in the shell dialog. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
+            await ReopenAsync(play: wasPlaying);
+            return;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to delete clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
             _error.Show("Delete Failed", $"Could not delete clip: {clip.Name}\n\nError: {ex.Message}");
+
+            // Paused, because the notice covers the video and the clip would otherwise play on unseen behind it.
+            await ReopenAsync(play: false);
             return;
         }
 
@@ -431,6 +466,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         {
             Log.Warning("Did not delete clip, because a file is in use. ClipName={ClipName}; FilePath={FilePath}", clip.Name, fileInUse);
             _error.Show("Clip In Use", $"Nothing was deleted, because a file in this clip is in use:\n{Path.GetFileName(fileInUse)}\n\nClose any program that has it open, then try again.");
+            await ReopenAsync(play: false);
             return;
         }
 

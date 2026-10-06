@@ -537,6 +537,61 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task ReopenAsync_AfterStop_OpensEveryCameraAtThePositionPaused()
+    {
+        // The event maps to media time 90s, so a plain open would start at 80s.
+        using var rig = new Rig(chunkCount: 3);
+        var clip = WithEvent(rig.Clip, rig.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        await rig.OpenAsync(clip);
+        await rig.Controller.StopAsync();
+        var playsBeforeReopen = rig.Front.Count("play");
+
+        await rig.Controller.ReopenAsync(clip, TimeSpan.FromSeconds(125), play: false);
+
+        // A delete that didn't happen reopens the clip this way, and jumping back to the event would lose the user's place.
+        rig.All.ShouldAllBe(player => player.IsOpen && player.Position == TimeSpan.FromSeconds(125));
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(125));
+        rig.Controller.IsMediaOpen.ShouldBeTrue();
+        rig.Controller.IsPlaying.ShouldBeFalse();
+        rig.Front.Count("play").ShouldBe(playsBeforeReopen);
+    }
+
+    [Fact]
+    public async Task ReopenAsync_AfterAnotherClipOpened_LeavesThatClipPlaying()
+    {
+        using var rig = new Rig(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1);
+        await rig.OpenAsync(rig.Clip, secondFiles.Clip);
+        await rig.Controller.StopAsync();
+        await rig.Controller.NextAsync();
+        await rig.Controller.WhenIdleAsync();
+
+        await rig.Controller.ReopenAsync(rig.Clip, TimeSpan.FromSeconds(30), play: false);
+        await rig.Controller.WhenIdleAsync();
+
+        // The user moved on while the stopped clip waited, so a late reopen must not take the player back.
+        rig.Controller.CurrentClip.ShouldBe(secondFiles.Clip);
+        rig.Front.OpenedPaths[^1].ShouldStartWith(secondFiles.RootPath);
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ReopenAsync_AfterTheSameClipWasPlayedAgain_LeavesItPlaying()
+    {
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.StopAsync();
+        await rig.Controller.PlayAsync();
+
+        await rig.Controller.ReopenAsync(rig.Clip, TimeSpan.FromSeconds(30), play: false);
+        await rig.Controller.WhenIdleAsync();
+
+        // The shell's delete dialog doesn't block the app, so the user can press Play before it closes, and a late reopen would pause what they just started.
+        rig.Front.OpenedPaths.Count.ShouldBe(2);
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task StopAsync_WhenOneCameraFailsToClose_StillClosesTheRestAndResets()
     {
         using var rig = new Rig(back: new FakeCameraPlayer { ThrowOnClose = true });
