@@ -503,14 +503,14 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void UpdateBadge_DefaultsToUpToDate()
+    public void UpdateBadge_BeforeAnyCheck_DoesNotClaimUpToDate()
     {
         var vm = CreateViewModel();
 
         vm.About.IsUpdateAvailable.ShouldBeFalse();
         vm.About.HasUpdateBadge.ShouldBeFalse();
-        vm.About.UpdateStatusTitle.ShouldBe("You're up to date");
-        vm.About.UpdateStatusDetails.ShouldBe("No newer release was found.");
+        vm.About.UpdateStatusTitle.ShouldBe("Updates not checked");
+        vm.About.UpdateStatusDetails.ShouldBe("This build doesn't check for updates.");
         vm.About.LatestVersionText.ShouldBe("Unknown");
         vm.About.LatestReleaseUrl.ShouldBe(UpdateService.ReleasesPageUrl);
     }
