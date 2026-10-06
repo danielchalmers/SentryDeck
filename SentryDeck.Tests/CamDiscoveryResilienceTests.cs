@@ -60,6 +60,46 @@ public sealed class CamDiscoveryResilienceTests
         clips.Count.ShouldBe(3); // the bad file is skipped; every real clip still loads
     }
 
+    [Theory]
+    [InlineData(FileAttributes.Hidden)]
+    [InlineData(FileAttributes.System)]
+    public void FindClips_ClipUnderAHiddenOrSystemSubfolder_IsFound(FileAttributes attribute)
+    {
+        // Copy and repair tools can leave these attributes on SavedClips or SentryClips, and the clips under them used to vanish without a word.
+        using var temp = new TempDirectory();
+
+        var savedClips = CreateSubDir(temp.Path, "SavedClips");
+        var dir = CreateSubDir(savedClips, "2023-01-01_10-00-00");
+        Touch(dir, "2023-01-01_10-00-00-front.mp4");
+        File.SetAttributes(savedClips, File.GetAttributes(savedClips) | attribute);
+
+        var clip = CamClip.FindClips(temp.Path).ShouldHaveSingleItem();
+
+        clip.FullPath.ShouldBe(dir);
+    }
+
+    [Theory]
+    [InlineData("$RECYCLE.BIN")]
+    [InlineData("$Recycle.Bin")]
+    [InlineData("System Volume Information")]
+    public void FindClips_ClipInsideTheRecycleBinOrSystemVolumeInformation_IsNotListed(string folderName)
+    {
+        // Deleting a clip from the app sends it to the drive's Recycle Bin, so scanning a drive root must not bring it back as a live clip.
+        using var temp = new TempDirectory();
+
+        var live = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(live, "2023-01-01_10-00-00-front.mp4");
+
+        var bin = CreateSubDir(temp.Path, folderName);
+        var recycled = CreateSubDir(CreateSubDir(bin, "S-1-5-21-1000"), "$R1A2B3C");
+        Touch(recycled, "2023-01-02_10-00-00-front.mp4");
+        File.SetAttributes(bin, File.GetAttributes(bin) | FileAttributes.Hidden | FileAttributes.System);
+
+        var clip = CamClip.FindClips(temp.Path).ShouldHaveSingleItem();
+
+        clip.FullPath.ShouldBe(live);
+    }
+
     [Fact]
     public void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
     {

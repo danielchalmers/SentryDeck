@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Enumeration;
 using System.Text.RegularExpressions;
 using Serilog;
 
@@ -123,17 +124,24 @@ public partial record class CamClip
     {
         yield return rootDirectory;
 
-        // IgnoreInaccessible so one ACL-denied subfolder (e.g. System Volume Information at a drive root) is skipped rather than aborting the entire scan.
+        // IgnoreInaccessible so one ACL-denied subfolder is skipped rather than aborting the entire scan.
+        // It also keeps the scan out of the hidden "Application Data" style junctions Windows leaves in every profile: they deny listing, and some point back at their own parent folder.
+        // AttributesToSkip defaults to Hidden | System, which silently dropped every clip under a SavedClips or SentryClips folder that a copy or repair tool had marked that way.
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = true,
             IgnoreInaccessible = true,
+            AttributesToSkip = 0,
         };
 
         IEnumerator<string> directories;
         try
         {
-            directories = Directory.EnumerateDirectories(rootDirectory, "*", options).GetEnumerator();
+            directories = new FileSystemEnumerable<string>(rootDirectory, static (ref FileSystemEntry entry) => entry.ToSpecifiedFullPath(), options)
+            {
+                ShouldIncludePredicate = static (ref FileSystemEntry entry) => entry.IsDirectory && !IsHousekeepingFolder(entry.FileName),
+                ShouldRecursePredicate = static (ref FileSystemEntry entry) => !IsHousekeepingFolder(entry.FileName),
+            }.GetEnumerator();
         }
         catch (Exception ex)
         {
@@ -167,6 +175,14 @@ public partial record class CamClip
             }
         }
     }
+
+    /// <summary>
+    /// Windows keeps these folders at a drive root, and the Recycle Bin holds the clips the app's own Delete sent there, so scanning a drive root must not list them again as live clips.
+    /// Skipping them by attribute used to do this by accident; matching the name keeps it working now that hidden and system folders are scanned.
+    /// </summary>
+    private static bool IsHousekeepingFolder(ReadOnlySpan<char> name)
+        => name.Equals("$RECYCLE.BIN", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("System Volume Information", StringComparison.OrdinalIgnoreCase);
 
     [GeneratedRegex(@"(?<date>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})")]
     private static partial Regex FolderNameRegex();
