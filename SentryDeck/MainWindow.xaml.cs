@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Navigation;
 using System.Windows.Threading;
@@ -60,6 +61,8 @@ public partial class MainWindow : Window
         }
 
         UpdateCameraHostLayout();
+
+        HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
     }
 
     // Only called once Flyleaf has started.
@@ -191,18 +194,42 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Keyboard.Focus(VideoContainer)));
     }
 
-    private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// Starts a seek gesture on every press of the seek bar and ends it on the release.
+    /// </summary>
+    /// <remarks>
+    /// The handlers see handled events too because a press on the rail never reaches an ordinary handler: with IsMoveToPointEnabled, Slider's own class handler jumps the thumb to the press and marks it handled first.
+    /// Missing that press left the gesture unstarted, so while playing the position sync put the thumb back before the release seek read it, and the click was ignored.
+    /// Only the thumb captures the mouse by itself, so the bar captures it for a press anywhere else: a press released outside the bar must still end the gesture, or playback would stay held paused.
+    /// </remarks>
+    internal static void HookSeekGesture(Slider slider, Action beginSeek, Func<Task> endSeekAsync)
     {
-        _viewModel.Playback.BeginSeek();
-    }
+        slider.AddHandler(
+            PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, _) =>
+            {
+                beginSeek();
 
-    private async void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        await _viewModel.Playback.EndSeekAsync();
+                if (slider.Template?.FindName("PART_Track", slider) is not Track { Thumb.IsMouseOver: true })
+                {
+                    slider.CaptureMouse();
+                }
+            }),
+            handledEventsToo: true);
+
+        slider.AddHandler(
+            PreviewMouseUpEvent,
+            new MouseButtonEventHandler(async (_, _) =>
+            {
+                slider.ReleaseMouseCapture();
+                await endSeekAsync();
+            }),
+            handledEventsToo: true);
     }
 
     // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation, whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for the one-off value jump a plain click makes.
-    // PreviewMouseDown has already called BeginSeek by the time this fires, so even a plain click issues one keyframe scrub seek here, which is harmless since the accurate mouse-up seek runs behind the same serialized lock and lands last.
+    // A drag has already called BeginSeek by the time this fires, so its every move scrub-seeks here.
+    // A press on the rail jumps the value before the gesture starts, so it issues no scrub seek: the release seek lands on it directly.
     private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         _viewModel.Playback.OnSeekSliderValueChanged();

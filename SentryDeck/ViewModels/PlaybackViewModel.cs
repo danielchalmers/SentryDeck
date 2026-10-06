@@ -33,7 +33,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private CamClip _seekGestureClip;
 
     // Set when a clip change ended the seek gesture while the thumb was still held, so the release that follows seeks nothing.
-    // Only a clip change makes the thumb's position meaningless: a release with no gesture begun (a click on the seek-bar rail, whose press the Slider can handle before BeginSeek runs) still seeks to where the thumb was put.
+    // Only a clip change makes the thumb's position meaningless: a release with no gesture begun still seeks to where the thumb was put.
     private bool _seekGestureEndedByClipChange;
 
     // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
@@ -389,7 +389,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// <summary>
     /// Called on every seek-bar value change.
     /// While a seek gesture is active (<see cref="_isSeeking"/>, set by <see cref="BeginSeek"/> on mouse-down for clicks and drags alike), each value feeds the scrub coalescer so the video follows the thumb in near-real-time.
-    /// A plain click therefore issues one scrub seek too; the accurate seek from <see cref="EndSeekAsync"/> runs behind the same serialized lock and always lands last.
+    /// A press on the seek-bar rail jumps the value before the gesture starts, so it issues no scrub seek; the accurate seek from <see cref="EndSeekAsync"/> lands on that value directly.
     /// Value changes from playback position sync arrive with <see cref="_isSeeking"/> false and are ignored.
     /// </summary>
     public void OnSeekSliderValueChanged()

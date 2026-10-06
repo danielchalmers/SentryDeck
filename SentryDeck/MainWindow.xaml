@@ -1699,8 +1699,6 @@
                                 IsEnabled="{Binding Playback.CanSeek}"
                                 Maximum="1"
                                 Minimum="0"
-                                PreviewMouseDown="SeekSlider_PreviewMouseDown"
-                                PreviewMouseUp="SeekSlider_PreviewMouseUp"
                                 Style="{StaticResource SeekSlider}"
                                 ValueChanged="SeekSlider_ValueChanged"
                                 Value="{Binding Playback.SeekPosition, Mode=TwoWay}" />
