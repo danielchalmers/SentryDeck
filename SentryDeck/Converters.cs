@@ -47,6 +47,44 @@ public sealed class BoolToTextConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
+/// The widest a grid column may get: what is left of the grid's ActualWidth once its other columns have <see cref="Reserved"/>, and never more than <see cref="Maximum"/>.
+/// </summary>
+/// <remarks>
+/// The sidebar column binds its MaxWidth through this, so neither dragging the splitter nor narrowing the window can squeeze the player until its seek bar collapses to nothing.
+/// A MinWidth on the player column doesn't do it: the splitter ignores it, and the grid then pushes the player past the window's edge rather than narrow a pixel-wide sidebar.
+/// Capping MaxWidth rather than setting Width keeps the width the user dragged to, so the sidebar returns to it once the window is wide enough again.
+/// </remarks>
+public sealed class RemainingWidthConverter : MarkupExtension, IValueConverter
+{
+    /// <summary>
+    /// The widest the column may get while the grid has room to spare.
+    /// </summary>
+    public double Maximum { get; set; } = double.PositiveInfinity;
+
+    /// <summary>
+    /// The width the grid's other columns need.
+    /// </summary>
+    public double Reserved { get; set; }
+
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        // Before its first layout the grid has no width to share, and capping the column at zero then would flash it to its minimum.
+        if (value is not double width || width <= 0)
+        {
+            return Maximum;
+        }
+
+        // A column's MaxWidth can't be negative, which a grid narrower than the reserved width would otherwise ask for.
+        return Math.Clamp(width - Reserved, 0, Maximum);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// The name screen readers announce for a clip in the list, e.g. "Saturday, December 16, 2023, 3:53 PM, Honk, Hutto, about 5 min".
 /// Multi-binding: [0] the clip's Timestamp, [1] its reason label, [2] its city, [3] its length as the list shows it.
 /// </summary>

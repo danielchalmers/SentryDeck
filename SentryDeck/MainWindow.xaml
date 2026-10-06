@@ -590,11 +590,17 @@
     </Window.Triggers>
 
     <Grid>
-        <Grid Visibility="{Binding ShowMainContent, Converter={local:BoolToVisibilityConverter}}">
+        <Grid x:Name="MainContent"
+              Visibility="{Binding ShowMainContent, Converter={local:BoolToVisibilityConverter}}">
             <Grid.ColumnDefinitions>
+                <!--
+                    Sidebar.
+                    Its widest setting gives way so the splitter (8) and the player (856, its width with this default sidebar at the smallest window) always fit.
+                    The seek bar is the only part of the player controls that can shrink, so a narrower player squeezed it to nothing beside the fixed-width buttons.
+                -->
                 <ColumnDefinition Width="320"
                                   MinWidth="260"
-                                  MaxWidth="440" />
+                                  MaxWidth="{Binding ActualWidth, ElementName=MainContent, Converter={local:RemainingWidthConverter Maximum=440, Reserved=864}}" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
