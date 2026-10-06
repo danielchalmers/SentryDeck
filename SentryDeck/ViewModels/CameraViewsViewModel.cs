@@ -71,9 +71,10 @@ public sealed partial class CameraViewsViewModel : ObservableObject
         }
     }
 
-    // Maps a Tesla event.json camera id to the camera view to auto-focus.
+    // Maps a Tesla event.json camera id to the camera view to auto-focus, or null when the event names no camera worth leaving the user's chosen view for.
     // Ids follow the community-documented map (0 front, 3/4 repeaters, 5/6 B-pillars, 7 rear; 1/2/8 are the non-recorded fisheye/narrow/cabin).
-    // Unknown ids and cameras this clip didn't record fall back to the front (primary) angle.
+    // Id 0 is no preference: every Dashcam save (honk, launcher tap) reports it, and a missing or unreadable field reads as 0 too, so following it would snap the view back to Front on every clip change.
+    // Unknown ids and cameras this clip didn't record are no preference either.
     internal string CameraIdToView(int cameraId)
     {
         var camera = cameraId switch
@@ -83,10 +84,10 @@ public sealed partial class CameraViewsViewModel : ObservableObject
             5 => CameraNames.LeftPillar,
             6 => CameraNames.RightPillar,
             7 => CameraNames.Back,
-            _ => CameraNames.Front,
+            _ => null,
         };
 
-        return IsAvailableView(camera) ? camera : CameraNames.Front;
+        return IsAvailableView(camera) ? camera : null;
     }
 
     [RelayCommand]

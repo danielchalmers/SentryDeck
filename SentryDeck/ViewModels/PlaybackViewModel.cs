@@ -502,10 +502,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
             if (cancellationToken.IsCancellationRequested || resumePlace is not null)
                 return;
 
-            // Auto-focus the camera that triggered the event (Full metadata mode).
-            if (clip.Event is not null)
+            // Auto-focus the camera that triggered the event (Full metadata mode), when the event names one; otherwise the view the user picked carries over.
+            if (clip.Event is not null && _cameras.CameraIdToView(clip.Event.Camera) is { } eventCameraView)
             {
-                _cameras.SelectedCameraView = _cameras.CameraIdToView(clip.Event.Camera);
+                _cameras.SelectedCameraView = eventCameraView;
             }
         }
         catch (Exception ex)

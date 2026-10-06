@@ -64,6 +64,13 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         return new CamClip(@"C:\clips", "Event Camera Clip", start, [new CamChunk(start, files)], camEvent);
     }
 
+    // The same clip folder with event metadata naming the Tesla camera id that triggered the recording.
+    private static CamClip WithEventCamera(CamClip clip, int eventCamera)
+    {
+        var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = clip.Timestamp, Camera = eventCamera };
+        return new CamClip(clip.FullPath, clip.Name, clip.Timestamp, clip.Chunks, camEvent);
+    }
+
     private static readonly string[] SixCameras =
     [
         CameraNames.Front,
@@ -301,14 +308,14 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Theory]
-    [InlineData(0, CameraNames.Front)]
+    [InlineData(0, null)] // front, and also what a missing or unreadable field reads as -> no preference
     [InlineData(3, CameraNames.LeftRepeater)]
     [InlineData(4, CameraNames.RightRepeater)]
     [InlineData(5, CameraNames.LeftPillar)]
     [InlineData(6, CameraNames.RightPillar)]
     [InlineData(7, CameraNames.Back)]
-    [InlineData(8, CameraNames.Front)] // cabin camera isn't written to USB -> front
-    [InlineData(99, CameraNames.Front)] // unknown id -> front
+    [InlineData(8, null)] // cabin camera isn't written to USB -> no preference
+    [InlineData(99, null)] // unknown id -> no preference
     public void CameraIdToView_MapsDocumentedEventCameraIds(int cameraId, string expectedView)
     {
         var vm = CreateViewModel();
@@ -318,12 +325,12 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void CameraIdToView_FallsBackToFront_WhenTheClipLacksThatCamera()
+    public void CameraIdToView_IsNoPreference_WhenTheClipLacksThatCamera()
     {
         var vm = CreateViewModel();
         vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.Cameras.CameraIdToView(5).ShouldBe(CameraNames.Front);
+        vm.Cameras.CameraIdToView(5).ShouldBeNull();
         vm.Cameras.CameraIdToView(7).ShouldBe(CameraNames.Back);
     }
 

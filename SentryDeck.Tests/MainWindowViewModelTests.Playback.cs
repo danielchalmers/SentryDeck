@@ -227,6 +227,45 @@ public sealed partial class MainWindowViewModelTests
         vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Back);
     }
 
+    [Theory]
+    [InlineData(0)] // front, and also what a missing or unreadable field reads as
+    [InlineData(8)] // cabin camera, never written to USB
+    [InlineData(99)] // unknown id
+    public void SelectingAnEventClip_ThatNamesNoSideOrRearCamera_KeepsTheChosenView(int eventCamera)
+    {
+        var vm = CreateViewModelWithController(out _, out _);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraViewsViewModel.GridCameraView);
+
+        // As in SelectingAnEventClip_AutoFocusesTheTriggeringCamera, the clip is deliberately not in the controller's playlist, so the selection load runs inline on this thread.
+        vm.Library.SelectedClip = ClipWithCamerasAndEventCamera(eventCamera, SixCameras);
+
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraViewsViewModel.GridCameraView);
+    }
+
+    [Fact]
+    public void NextCommand_ToAClipWhoseEventReportsCameraZero_KeepsTheChosenView()
+    {
+        // Every Dashcam save (honk, launcher tap) reports camera 0, so following it snapped the grid back to Front on every clip change.
+        using var firstFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1);
+        var first = WithEventCamera(firstFiles.Clip, eventCamera: 0);
+        var second = WithEventCamera(secondFiles.Clip, eventCamera: 0);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([first, second]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = first;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraViewsViewModel.GridCameraView);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.CurrentClip.ShouldBe(second);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraViewsViewModel.GridCameraView);
+    }
+
     [Fact]
     public void StopCommand_WhileASelectionIsWaitingToLoad_KeepsItFromPlaying()
     {
