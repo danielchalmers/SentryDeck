@@ -56,6 +56,23 @@ public partial class App : Application
             System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             System.Runtime.InteropServices.RuntimeInformation.OSDescription,
             System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
+
+        // Opened here rather than through StartupUri so that a window that fails to build ends the app.
+        // Through StartupUri, the failure reached the keep-alive handler above, which left a process with no window that only Task Manager could end.
+        try
+        {
+            new MainWindow().Show();
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Failed to open the main window");
+            MessageBox.Show(
+                $"Sentry Deck couldn't start: {ex.GetBaseException().Message}\n\nThe log in {System.IO.Path.GetDirectoryName(logPath)} has the details.",
+                "Sentry Deck",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown(1);
+        }
     }
 
     /// <summary>

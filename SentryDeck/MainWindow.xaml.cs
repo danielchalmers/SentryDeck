@@ -78,7 +78,8 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object sender, CancelEventArgs e)
     {
-        if (_isReadyToClose)
+        // A window whose constructor failed has nothing to stop, and the app closes it while shutting down because of that failure.
+        if (_isReadyToClose || _viewModel is null)
         {
             return;
         }
