@@ -360,14 +360,14 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task ApplyFilter_SearchChanged_RaisesFilterAppliedOnceTheListIsRebound()
+    public async Task ApplyFilter_SearchChanged_RaisesResultsReplacedOnceTheListIsRebound()
     {
         var clips = TestClips.Create(3);
         var vm = await LoadedViewModelAsync(clips);
         vm.Library.ListSelection = clips[1];
         var notifications = new List<string>();
         vm.Library.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
-        vm.Library.FilterApplied += (_, _) => notifications.Add(nameof(ClipLibraryViewModel.FilterApplied));
+        vm.Library.ResultsReplaced += (_, _) => notifications.Add(nameof(ClipLibraryViewModel.ResultsReplaced));
 
         vm.Library.FilterText = "Clip 1";
         vm.Library.ApplyFilter();
@@ -375,12 +375,36 @@ public sealed partial class MainWindowViewModelTests
         // The list kept its old scroll offset, so the view scrolls to the highlighted row or the top results, which it can only find once both belong to the new search.
         notifications.ShouldContain(nameof(ClipLibraryViewModel.FilteredClips));
         notifications.ShouldContain(nameof(ClipLibraryViewModel.ListSelection));
-        notifications[^1].ShouldBe(nameof(ClipLibraryViewModel.FilterApplied));
-        notifications.Count(name => name == nameof(ClipLibraryViewModel.FilterApplied)).ShouldBe(1);
+        notifications[^1].ShouldBe(nameof(ClipLibraryViewModel.ResultsReplaced));
+        notifications.Count(name => name == nameof(ClipLibraryViewModel.ResultsReplaced)).ShouldBe(1);
     }
 
     [Fact]
-    public async Task DeleteClip_AnotherClip_DoesNotRaiseFilterApplied()
+    public async Task OpenPickedFolders_AnotherFolder_RaisesResultsReplacedOnceTheListHoldsItsClips()
+    {
+        using var settingsFolder = new TempDirectory();
+        var (vm, _) = Launch(new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json")), @"D:\TeslaCam");
+        await vm.Library.ReloadAsync();
+        var notifications = new List<string>();
+        IReadOnlyList<CamClip> listed = null;
+        vm.Library.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
+        vm.Library.ResultsReplaced += (_, _) =>
+        {
+            notifications.Add(nameof(ClipLibraryViewModel.ResultsReplaced));
+            listed = vm.Library.FilteredClips;
+        };
+
+        await vm.Library.OpenPickedFoldersAsync([@"E:\TeslaCam"]);
+
+        // The list kept the scroll offset it had in the first folder's clips, so the picked folder's newest clip and its day header sat above the view.
+        // The view can only scroll to the top of the new clips once the list holds them, rather than the empty list the scan starts from.
+        listed.Select(clip => clip.Name).ShouldBe([@"E:\TeslaCam"]);
+        notifications[^1].ShouldBe(nameof(ClipLibraryViewModel.ResultsReplaced));
+        notifications.Count(name => name == nameof(ClipLibraryViewModel.ResultsReplaced)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DeleteClip_AnotherClip_DoesNotRaiseResultsReplaced()
     {
         var clips = ClipsWithDistinctPaths(3);
         var vm = await LoadedViewModelAsync(clips);
@@ -388,7 +412,7 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.FindFileInUse = _ => null;
         vm.Library.RecycleClipFolder = _ => { };
         var raised = 0;
-        vm.Library.FilterApplied += (_, _) => raised++;
+        vm.Library.ResultsReplaced += (_, _) => raised++;
 
         await vm.Library.DeleteClipCommand.ExecuteAsync(clips[0]);
 

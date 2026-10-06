@@ -81,10 +81,10 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     public int ClipCount => FilteredClips.Count;
 
     /// <summary>
-    /// Raised once the list has been rebound to a changed search, including a cleared one, so the view can show the new results from the selected clip's row or from the top.
+    /// Raised once the list has been rebound to a changed search, including a cleared one, or to a newly loaded library, so the view can show the new results from the selected clip's row or from the top.
     /// Deleting a clip doesn't raise it, so tidying old clips doesn't pull the list away from them.
     /// </summary>
-    public event EventHandler FilterApplied;
+    public event EventHandler ResultsReplaced;
 
     /// <summary>True when the search box has text (drives the clear button).</summary>
     public bool HasFilterText => !string.IsNullOrEmpty(FilterText);
@@ -236,6 +236,9 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             IsLoadingClips = false;
             OnPropertyChanged(nameof(FilteredClips));
             OnPropertyChanged(nameof(ClipCount));
+
+            // A quick scan refills the list before it lays out the emptied one, so the list kept the scroll offset it had in the previous folder's clips and opened a newly picked folder partway down.
+            ResultsReplaced?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -360,7 +363,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         // Next and Previous walk only the clips the list shows: a clip they opened behind the search couldn't be highlighted, so the list would keep pointing at the clip they left.
         _playback.SetNavigationFilter(MatchesFilter);
 
-        FilterApplied?.Invoke(this, EventArgs.Empty);
+        ResultsReplaced?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

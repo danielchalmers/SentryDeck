@@ -67,7 +67,7 @@ public partial class MainWindow : Window
         HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
         KeepSelectionInView(ClipListBox);
         HighlightRowWhenDeselectIsTurnedDown(ClipListBox);
-        _viewModel.Library.FilterApplied += (_, _) => ShowSearchResults(ClipListBox);
+        _viewModel.Library.ResultsReplaced += (_, _) => ShowNewResults(ClipListBox);
         HookSearchEscape(SearchBox, _viewModel.Library.ClearFilterCommand, LeaveSearchBox);
         NameSearchClearButton(SearchBox);
     }
@@ -283,14 +283,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Shows the start of a new search's results: the selected clip's row when the search kept it, otherwise the top of the list.
+    /// Shows the start of a new search's results, or of a newly loaded library: the selected clip's row when there is one, otherwise the top of the list.
     /// </summary>
     /// <remarks>
-    /// The list kept the scroll offset it had before the search, which lands on unrelated rows of the new results, so neither the playing clip's row nor the best matches were on screen.
-    /// A search that keeps the selected clip doesn't change the selection, so <see cref="KeepSelectionInView"/> never sees it.
+    /// The list kept the scroll offset it had before, which lands on unrelated rows of the new results, so neither the playing clip's row nor the best matches were on screen.
+    /// After picking another folder, its newest clip and that day's header sat above the view.
+    /// A search that keeps the selected clip doesn't change the selection, and a newly picked folder opens with nothing selected, so <see cref="KeepSelectionInView"/> scrolls for neither.
     /// The scroll waits for the list's next layout, which builds the rows of the new results.
     /// </remarks>
-    internal static void ShowSearchResults(ListBox list)
+    internal static void ShowNewResults(ListBox list)
     {
         list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {

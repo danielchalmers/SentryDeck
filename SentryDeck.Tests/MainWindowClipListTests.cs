@@ -52,7 +52,7 @@ public sealed class MainWindowClipListTests
     }
 
     [Fact]
-    public void ShowSearchResults_SearchKeepsTheSelectedRow_ScrollsToIt()
+    public void ShowNewResults_SearchKeepsTheSelectedRow_ScrollsToIt()
     {
         StaThread.Run(() =>
         {
@@ -64,7 +64,7 @@ public sealed class MainWindowClipListTests
 
             // The search keeps the selected row, so the selection never changes, and the old scroll offset now lands on rows far below it.
             Rebind(list, rows.Skip(47));
-            MainWindow.ShowSearchResults(list);
+            MainWindow.ShowNewResults(list);
             StaThread.DrainDispatcher(list);
 
             IsFullyVisible(list, rows[60]).ShouldBeTrue();
@@ -72,7 +72,7 @@ public sealed class MainWindowClipListTests
     }
 
     [Fact]
-    public void ShowSearchResults_SearchClearedWithARowSelected_ScrollsToIt()
+    public void ShowNewResults_SearchClearedWithARowSelected_ScrollsToIt()
     {
         StaThread.Run(() =>
         {
@@ -84,7 +84,7 @@ public sealed class MainWindowClipListTests
 
             // The short search list sat at its top, which in the full list is above the selected row.
             Rebind(list, rows);
-            MainWindow.ShowSearchResults(list);
+            MainWindow.ShowNewResults(list);
             StaThread.DrainDispatcher(list);
 
             IsFullyVisible(list, rows[16]).ShouldBeTrue();
@@ -92,7 +92,7 @@ public sealed class MainWindowClipListTests
     }
 
     [Fact]
-    public void ShowSearchResults_NothingSelected_ShowsTheTopResults()
+    public void ShowNewResults_NothingSelected_ShowsTheTopResults()
     {
         StaThread.Run(() =>
         {
@@ -106,11 +106,35 @@ public sealed class MainWindowClipListTests
 
             var results = rows.Where(row => row.Index % 2 == 0).ToList();
             Rebind(list, results);
-            MainWindow.ShowSearchResults(list);
+            MainWindow.ShowNewResults(list);
             StaThread.DrainDispatcher(list);
 
             Descendants(list).OfType<ScrollViewer>().First().VerticalOffset.ShouldBe(0);
             IsFullyVisible(list, results[0]).ShouldBeTrue();
+        });
+    }
+
+    [Fact]
+    public void ShowNewResults_AnotherFolderLoaded_ShowsItsNewestClip()
+    {
+        StaThread.Run(() =>
+        {
+            var list = CreateGroupedList(CreateRows(120));
+            MainWindow.KeepSelectionInView(list);
+
+            // The user scrolled down the first folder's clips before picking another folder.
+            Descendants(list).OfType<ScrollViewer>().First().ScrollToEnd();
+            StaThread.DrainDispatcher(list);
+
+            // A quick scan empties the list and fills it with the other folder's clips before the list lays out either.
+            var otherFolder = CreateRows(60);
+            Rebind(list, []);
+            Rebind(list, otherFolder);
+            MainWindow.ShowNewResults(list);
+            StaThread.DrainDispatcher(list);
+
+            Descendants(list).OfType<ScrollViewer>().First().VerticalOffset.ShouldBe(0);
+            IsFullyVisible(list, otherFolder[0]).ShouldBeTrue();
         });
     }
 
@@ -193,8 +217,8 @@ public sealed class MainWindowClipListTests
         return view;
     }
 
-    // A search hands the list a new grouped view of the results, the way the clip list's view source does when the search changes.
-    // The view-model announces the search in the same pass, before the list lays out its new rows, so the tests show the results before draining too.
+    // A search or a scan hands the list a new grouped view of the results, the way the clip list's view source does when the search or the library changes.
+    // The view-model announces the new results in the same pass, before the list lays out its new rows, so the tests show the results before draining too.
     private static void Rebind(ListBox list, IEnumerable<Row> rows)
     {
         list.ItemsSource = GroupedView(rows);
