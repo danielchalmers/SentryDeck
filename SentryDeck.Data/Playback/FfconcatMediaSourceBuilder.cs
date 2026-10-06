@@ -14,6 +14,10 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
     private static readonly string DefaultPlaylistDirectory =
         Path.Combine(Path.GetTempPath(), "SentryDeck", "playlists");
 
+    // A folder renamed without a date keeps its whole name as the clip name, and a long one would push the playlist file names past the 255-character limit, so the clip could not open.
+    // The name only helps someone reading the playlist folder or the log; the path hash is what keeps clips apart, so capping it costs nothing.
+    private const int MaxClipNameLengthInFileName = 64;
+
     /// <summary>
     /// Where the generated .ffconcat playlists are written.
     /// The app shares one directory and reuses each clip's file name across sessions, so the folder stays bounded; tests override it with a directory of their own because their fixture clips live under a fresh GUID root every run and would otherwise leave a permanent file behind for each one.
@@ -180,6 +184,11 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
     private static string SanitizeForFileName(string name)
     {
         var sanitized = InvalidFileNameCharsRegex().Replace(name ?? string.Empty, "_");
+        if (sanitized.Length > MaxClipNameLengthInFileName)
+        {
+            sanitized = sanitized[..MaxClipNameLengthInFileName];
+        }
+
         return string.IsNullOrEmpty(sanitized) ? "clip" : sanitized;
     }
 

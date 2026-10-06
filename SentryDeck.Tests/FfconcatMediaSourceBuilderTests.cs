@@ -155,6 +155,23 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     }
 
     [Fact]
+    public void Build_ClipFolderRenamedToAVeryLongName_StillWritesEveryCamerasPlaylist()
+    {
+        // A folder renamed without a date keeps its whole name as the clip name, and one of a couple of hundred characters used to push the playlist file names past the 255-character limit, so the clip failed to open.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var longName = string.Concat(Enumerable.Repeat("Road trip along the coast ", 10));
+        var clip = new CamClip(clipFiles.Clip.FullPath, longName, clipFiles.Clip.Timestamp, clipFiles.Clip.Chunks, camEvent: null);
+
+        var mediaSource = Build(clip);
+
+        mediaSource.CameraPlaylistPaths.Keys.ShouldBe(CameraNames.All, ignoreOrder: true);
+        foreach (var (camera, playlistPath) in mediaSource.CameraPlaylistPaths)
+        {
+            File.ReadAllText(playlistPath).ShouldContain(clipFiles.GetFfconcatPath(0, camera));
+        }
+    }
+
+    [Fact]
     public void Build_TwoDifferentClipsWithTheSameName_WritePlaylistsToDifferentPaths()
     {
         // Clips are named from their folder timestamp, so a RecentClips/SavedClips pair -- or the same footage on two drives -- genuinely share a name.
