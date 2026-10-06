@@ -271,4 +271,62 @@ public sealed partial class MainWindowViewModelTests
         controller.CurrentClip.ShouldBe(second.Clip);
         front.Count("open").ShouldBe(2);
     }
+
+    [Fact]
+    public void SelectingTheLoadedClipAgain_AfterADeselectWhilePaused_EnablesTheTransportWithoutReopening()
+    {
+        // A search that hides the open clip deselects it but leaves it loaded, so clearing the search and clicking it again selects the clip the player already has.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+        var callsBefore = front.Calls.Count;
+
+        vm.Library.SelectedClip = null;
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Playback.IsLoading.ShouldBeFalse();
+        vm.Playback.CanPlayPause.ShouldBeTrue();
+        vm.Playback.CanSeek.ShouldBeTrue();
+
+        // The paused clip stays where the user left it instead of reopening or resuming.
+        front.Calls.Count.ShouldBe(callsBefore);
+        vm.Playback.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SelectingTheLoadedClipAgain_AfterAStop_ReopensIt()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Library.SelectedClip = null;
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Count("open").ShouldBe(2);
+        controller.IsPlaying.ShouldBeTrue();
+        vm.Playback.IsLoading.ShouldBeFalse();
+        vm.Playback.CanPlayPause.ShouldBeTrue();
+        vm.Playback.CanSeek.ShouldBeTrue();
+    }
+
+    // Selects the clip through the list and waits until the player has it open and playing.
+    // The view-model's handlers run inline on whichever thread the controller raises them, because the open finishes on a thread-pool continuation.
+    private MainWindowViewModel CreateViewModelPlayingClip(CamClip clip, out VideoPlayerController controller, out FakeCameraPlayer front)
+    {
+        front = new FakeCameraPlayer();
+        var built = BuildFourCameraController(front);
+        controller = built;
+        built.LoadClips([clip]);
+
+        var vm = new MainWindowViewModel(() => built, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = clip;
+        RunPinnedToTestThread(built.WhenIdleAsync);
+
+        built.IsPlaying.ShouldBeTrue();
+        return vm;
+    }
 }

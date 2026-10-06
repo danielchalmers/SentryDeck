@@ -467,7 +467,11 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
         try
         {
-            if (resumePlace is null)
+            if (clip == _playerController.CurrentClip)
+            {
+                await ResyncWithLoadedClipAsync(cancellationToken);
+            }
+            else if (resumePlace is null)
             {
                 await _playerController.GoToClipAsync(clip);
             }
@@ -507,6 +511,22 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 clip.FullPath);
             _error.Show("Playback Failed", $"Could not play clip: {clip.Name}\n\nError: {ex.Message}");
         }
+    }
+
+    // The playlist ignores a move to the clip it already has, so selecting the clip that is still loaded (after a search hid it, or a deselect) opens nothing, and no loading change would ever arrive to clear IsLoading and re-enable the transport.
+    // A paused or playing clip carries on where it was; only a stopped or failed one is reopened, as selecting it would normally do.
+    private async Task ResyncWithLoadedClipAsync(CancellationToken cancellationToken)
+    {
+        if (!_playerController.IsMediaOpen)
+        {
+            await _playerController.PlayAsync();
+        }
+
+        // A newer selection owns IsLoading now, and its own load sets it.
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        IsLoading = _playerController.IsLoading;
     }
 
     private async Task SeekToCurrentPositionAsync()
