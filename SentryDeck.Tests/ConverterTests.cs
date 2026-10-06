@@ -232,6 +232,15 @@ public sealed class ConverterTests
     }
 
     [Fact]
+    public void ThumbnailConverter_ZeroByteThumbnail_YieldsNoImage()
+    {
+        // The card's missing-thumbnail glyph follows this null image, so an empty file must not decode to an empty bitmap that hides the glyph.
+        using var thumbnail = new TempFile([], ".png");
+
+        new ThumbnailConverter().Convert(thumbnail.Path, typeof(ImageSource), null, null).ShouldBeNull();
+    }
+
+    [Fact]
     public void ThumbnailConverter_ValidThumbnail_YieldsADecodedImageAndReleasesTheFile()
     {
         using var thumbnail = new TempFile(BuildPng(width: 384, height: 288), ".png");
@@ -242,19 +251,6 @@ public sealed class ConverterTests
         image.PixelWidth.ShouldBe(192);
         image.IsFrozen.ShouldBeTrue();
         using var exclusive = new FileStream(thumbnail.Path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-    }
-
-    [Fact]
-    public void ThumbnailConverter_FallbackParameter_IsVisibleOnlyWhenTheFileIsMissing()
-    {
-        // The placeholder behind the image is driven purely by the file's presence.
-        var converter = new ThumbnailConverter();
-
-        converter.Convert(MissingThumbnailPath(), typeof(Visibility), "fallback", null).ShouldBe(Visibility.Visible);
-        converter.Convert(null, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Visible);
-
-        using var thumbnail = new TempFile("not a png"u8.ToArray(), ".png");
-        converter.Convert(thumbnail.Path, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Collapsed);
     }
 
     [Fact]

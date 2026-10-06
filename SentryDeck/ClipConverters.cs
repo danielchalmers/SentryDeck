@@ -137,8 +137,8 @@ public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Loads a clip thumbnail if the file exists; returns null otherwise so a fallback can show.
-/// Pass ConverterParameter="fallback" to instead get a Visibility that is Visible when missing.
+/// Loads a clip thumbnail, or returns null when the file is missing or can't be decoded.
+/// The clip card shows its missing-thumbnail glyph whenever this image is null, so a corrupt or zero-byte thumb.png gets the glyph too instead of an empty tile.
 /// </summary>
 public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
 {
@@ -147,12 +147,7 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         var path = value as string;
-        var exists = !string.IsNullOrEmpty(path) && File.Exists(path);
-
-        if (string.Equals(parameter as string, "fallback", StringComparison.OrdinalIgnoreCase))
-            return exists ? Visibility.Collapsed : Visibility.Visible;
-
-        if (!exists)
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
             return null;
 
         try

@@ -750,14 +750,27 @@
                                         ClipToBounds="True"
                                         CornerRadius="4">
                                     <Grid>
+                                        <!--  Follows the decoded image rather than the file's presence, so a corrupt or zero-byte thumb.png shows the glyph instead of an empty tile.  -->
                                         <TextBlock Text="&#xE714;"
                                                    HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"
                                                    FontSize="22"
-                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                                   Style="{StaticResource AppGlyph}"
-                                                   Visibility="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}, ConverterParameter=fallback}" />
-                                        <Image Source="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}}"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock"
+                                                       BasedOn="{StaticResource AppGlyph}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Source, ElementName=ThumbnailImage}"
+                                                                     Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Image x:Name="ThumbnailImage"
+                                               Source="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}}"
                                                Stretch="UniformToFill" />
                                         <Border Margin="0,0,4,4"
                                                 Padding="4,1"
