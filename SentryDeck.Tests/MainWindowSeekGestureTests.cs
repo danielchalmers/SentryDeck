@@ -1,9 +1,6 @@
-using System.Runtime.ExceptionServices;
-using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
 
 namespace SentryDeck.Tests;
 
@@ -15,7 +12,7 @@ public sealed class MainWindowSeekGestureTests
     [Fact]
     public void HookSeekGesture_PressOnTheRail_StartsTheGesture()
     {
-        RunOnStaThread(() =>
+        StaThread.Run(() =>
         {
             var slider = CreateMoveToPointSlider();
             var begun = 0;
@@ -32,7 +29,7 @@ public sealed class MainWindowSeekGestureTests
     [Fact]
     public void HookSeekGesture_ReleaseAfterAPressOnTheRail_EndsTheGesture()
     {
-        RunOnStaThread(() =>
+        StaThread.Run(() =>
         {
             var slider = CreateMoveToPointSlider();
             var ended = 0;
@@ -76,33 +73,5 @@ public sealed class MainWindowSeekGestureTests
 
         target.RaiseEvent(args);
         return args;
-    }
-
-    // WPF controls need an STA thread, which xUnit's test threads are not.
-    private static void RunOnStaThread(Action action)
-    {
-        ExceptionDispatchInfo failure = null;
-
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                failure = ExceptionDispatchInfo.Capture(ex);
-            }
-            finally
-            {
-                Dispatcher.CurrentDispatcher.InvokeShutdown();
-            }
-        });
-
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-
-        failure?.Throw();
     }
 }

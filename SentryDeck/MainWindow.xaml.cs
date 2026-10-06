@@ -13,7 +13,7 @@ namespace SentryDeck;
 
 /// <summary>
 /// Main WPF window.
-/// Owns only view concerns: window lifecycle, Flyleaf host layout, the seek slider input plumbing, and search-box focus.
+/// Owns only view concerns: window lifecycle, Flyleaf host layout, the seek slider input plumbing, keeping the selected clip in view, and search-box focus.
 /// All state, commands, and orchestration live in <see cref="MainWindowViewModel"/>.
 /// </summary>
 public partial class MainWindow : Window
@@ -63,6 +63,7 @@ public partial class MainWindow : Window
         UpdateCameraHostLayout();
 
         HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
+        KeepSelectionInView(ClipListBox);
     }
 
     // Only called once Flyleaf has started.
@@ -225,6 +226,33 @@ public partial class MainWindow : Window
                 await endSeekAsync();
             }),
             handledEventsToo: true);
+    }
+
+    /// <summary>
+    /// Scrolls the list to every newly selected clip, including the ones Next and Previous select without a click on the row.
+    /// </summary>
+    /// <remarks>
+    /// WPF only brings a row into view when the user picks it in the list itself, so a clip opened any other way was selected far off-screen and nothing on screen showed which clip was playing.
+    /// The scroll waits for the list's next layout because after a search or a rescan the selected row's container may not exist yet.
+    /// While the keyboard is in the list it moves to the new row too, or the arrow keys would carry on from the previous clip's row.
+    /// </remarks>
+    internal static void KeepSelectionInView(ListBox list)
+    {
+        list.SelectionChanged += (_, _) =>
+            list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                if (list.SelectedItem is not { } item)
+                {
+                    return;
+                }
+
+                list.ScrollIntoView(item);
+
+                if (list.IsKeyboardFocusWithin && list.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem row)
+                {
+                    row.Focus();
+                }
+            });
     }
 
     // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation, whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for the one-off value jump a plain click makes.
