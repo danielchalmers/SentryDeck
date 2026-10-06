@@ -67,16 +67,15 @@
                             </Border>
 
                             <!--
-                                Export selection: a translucent accent band over the marked in/out
-                                range, plus a taller tick at each set mark (each shows on its own,
-                                so a lone in-point is visible while placing the out-point). Same
-                                offset math as the other overlays; hidden while no marks are set.
+                                Export selection: a translucent band over the marked in/out range, plus a taller tick at each set mark (each shows on its own, so a lone in-point is visible while placing the out-point).
+                                Same offset math as the other overlays; hidden while no marks are set.
+                                The band is neutral rather than accent so it still shows over the played fill, which is where it sits after the usual mark, play, mark flow.
                             -->
-                            <Border Height="8"
+                            <Border Height="10"
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
-                                    Background="{DynamicResource AccentFillColorDefaultBrush}"
-                                    CornerRadius="2"
+                                    Background="{DynamicResource TextFillColorPrimaryBrush}"
+                                    CornerRadius="3"
                                     IsHitTestVisible="False"
                                     Opacity="0.3"
                                     Visibility="{Binding Data.Trim.HasSelection, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
