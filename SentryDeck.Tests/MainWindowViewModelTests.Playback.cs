@@ -267,6 +267,114 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void NextCommand_FromAClipWithoutPillarsToOneWhosePillarTriggeredIt_OpensOnThatPillar()
+    {
+        // Next selects the new clip while the player still has the previous clip's media open, and those cameras must not stand in for the new clip's.
+        using var firstFiles = TestClipFiles.Create(
+            chunkCount: 1,
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1, cameras: SixCameras);
+        var second = WithEventCamera(secondFiles.Clip, eventCamera: 5);
+        var controller = new VideoPlayerController(
+            SixCameras.ToDictionary(camera => camera, ICameraPlayer (_) => new FakeCameraPlayer()),
+            CameraNames.Front,
+            _playlists.CreateBuilder());
+        controller.LoadClips([firstFiles.Clip, second]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = firstFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.CurrentClip.ShouldBe(second);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+    }
+
+    [Fact]
+    public void NextCommand_ToAClipThatCantPlayTheWatchedCamera_DropsItsTileOnceTheClipOpens()
+    {
+        using var firstFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(
+            chunkCount: 2,
+            omitCamerasFromChunkZero: new HashSet<string> { CameraNames.Back },
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+        var controller = BuildFourCameraController(new FakeCameraPlayer());
+        controller.LoadClips([firstFiles.Clip, secondFiles.Clip]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = firstFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.CurrentClip.ShouldBe(secondFiles.Clip);
+        vm.Cameras.CameraViewOptions.ShouldNotContain(option => option.ViewId == CameraNames.Back);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void OpeningAClip_WithACameraMissingFromItsFirstSegment_DropsThatCamerasTile()
+    {
+        // Playback lines every camera up from the clip's first segment, so a camera that only starts later is never played and its tile would stay black.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 2,
+            omitCamerasFromChunkZero: new HashSet<string> { CameraNames.Back },
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
+
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+            [
+                CameraViewsViewModel.GridCameraView,
+                CameraNames.Front,
+                CameraNames.LeftRepeater,
+                CameraNames.RightRepeater,
+            ]);
+    }
+
+    [Fact]
+    public void SelectingTheOpenClipAgain_StillLeavesOutTheCameraItCantPlay()
+    {
+        // Selecting a clip offers every camera it recorded; when the player already has it open, no new media opens to narrow that down again.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 2,
+            omitCamerasFromChunkZero: new HashSet<string> { CameraNames.Back },
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out _);
+
+        vm.Library.SelectedClip = null;
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Cameras.CameraViewOptions.ShouldNotContain(option => option.ViewId == CameraNames.Back);
+    }
+
+    [Fact]
+    public void OpeningAClip_ThatPlaysEveryCameraItRecorded_DoesNotRebuildTheTiles()
+    {
+        // Each rebuild makes the view regenerate the strip and re-parent every video host, so the open must not redo what the selection already showed.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([clipFiles.Clip]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        var tileRebuilds = 0;
+        vm.Cameras.PropertyChanged += (_, e) => tileRebuilds += e.PropertyName == nameof(CameraViewsViewModel.CameraViewOptions) ? 1 : 0;
+
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsMediaOpen.ShouldBeTrue();
+        tileRebuilds.ShouldBe(1);
+    }
+
+    [Fact]
     public void StopCommand_WhileASelectionIsWaitingToLoad_KeepsItFromPlaying()
     {
         // Selecting a clip yields to the UI before loading it; a stop in that window used to be undone by the load starting right after.

@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Serilog;
 
 namespace SentryDeck;
 
@@ -48,7 +49,7 @@ public sealed partial class CameraViewsViewModel : ObservableObject
     private string _selectedCameraView = CameraNames.Front;
 
     /// <summary>
-    /// The selectable views for the current clip: the grid plus one tile per camera the clip actually recorded, in <see cref="CameraNames.All"/> order.
+    /// The selectable views for the current clip: the grid plus one tile per camera the clip actually recorded (and, once its media is open, can play), in <see cref="CameraNames.All"/> order.
     /// </summary>
     [ObservableProperty]
     private IReadOnlyList<CameraViewOption> _cameraViewOptions = BuildCameraViewOptions(null);
@@ -60,15 +61,33 @@ public sealed partial class CameraViewsViewModel : ObservableObject
     public void ShowCamerasOf(CamClip clip)
     {
         CameraViewOptions = BuildCameraViewOptions(clip);
-        if (IsAvailableView(SelectedCameraView))
+        KeepSelectedViewIfOffered();
+    }
+
+    /// <summary>
+    /// Narrows the camera tiles of <paramref name="clip"/> to the cameras its opened media can actually play.
+    /// A recorded camera can still be left out of playback (missing from the clip's first segment, or its first file unreadable), and its tile would only ever show black.
+    /// </summary>
+    public void ShowPlayableCamerasOf(CamClip clip, IEnumerable<string> playableCameras)
+    {
+        var playable = playableCameras.ToHashSet();
+        var options = BuildCameraViewOptions(clip, playable);
+
+        // Most clips play every camera they recorded; replacing identical tiles would make the view rebuild the strip and re-parent every video host for nothing.
+        if (options.Select(option => option.ViewId).SequenceEqual(CameraViewOptions.Select(option => option.ViewId)))
+            return;
+
+        var unplayable = RecordedCameras(clip).Where(camera => !playable.Contains(camera)).ToArray();
+        if (unplayable.Length > 0)
         {
-            // Same view id as before, but the option objects are new, so re-mark the selected one.
-            SyncCameraViewSelection();
+            Log.Warning(
+                "Hiding the tiles of cameras the clip recorded but can't play. ClipName={ClipName}; Cameras={Cameras}",
+                clip.Name,
+                unplayable);
         }
-        else
-        {
-            SelectedCameraView = CameraNames.Front;
-        }
+
+        CameraViewOptions = options;
+        KeepSelectedViewIfOffered();
     }
 
     // Maps a Tesla event.json camera id to the camera view to auto-focus, or null when the event names no camera worth leaving the user's chosen view for.
@@ -112,12 +131,15 @@ public sealed partial class CameraViewsViewModel : ObservableObject
         _ => CameraNames.DisplayName(camera),
     };
 
-    private static IReadOnlyList<CameraViewOption> BuildCameraViewOptions(CamClip clip)
+    // Only recognized cameras get a tile: each needs a dedicated Flyleaf host wired in the view, so an unknown future suffix is ingested and played in the engine but not shown.
+    private static IEnumerable<string> RecordedCameras(CamClip clip) =>
+        CameraNames.All.Where(camera => clip.Chunks.Any(chunk => chunk.Files.ContainsKey(camera)));
+
+    private static IReadOnlyList<CameraViewOption> BuildCameraViewOptions(CamClip clip, IReadOnlySet<string> playableCameras = null)
     {
-        // Only recognized cameras get a tile: each needs a dedicated Flyleaf host wired in the view, so an unknown future suffix is ingested and played in the engine but not shown.
         var cameras = clip is null
             ? DefaultCameras
-            : CameraNames.All.Where(camera => clip.Chunks.Any(chunk => chunk.Files.ContainsKey(camera))).ToArray();
+            : RecordedCameras(clip).Where(camera => playableCameras is null || playableCameras.Contains(camera)).ToArray();
 
         // Metadata-only clips (no camera files at all) keep the classic strip rather than none.
         if (cameras.Length == 0)
@@ -135,6 +157,19 @@ public sealed partial class CameraViewsViewModel : ObservableObject
 
     private bool IsAvailableView(string view) =>
         view is not null && CameraViewOptions.Any(option => option.ViewId == view);
+
+    private void KeepSelectedViewIfOffered()
+    {
+        if (IsAvailableView(SelectedCameraView))
+        {
+            // Same view id as before, but the option objects are new, so re-mark the selected one.
+            SyncCameraViewSelection();
+        }
+        else
+        {
+            SelectedCameraView = CameraNames.Front;
+        }
+    }
 
     partial void OnSelectedCameraViewChanged(string value) => SyncCameraViewSelection();
 

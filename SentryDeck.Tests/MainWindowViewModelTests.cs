@@ -335,6 +335,41 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ShowPlayableCamerasOf_DropsTheTilesOfCamerasTheMediaCantPlay_AndLeavesTheWatchedOneForFront()
+    {
+        var vm = CreateViewModel();
+        var clip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = clip;
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        vm.Cameras.ShowPlayableCamerasOf(clip, [CameraNames.Front, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+            [
+                CameraViewsViewModel.GridCameraView,
+                CameraNames.Front,
+                CameraNames.LeftRepeater,
+                CameraNames.RightRepeater,
+            ]);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void ShowPlayableCamerasOf_WhenEveryRecordedCameraPlays_KeepsTheTilesItAlreadyShows()
+    {
+        // Replacing the tiles makes the view rebuild the strip and re-parent every video host, which flashes the video for nothing.
+        var vm = CreateViewModel();
+        var clip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = clip;
+        var tiles = vm.Cameras.CameraViewOptions;
+
+        vm.Cameras.ShowPlayableCamerasOf(clip, SixCameras);
+
+        vm.Cameras.CameraViewOptions.ShouldBeSameAs(tiles);
+    }
+
+    [Fact]
     public async Task NumberKeys_SelectTilesByStripPosition_IncludingPillars()
     {
         var vm = CreateViewModel();

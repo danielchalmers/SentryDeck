@@ -172,6 +172,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// </summary>
     public ClipMediaSource OpenedMediaSource => _session is { IsOpen: true } session ? session.Source : null;
 
+    /// <summary>
+    /// The clip <see cref="OpenedMediaSource"/> belongs to, or null when nothing is open; it changes along with <see cref="OpenedMediaSource"/>.
+    /// Next and Previous move <see cref="CurrentClip"/> at once, and the previous clip's media stays open until the new clip starts opening, so the two can briefly disagree.
+    /// </summary>
+    public CamClip OpenedClip => _session is { IsOpen: true } session ? session.Clip : null;
+
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
 
     public bool CanGoNext => Playlist.HasNext;

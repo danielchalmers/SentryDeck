@@ -41,7 +41,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive.</param>
     /// <param name="uiInvoker">Runs an action on the UI thread.</param>
     /// <param name="error">Where playback failures are reported.</param>
-    /// <param name="cameras">Refocused on the camera that triggered an event clip once it opens.</param>
+    /// <param name="cameras">Refocused on the camera that triggered an event clip once it opens, and narrowed to the cameras the opened clip can play.</param>
     public PlaybackViewModel(
         Func<VideoPlayerController> playerControllerFactory,
         Func<Task> backgroundYield,
@@ -226,6 +226,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
         RecomputeSelectedClipTimeline();
         NotifyMarkersChanged();
+        ShowPlayableCameras();
 
         _selectionCts?.Cancel();
         _selectionCts?.Dispose();
@@ -643,6 +644,17 @@ public sealed partial class PlaybackViewModel : ObservableObject
         _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
     }
 
+    // Selecting a clip offers a tile for every camera it recorded, but playback can leave a recorded camera out, and its tile would then stay black.
+    // Only the selected clip's opened media knows which cameras it plays; a clip selected again while it is still open gets no new media, so this also runs on selection.
+    // Next and Previous select the new clip while the previous clip's media is still open, and narrowing to its cameras would hide the new clip's own tiles and with them the camera its event names.
+    private void ShowPlayableCameras()
+    {
+        if (SelectedClip is { } clip && _playerController?.OpenedClip == clip && _playerController.OpenedMediaSource is { } mediaSource)
+        {
+            _cameras.ShowPlayableCamerasOf(clip, mediaSource.CameraPlaylistPaths.Keys);
+        }
+    }
+
     private void NotifyMarkersChanged()
     {
         OnPropertyChanged(nameof(EventMarkerPosition));
@@ -730,6 +742,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 OnPropertyChanged(nameof(OpenedMediaSource));
                 RecomputeSelectedClipTimeline();
                 NotifyMarkersChanged();
+                ShowPlayableCameras();
                 break;
 
             case nameof(VideoPlayerController.ErrorMessage):
