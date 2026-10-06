@@ -344,6 +344,22 @@ public sealed partial class MainWindowViewModelTests
         vm.Playback.CanStop.ShouldBeTrue();
     }
 
+    [Fact]
+    public void PlayAfterStop_PutsTheNowPlayingBadgeBack()
+    {
+        // Play after Stop reopens the clip the player still has, which is not a clip change, so nothing else would mark it as playing again.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out _);
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+        vm.Playback.NowPlayingClip.ShouldBeNull();
+
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeTrue();
+        vm.Playback.NowPlayingClip.ShouldBe(clipFiles.Clip);
+    }
+
     // Selects the clip through the list and waits until the player has it open and playing.
     // The view-model's handlers run inline on whichever thread the controller raises them, because the open finishes on a thread-pool continuation.
     private MainWindowViewModel CreateViewModelPlayingClip(CamClip clip, out VideoPlayerController controller, out FakeCameraPlayer front)

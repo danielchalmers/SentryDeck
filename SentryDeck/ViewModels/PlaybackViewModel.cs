@@ -675,6 +675,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
         {
             case nameof(VideoPlayerController.IsLoading):
                 IsLoading = _playerController.IsLoading;
+
+                // Play after Stop reopens the clip the player still has, which raises no clip change, so the badge Stop took off comes back here.
+                if (_playerController.IsLoading)
+                {
+                    NowPlayingClip = _playerController.CurrentClip;
+                }
+
                 break;
 
             case nameof(VideoPlayerController.IsPlaying):
