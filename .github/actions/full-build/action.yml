@@ -43,11 +43,14 @@ runs:
         path: TestResults/**
         if-no-files-found: ignore
 
+    # A single-file publish leaves WPF's native libraries as loose files unless IncludeNativeLibrariesForSelfExtract bundles them.
+    # The exe can't start without them: copied out of the zip alone, or run from inside it, it crashed before it could show or log anything.
+    # Bundled, they unpack to a cache under %TEMP% on first launch, and the zip and the MSI ship the exe alone.
     - name: Create Binaries
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          dotnet publish ./SentryDeck/SentryDeck.csproj -o "publish/$arch" -c Release -f net10.0-windows --os win --arch $arch --self-contained -p:PublishSingleFile=true -p:DebugType=embedded -p:Version=${{ inputs.version }}
+          dotnet publish ./SentryDeck/SentryDeck.csproj -o "publish/$arch" -c Release -f net10.0-windows --os win --arch $arch --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=embedded -p:Version=${{ inputs.version }}
         done
 
     - name: Create Portable ZIPs
