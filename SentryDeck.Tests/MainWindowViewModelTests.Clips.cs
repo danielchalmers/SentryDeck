@@ -280,18 +280,20 @@ public sealed partial class MainWindowViewModelTests
     // The overlay is the whole UI in these states, so its wording and its dismissibility are the behavior. ---
 
     [Fact]
-    public async Task LoadClips_WithNoRoots_ShowsDismissibleEmptyState()
+    public async Task LoadClips_WithNoRoots_ShowsAnEmptyStateThatStaysUntilFootageIsFound()
     {
         var vm = CreateViewModel();
 
         await vm.Library.LoadClipsAsync([]);
 
-        // First run with no USB drive attached: a friendly prompt the user can dismiss to reach the rest of the app, not a scary error they're stuck behind.
+        // First run with no USB drive attached: a friendly prompt, not a scary error.
+        // It only covers the video area, so the sidebar stays usable; dismissing it only uncovered "Select a clip to begin" beside an empty list.
         vm.Error.Title.ShouldBe("No dashcam footage yet");
         vm.Error.IsEmptyState.ShouldBeTrue();
-        vm.Error.CanDismiss.ShouldBeTrue();
+        vm.Error.CanDismiss.ShouldBeFalse();
         vm.Error.IsVisible.ShouldBeTrue();
         vm.ShowStatusOverlay.ShouldBeTrue();
+        vm.HasNoClipSelected.ShouldBeFalse();
         vm.Library.ClipCount.ShouldBe(0);
     }
 
@@ -344,6 +346,98 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.ClipCount.ShouldBe(2);
         vm.Error.IsVisible.ShouldBeTrue();
         vm.Error.Title.ShouldBe("Error Loading Clips");
+        vm.Error.CanDismiss.ShouldBeTrue();
+    }
+
+    // --- An empty library: a folder with no clips, and one that is gone or can't be opened, each say so instead of "Select a clip to begin" beside an empty list.
+    // These use the real loader, because it is the one that skips unreadable folders. ---
+
+    [Fact]
+    public async Task LoadClips_FolderIsGone_ShowsFolderNotFound()
+    {
+        var vm = CreateViewModel();
+        var gone = Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}");
+
+        await vm.Library.LoadClipsAsync([gone]);
+
+        // Rescanning a folder that was renamed or unplugged emptied the list without a word, as if the footage had been deleted.
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Folder Not Found");
+        vm.Error.Details.ShouldContain(gone);
+        vm.Error.IsEmptyState.ShouldBeFalse();
+        vm.HasNoClipSelected.ShouldBeFalse();
+
+        // The library is empty, so dismissing the error would only uncover "Select a clip to begin" beside an empty list.
+        vm.Error.CanDismiss.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task LoadClips_FolderCantBeListed_ShowsAccessDenied()
+    {
+        using var folder = new TempDirectory();
+        var vm = CreateViewModel();
+
+        // The probe refuses the folder instead of a deny rule on it, because an elevated account like the CI runner's can still list a folder whose rules deny it.
+        vm.Library.ThrowIfCantList = path =>
+        {
+            if (path == folder.Path)
+            {
+                throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.");
+            }
+        };
+
+        await vm.Library.LoadClipsAsync([folder.Path]);
+
+        // The scan skips folders it may not list, so a root the user can't open looked like an empty library too.
+        vm.Error.Title.ShouldBe("Access Denied");
+        vm.Error.Details.ShouldContain(folder.Path);
+    }
+
+    [Fact]
+    public async Task LoadClips_FolderHasNoClips_SaysSoInsteadOfAskingForAClip()
+    {
+        using var folder = new TempDirectory();
+        var vm = CreateViewModel();
+
+        await vm.Library.LoadClipsAsync([folder.Path]);
+
+        // "Select a clip to begin" beside an empty list read as if there were clips to pick, and nothing hinted that the wrong folder was chosen.
+        vm.Error.Title.ShouldBe("No clips found in this folder");
+        vm.Error.Details.ShouldContain(folder.Path);
+        vm.Error.IsEmptyState.ShouldBeTrue();
+        vm.Error.CanDismiss.ShouldBeFalse();
+        vm.HasNoClipSelected.ShouldBeFalse();
+        vm.ShowStatusOverlay.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task LoadClips_SeveralFoldersWithNoClips_NamesEveryFolder()
+    {
+        using var first = new TempDirectory();
+        using var second = new TempDirectory();
+        var vm = CreateViewModel();
+
+        await vm.Library.LoadClipsAsync([first.Path, second.Path]);
+
+        vm.Error.Title.ShouldBe("No clips found in these folders");
+        vm.Error.Details.ShouldContain(first.Path);
+        vm.Error.Details.ShouldContain(second.Path);
+    }
+
+    [Fact]
+    public async Task DeleteClip_TheLastClip_SaysTheFolderHasNoClips()
+    {
+        var vm = await LoadedViewModelAsync(ClipsWithDistinctPaths(1));
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+        vm.Library.RecycleClipFolder = _ => { };
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(vm.Library.FilteredClips.Single());
+
+        // Deleting the last clip left the same "Select a clip to begin" prompt over a list with nothing in it.
+        vm.Error.Title.ShouldBe("No clips found in this folder");
+        vm.Error.IsEmptyState.ShouldBeTrue();
+        vm.Error.CanDismiss.ShouldBeFalse();
+        vm.HasNoClipSelected.ShouldBeFalse();
     }
 
     // --- Next/Previous order: the player's playlist must be the list's exact reverse, since Next and Previous step through it by index. ---

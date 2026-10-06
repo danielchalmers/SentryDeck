@@ -27,6 +27,9 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     // Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
     private Func<IEnumerable<string>> _rootSource = CamStorage.FindCommonRoots;
 
+    // The roots the last scan read, so an empty library can name the folders it looked in.
+    private IReadOnlyList<string> _scannedRoots = [];
+
     /// <param name="clipLoader">Maps a dashcam root to its clips.</param>
     /// <param name="playback">The player, which is stopped before a rescan or a delete and follows the clip list's playlist.</param>
     /// <param name="error">Where scan and delete failures are reported.</param>
@@ -153,13 +156,16 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         {
             // Scan the disk off the UI thread; the continuation resumes on it via the WPF SynchronizationContext, so all view-model state below is mutated on the UI thread.
             var result = await Task.Run(() => ScanRoots(roots));
+            _scannedRoots = result.Roots;
 
+            // A notice over an empty library stays until a scan finds clips: dismissing it would only uncover "Select a clip to begin" beside an empty list.
+            // It covers only the video area, so the sidebar can still pick a folder or rescan.
             if (!result.HadRoots)
             {
                 _error.Show(
                     "No dashcam footage yet",
                     "Point Sentry Deck at your TeslaCam folder to get started. Recorded USB drives are found automatically.",
-                    canDismiss: true,
+                    canDismiss: false,
                     isEmptyState: true);
             }
             else
@@ -167,7 +173,12 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
                 _allClips.AddRange(result.Clips);
                 foreach (var error in result.Errors)
                 {
-                    _error.Show(error.Title, error.Details);
+                    _error.Show(error.Title, error.Details, canDismiss: _allClips.Count > 0);
+                }
+
+                if (_allClips.Count == 0 && result.Errors.Count == 0)
+                {
+                    ShowNoClipsFound();
                 }
             }
 
@@ -194,6 +205,19 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     }
 
     public void Shutdown() => _filterDebounceTimer.Stop();
+
+    /// <summary>
+    /// Says the library is empty and names the folders it came from, until a scan finds clips.
+    /// Otherwise the overlay fell back to "Select a clip to begin" beside an empty list, which reads as if there were clips to pick and never hints that the wrong folder was chosen.
+    /// </summary>
+    private void ShowNoClipsFound()
+    {
+        _error.Show(
+            _scannedRoots.Count == 1 ? "No clips found in this folder" : "No clips found in these folders",
+            $"{string.Join("\n", _scannedRoots)}\n\nSelect the TeslaCam folder from your car's USB drive, or a folder you copied your clips to.",
+            canDismiss: false,
+            isEmptyState: true);
+    }
 
     // Matches the clip name, path, event city, and friendly event reason (e.g. "sentry", "honk", "saved").
     private bool MatchesFilter(CamClip clip)
@@ -247,7 +271,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         if (rootList.Count == 0)
         {
             Log.Information("No dashcam roots found");
-            return new ScanResult([], [], HadRoots: false);
+            return new ScanResult(rootList, [], []);
         }
 
         Log.Information("Loading dashcam clips. RootCount={RootCount}; Roots={Roots}", rootList.Count, rootList);
@@ -263,12 +287,25 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             try
             {
                 var rootClips = _clipLoader(root);
+
+                // The scan skips any folder it can't read, so one damaged clip can't hide the rest, but that also turned a root that is gone or locked into an empty library.
+                // Opening an empty root once more without that leniency tells a folder that really has no clips apart from one that was moved, unplugged, or can't be opened.
+                if (rootClips.Count == 0)
+                {
+                    ThrowIfCantList(root);
+                }
+
                 clips.AddRange(rootClips);
                 Log.Information(
                     "Scanned dashcam root. Root={Root}; ClipCount={ClipCount}; ElapsedMs={ElapsedMs}",
                     root,
                     rootClips.Count,
                     rootStopwatch.ElapsedMilliseconds);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                Log.Error(ex, "Dashcam root not found. Root={Root}", root);
+                errors.Add(new ClipLoadError("Folder Not Found", $"Can't find this folder:\n{root}\n\nIt may have been moved or renamed, or its drive disconnected."));
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -296,8 +333,18 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             .ThenBy(clip => clip.Name)
             .ThenBy(clip => clip.FullPath, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        return new ScanResult(newestFirst, errors, HadRoots: true);
+        return new ScanResult(rootList, newestFirst, errors);
     }
+
+    /// <summary>
+    /// Throws when a folder is gone or the user may not list it.
+    /// Directory.Exists is true for a folder the user may not list, so the default opens the folder instead, which throws for a missing folder and for a denied one alike.
+    /// Overridable for tests, so they don't depend on the rights of the account running them.
+    /// </summary>
+    internal Action<string> ThrowIfCantList { get; set; } = folder =>
+    {
+        using var listing = Directory.EnumerateFileSystemEntries(folder).GetEnumerator();
+    };
 
     /// <summary>
     /// Drops roots that repeat another root or sit inside one, keeping the first spelling the user picked.
@@ -348,7 +395,10 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         return path.Length > prefix.Length && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed record ScanResult(IReadOnlyList<CamClip> Clips, IReadOnlyList<ClipLoadError> Errors, bool HadRoots);
+    private sealed record ScanResult(IReadOnlyList<string> Roots, IReadOnlyList<CamClip> Clips, IReadOnlyList<ClipLoadError> Errors)
+    {
+        public bool HadRoots => Roots.Count > 0;
+    }
 
     private sealed record ClipLoadError(string Title, string Details);
 
@@ -599,6 +649,11 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
 
         OnPropertyChanged(nameof(FilteredClips));
         OnPropertyChanged(nameof(ClipCount));
+
+        if (_allClips.Count == 0)
+        {
+            ShowNoClipsFound();
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanShowOnMap))]
