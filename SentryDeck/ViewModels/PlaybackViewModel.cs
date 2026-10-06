@@ -323,6 +323,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
     public Task TogglePlayPauseAsync() => _playerController?.TogglePlayPauseAsync() ?? Task.CompletedTask;
 
+    public Task PauseAsync() => _playerController?.PauseAsync() ?? Task.CompletedTask;
+
     public Task StepFrameAsync(bool forward) => _playerController?.StepFrameAsync(forward) ?? Task.CompletedTask;
 
     public Task SeekRelativeAsync(TimeSpan offset)

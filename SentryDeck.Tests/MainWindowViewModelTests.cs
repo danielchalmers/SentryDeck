@@ -422,6 +422,47 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void OpeningAbout_WhilePlaying_PausesUntilTheUserPlaysAgain()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+
+        // The clip started playing before the view-model subscribed, so restart it where the view-model sees it, as it would in the app.
+        RunPinnedToTestThread(controller.PauseAsync);
+        RunPinnedToTestThread(controller.PlayAsync);
+        vm.Playback.IsPlaying.ShouldBeTrue();
+        var pausesAfterOpen = front.Count("pause");
+
+        vm.ToggleAboutCommand.Execute(null);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeFalse();
+        vm.Playback.IsPlaying.ShouldBeFalse();
+        front.Count("pause").ShouldBe(pausesAfterOpen + 1);
+
+        // Back on the player, the clip waits at the frame the user left, instead of jumping ahead the moment the page closes.
+        vm.ShowAboutPage = false;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void OpeningAbout_WhilePaused_LeavesThePlayerAlone()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+        RunPinnedToTestThread(controller.PauseAsync);
+        var callsBefore = front.Calls.Count;
+
+        vm.ShowAboutPage = true; // F1
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeFalse();
+        front.Calls.Count.ShouldBe(callsBefore);
+    }
+
+    [Fact]
     public void Loading_ShowsStatusOverlay_AndHidesVideo()
     {
         var vm = CreateViewModel();

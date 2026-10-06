@@ -224,6 +224,16 @@ public partial class MainWindowViewModel : ObservableObject
         ShowAboutPage = !ShowAboutPage;
     }
 
+    // The page covers the player and blocks its shortcuts, and TeslaCam footage has no sound, so a clip left running behind it plays through footage nobody sees.
+    // It stays paused when the page closes, so the user comes back to the frame they left.
+    partial void OnShowAboutPageChanged(bool value)
+    {
+        if (value && Playback.IsPlaying)
+        {
+            _ = Playback.PauseAsync();
+        }
+    }
+
     [RelayCommand]
     private async Task DownloadFFmpegAsync()
     {
