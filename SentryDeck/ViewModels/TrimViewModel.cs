@@ -455,7 +455,7 @@ public sealed partial class TrimViewModel : ObservableObject
             Filter = "MP4 video|*.mp4",
         };
 
-        return dialog.ShowDialog() == true ? dialog.FileName : null;
+        return DialogOwner.ShowDialog(dialog) == true ? dialog.FileName : null;
     }
 
     // Year-first, like Tesla's own folder names, so exports sort by date in Explorer whatever the user's locale.

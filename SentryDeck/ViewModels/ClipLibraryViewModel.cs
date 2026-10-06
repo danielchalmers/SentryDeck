@@ -133,7 +133,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     /// Overridable for tests; defaults to a yes/no message box that defaults to No for a permanent delete.
     /// </summary>
     internal Func<CamClip, string, bool> ConfirmDeleteClip { get; set; } = (clip, whyPermanent) =>
-        MessageBox.Show(
+        DialogOwner.ShowMessageBox(
             DeleteClipPrompt(clip, whyPermanent),
             whyPermanent is null ? "Delete clip" : "Permanently delete clip",
             MessageBoxButton.YesNo,
@@ -532,7 +532,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             Title = "Select a folder containing Tesla dashcam footage (TeslaCam folder)",
         };
 
-        if (dialog.ShowDialog() == true)
+        if (DialogOwner.ShowDialog(dialog) == true)
         {
             var folders = dialog.FolderNames;
             Log.Information(
