@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Baml2006;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Xaml;
 
@@ -64,7 +65,23 @@ public sealed class ThemeButtonStyleTests
         });
     }
 
-    private static (Border Host, Button Button, TextBlock Glyph, TextBlock Label) CreateIconLabelButton(string styleKey, string fluentTheme)
+    [Theory]
+    [InlineData("Dark")]
+    [InlineData("Light")]
+    public void SubtleIconButton_CheckedToggleButton_KeepsTheFlatLook(string fluentTheme)
+    {
+        StaThread.Run(() =>
+        {
+            // The Trim button is a toggle so screen readers can tell whether the trim panel is open; on screen the open panel already says so.
+            var (host, toggle, _, label) = CreateIconLabelButton("SubtleIconButton", fluentTheme, new ToggleButton { IsChecked = true });
+
+            var border = toggle.Template.FindName("ContentBorder", toggle).ShouldBeOfType<Border>();
+            ColorOf(border.Background).A.ShouldBe((byte)0);
+            ColorOf(label.Foreground).ShouldNotBe(ColorOf(host.FindResource("TextFillColorDisabledBrush")));
+        });
+    }
+
+    private static (Border Host, ButtonBase Button, TextBlock Glyph, TextBlock Label) CreateIconLabelButton(string styleKey, string fluentTheme, ButtonBase button = null)
     {
         // Touching Application registers the pack:// scheme that theme dictionaries load through, which a test process otherwise lacks.
         _ = Application.Current;
@@ -92,7 +109,9 @@ public sealed class ThemeButtonStyleTests
         content.Children.Add(glyph);
         content.Children.Add(label);
 
-        var button = new Button { Content = content, Style = (Style)host.FindResource(styleKey) };
+        button ??= new Button();
+        button.Content = content;
+        button.Style = (Style)host.FindResource(styleKey);
         host.Child = button;
 
         host.Measure(new Size(200, 100));

@@ -1667,10 +1667,10 @@
                                     VerticalAlignment="Center"
                                     FontFamily="{DynamicResource SymbolThemeFontFamily}"
                                     FontSize="20"
-                                    AutomationProperties.Name="Play or pause"
+                                    AutomationProperties.Name="{Binding Playback.IsPlaying, Converter={local:BoolToTextConverter}, ConverterParameter='Pause|Play'}"
                                     IsEnabled="{Binding Playback.CanPlayPause}"
                                     Style="{StaticResource AccentButtonStyle}"
-                                    ToolTip="Play/Pause (Space)" />
+                                    ToolTip="{Binding Playback.IsPlaying, Converter={local:BoolToTextConverter}, ConverterParameter='Pause (Space)|Play (Space)'}" />
 
                             <Button Command="{Binding Playback.StepFrameForwardCommand}"
                                     Margin="0,0,10,0"
@@ -1735,23 +1735,30 @@
                                 </StackPanel>
                             </Button>
 
-                            <!--  Opens the trim panel (above this bar) for cutting a shareable MP4.  -->
-                            <Button Command="{Binding Trim.ToggleTrimmingCommand}"
-                                    Margin="6,0,0,0"
-                                    VerticalAlignment="Center"
-                                    AutomationProperties.Name="Trim clip"
-                                    Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Cut a section of this clip to share (I / O to mark)">
+                            <!--
+                                Opens the trim panel (above this bar) for cutting a shareable MP4.
+                                A toggle so screen readers can tell whether the panel is open; it keeps the flat button look, since the open panel already shows that on screen.
+                            -->
+                            <local:CommandToggleButton Command="{Binding Trim.ToggleTrimmingCommand}"
+                                                       Margin="6,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       AutomationProperties.Name="Trim clip"
+                                                       IsChecked="{Binding Trim.IsTrimming, Mode=OneWay}"
+                                                       Style="{StaticResource SubtleIconButton}"
+                                                       ToolTip="Cut a section of this clip to share (I / O to mark)">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE8C6;"
                                                Style="{StaticResource AppGlyphInButton}" />
                                     <TextBlock Text="Trim"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
-                            </Button>
+                            </local:CommandToggleButton>
                         </StackPanel>
 
-                        <!--  Scrubber (carries the event marker + chunk seams)  -->
+                        <!--
+                            Scrubber (carries the event marker + chunk seams).
+                            Its own value is a 0..1 fraction, so its item status carries the time for screen readers.
+                        -->
                         <Slider x:Name="SeekSlider"
                                 Grid.Column="2"
                                 Margin="16,0"
@@ -1762,7 +1769,14 @@
                                 Minimum="0"
                                 Style="{StaticResource SeekSlider}"
                                 ValueChanged="SeekSlider_ValueChanged"
-                                Value="{Binding Playback.SeekPosition, Mode=TwoWay}" />
+                                Value="{Binding Playback.SeekPosition, Mode=TwoWay}">
+                            <AutomationProperties.ItemStatus>
+                                <MultiBinding StringFormat="{}{0} of {1}">
+                                    <Binding Path="Playback.PositionText" />
+                                    <Binding Path="Playback.DurationText" />
+                                </MultiBinding>
+                            </AutomationProperties.ItemStatus>
+                        </Slider>
 
                         <!--
                             Time readout.
@@ -1804,7 +1818,7 @@
                             </Button>
                             <Button MinWidth="72"
                                     Command="{Binding Playback.ResetSpeedCommand}"
-                                    AutomationProperties.Name="Playback speed"
+                                    AutomationProperties.Name="{Binding Playback.PlaybackSpeedText, StringFormat='Playback speed {0}'}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Playback speed — click to reset to 1x">
                                 <StackPanel Orientation="Horizontal">

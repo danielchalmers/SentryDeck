@@ -24,6 +24,29 @@ public sealed class BoolToVisibilityConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
+/// Picks one of two texts by a boolean: ConverterParameter is "text when true|text when false".
+/// Lets a control that changes what it does, such as Play/Pause, say what it will do now instead of naming both.
+/// </summary>
+public sealed class BoolToTextConverter : MarkupExtension, IValueConverter
+{
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var texts = (parameter as string)?.Split('|');
+        if (texts is not { Length: 2 })
+        {
+            return string.Empty;
+        }
+
+        return value is true ? texts[0] : texts[1];
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// The name screen readers announce for a clip in the list, e.g. "Saturday, December 16, 2023, 3:53 PM, Honk, Hutto, about 5 min".
 /// Multi-binding: [0] the clip's Timestamp, [1] its reason label, [2] its city, [3] its length as the list shows it.
 /// </summary>
