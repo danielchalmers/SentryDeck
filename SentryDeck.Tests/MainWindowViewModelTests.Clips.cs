@@ -510,6 +510,34 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task DeleteClip_TheOpenClip_NextOpensTheClipAfterIt()
+    {
+        using var older = TestClipFiles.Create(chunkCount: 1);
+        using var deleted = TestClipFiles.Create(chunkCount: 1);
+        using var newer = TestClipFiles.Create(chunkCount: 1);
+        var controller = BuildFourCameraController(new FakeCameraPlayer());
+        controller.LoadClips([older.Clip, deleted.Clip, newer.Clip]);
+        controller.Playlist.MoveTo(deleted.Clip);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.WhyCannotRecycle = _ => null;
+        vm.Library.ConfirmDeleteClip = (_, _) => true;
+        vm.Library.RecycleClipFolder = _ => { };
+        vm.Library.SelectedClip = deleted.Clip;
+
+        await vm.Library.DeleteClipCommand.ExecuteAsync(deleted.Clip);
+
+        // Delete then Next is how a user works through footage; jumping to the oldest clip in the library would lose their place.
+        vm.Playback.CanGoPrevious.ShouldBeTrue();
+        vm.Playback.CanGoNext.ShouldBeTrue();
+        await vm.Playback.NextCommand.ExecuteAsync(null);
+        await controller.WhenIdleAsync();
+        controller.CurrentClip.ShouldBe(newer.Clip);
+        vm.Library.SelectedClip.ShouldBe(newer.Clip);
+    }
+
+    [Fact]
     public async Task FilteredClips_NoMatch_IsEmpty()
     {
         var clips = TestClips.Create(3);
