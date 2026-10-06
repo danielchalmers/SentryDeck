@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -65,6 +66,7 @@ public partial class MainWindow : Window
         HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
         KeepSelectionInView(ClipListBox);
         HookSearchEscape(SearchBox, _viewModel.Library.ClearFilterCommand, LeaveSearchBox);
+        NameSearchClearButton(SearchBox);
     }
 
     // Only called once Flyleaf has started.
@@ -305,6 +307,25 @@ public partial class MainWindow : Window
             }
 
             e.Handled = true;
+        };
+    }
+
+    /// <summary>
+    /// Names the clear button that WPF's Fluent theme builds into the search box.
+    /// </summary>
+    /// <remarks>
+    /// The theme ships the button without a name, so screen readers announced it only as "button".
+    /// It only appears while the box has keyboard focus, so naming it then also covers a template the theme swapped in after the window loaded.
+    /// </remarks>
+    internal static void NameSearchClearButton(TextBox searchBox)
+    {
+        searchBox.GotKeyboardFocus += (_, _) =>
+        {
+            if (searchBox.Template?.FindName("DeleteButton", searchBox) is Button clearButton)
+            {
+                AutomationProperties.SetName(clearButton, "Clear search");
+                clearButton.ToolTip = "Clear search (Esc)";
+            }
         };
     }
 

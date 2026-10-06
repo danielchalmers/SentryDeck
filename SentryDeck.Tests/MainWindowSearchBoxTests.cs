@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -80,6 +81,25 @@ public sealed class MainWindowSearchBoxTests
         });
     }
 
+    [Fact]
+    public void NameSearchClearButton_BoxFocused_NamesTheThemesClearButton()
+    {
+        StaThread.Run(() =>
+        {
+            var searchBox = CreateFluentTextBox();
+            MainWindow.NameSearchClearButton(searchBox);
+
+            searchBox.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, Environment.TickCount, null, searchBox)
+            {
+                RoutedEvent = Keyboard.GotKeyboardFocusEvent,
+            });
+
+            // Finding the part by name also catches a theme update that renames it, which would silently undo the fix.
+            var clearButton = searchBox.Template.FindName("DeleteButton", searchBox).ShouldBeOfType<Button>();
+            AutomationProperties.GetName(clearButton).ShouldBe("Clear search");
+        });
+    }
+
     private static KeyEventArgs PressKey(UIElement target, Key key)
     {
         var args = new KeyEventArgs(Keyboard.PrimaryDevice, new StubPresentationSource(), Environment.TickCount, key)
@@ -89,6 +109,24 @@ public sealed class MainWindowSearchBoxTests
 
         target.RaiseEvent(args);
         return args;
+    }
+
+    // The app styles its TextBoxes with WPF's Fluent theme, whose template supplies the clear button.
+    private static TextBox CreateFluentTextBox()
+    {
+        // Touching Application registers the pack:// scheme that theme dictionaries load through, which a test process otherwise lacks.
+        _ = Application.Current;
+
+        var searchBox = new TextBox();
+        searchBox.BeginInit();
+        searchBox.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("pack://application:,,,/PresentationFramework.Fluent;component/Themes/Fluent.xaml"),
+        });
+        searchBox.EndInit();
+
+        searchBox.ApplyTemplate().ShouldBeTrue();
+        return searchBox;
     }
 
     // A key event must name the window it came from, and these tests have none.
