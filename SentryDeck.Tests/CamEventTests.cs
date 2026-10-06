@@ -108,6 +108,81 @@ public sealed class CamEventTests
     }
 
     [Fact]
+    public void Deserialize_DuplicateKeyBesideABlankField_KeepsTheFieldsThatParse()
+    {
+        // The blank est_lat sends this payload down the lenient path, where a repeated name used to throw and take the whole clip out of the library.
+        var json = """
+        {
+            "timestamp":"2025-01-01T00:00:17",
+            "city":"DupA",
+            "city":"DupB",
+            "est_lat":"",
+            "reason":"sentry_aware_object_detection"
+        }
+        """;
+
+        var camEvent = CamEvent.Deserialize(json);
+
+        camEvent.ShouldNotBeNull();
+        camEvent.Timestamp.ShouldBe(new DateTime(2025, 1, 1, 0, 0, 17));
+        camEvent.City.ShouldBe("DupB");
+        camEvent.Reason.ShouldBe("sentry_aware_object_detection");
+    }
+
+    [Theory]
+    [InlineData("""{"city":"A","city":"B"}""")]
+    [InlineData("""{"city":"A","City":"B"}""")]
+    public void Deserialize_DuplicateKey_ReadsTheSameOnBothPaths(string json)
+    {
+        // Which path runs depends on an unrelated field, so a repeated name must resolve to the same value either way.
+        var strict = CamEvent.Deserialize(json);
+        var lenient = CamEvent.Deserialize(json.Replace("}", ""","est_lat":""}"""));
+
+        strict.ShouldNotBeNull();
+        lenient.ShouldNotBeNull();
+        lenient.City.ShouldBe(strict.City);
+    }
+
+    [Fact]
+    public void Deserialize_StringFieldWithALoneSurrogateEscape_KeepsTheOtherFields()
+    {
+        // A lone surrogate is valid JSON syntax but can't be decoded into a string, so only that one field is lost.
+        var json = """
+        {
+            "timestamp":"2025-01-01T00:00:17",
+            "city":"\uD800",
+            "reason":"sentry_aware_object_detection"
+        }
+        """;
+
+        var camEvent = CamEvent.Deserialize(json);
+
+        camEvent.ShouldNotBeNull();
+        camEvent.City.ShouldBeNull();
+        camEvent.Timestamp.ShouldBe(new DateTime(2025, 1, 1, 0, 0, 17));
+        camEvent.Reason.ShouldBe("sentry_aware_object_detection");
+    }
+
+    [Fact]
+    public void Deserialize_PropertyNameWithALoneSurrogateEscape_KeepsTheOtherFields()
+    {
+        // The undecodable name can't be a field Tesla writes, so it must not cost the clip the fields that are there.
+        var json = """
+        {
+            "timestamp":"2025-01-01T00:00:17",
+            "\uD800":1,
+            "city":"Hutto"
+        }
+        """;
+
+        var camEvent = CamEvent.Deserialize(json);
+
+        camEvent.ShouldNotBeNull();
+        camEvent.Timestamp.ShouldBe(new DateTime(2025, 1, 1, 0, 0, 17));
+        camEvent.City.ShouldBe("Hutto");
+    }
+
+    [Fact]
     public void Deserialization_ReturnsNullForNonObjectJson()
     {
         CamEvent.Deserialize("\"just a string\"").ShouldBeNull();

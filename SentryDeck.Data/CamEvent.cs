@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Serilog;
 
@@ -56,67 +55,103 @@ public record class CamEvent
     /// <summary>
     /// Deserializes event JSON and returns null for malformed payloads.
     /// </summary>
-    public static CamEvent Deserialize(string json)
+    public static CamEvent Deserialize(string json) => Deserialize(json, path: null);
+
+    private static CamEvent Deserialize(string json, string path)
     {
         try
         {
             return JsonSerializer.Deserialize<CamEvent>(json, JsonSerializerOptions);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
             // A single malformed field (e.g. the blank est_lat Tesla sometimes writes) makes strict deserialization throw, which would discard ALL metadata for the clip -- losing the city and the timestamp the clip name falls back to.
             // Recover field by field instead, keeping whatever parses.
+            // The log names the file and the offending field, so a clip missing its city or date can be traced back to its event.json.
+            Log.Warning(ex, "Event metadata didn't parse cleanly; keeping whatever fields can be read. File={File}", path);
             return DeserializeLenient(json);
         }
     }
 
     private static CamEvent DeserializeLenient(string json)
     {
-        JsonNode root;
+        // JsonDocument rather than JsonNode: a JsonObject throws on a repeated property name, and that exception used to drop the whole clip from the library.
+        JsonDocument document;
         try
         {
-            root = JsonNode.Parse(json);
+            document = JsonDocument.Parse(json);
         }
         catch (JsonException)
         {
             return null;
         }
 
-        if (root is not JsonObject obj)
+        using (document)
         {
-            return null;
-        }
+            var obj = document.RootElement;
+            if (obj.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
 
-        return new CamEvent
-        {
-            Timestamp = ParseDateTime(ReadRaw(obj, "timestamp")),
-            City = ReadRaw(obj, "city"),
-            EstLat = ParseDecimal(ReadRaw(obj, "est_lat")),
-            EstLon = ParseDecimal(ReadRaw(obj, "est_lon")),
-            Reason = ReadRaw(obj, "reason"),
-            Camera = ParseInt(ReadRaw(obj, "camera")),
-        };
+            return new CamEvent
+            {
+                Timestamp = ParseDateTime(ReadRaw(obj, "timestamp")),
+                City = ReadRaw(obj, "city"),
+                EstLat = ParseDecimal(ReadRaw(obj, "est_lat")),
+                EstLon = ParseDecimal(ReadRaw(obj, "est_lon")),
+                Reason = ReadRaw(obj, "reason"),
+                Camera = ParseInt(ReadRaw(obj, "camera")),
+            };
+        }
     }
 
     // Case-insensitive lookup (mirroring PropertyNameCaseInsensitive on the strict path) returning the field as text: a JSON string yields its unquoted content, a number/bool its literal, so the typed parsers below accept both quoted and unquoted values like the strict path does.
-    private static string ReadRaw(JsonObject obj, string name)
+    // The last of several same-named fields wins, as it does on the strict path, so which path runs can't change the value read.
+    private static string ReadRaw(JsonElement obj, string name)
     {
-        JsonNode node = null;
-        foreach (var pair in obj)
+        JsonElement? match = null;
+        foreach (var property in obj.EnumerateObject())
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+            if (NameMatches(property, name))
             {
-                node = pair.Value;
-                break;
+                match = property.Value;
             }
         }
 
-        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+        if (match is not { } value || value.ValueKind == JsonValueKind.Null)
         {
             return null;
         }
 
-        return node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : node.ToJsonString();
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            return value.GetRawText();
+        }
+
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            // An escaped lone surrogate is valid JSON syntax but can't become a .NET string; losing just this field keeps the rest of the metadata.
+            return null;
+        }
+    }
+
+    // A property name can hold the same undecodable lone surrogate escape as a value, and reading it throws just the same.
+    // Such a name can't be one of the fields read here, so it is passed over instead of costing the clip every field that does parse.
+    private static bool NameMatches(JsonProperty property, string name)
+    {
+        try
+        {
+            return string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     // RoundtripKind so this agrees with the strict System.Text.Json path above on a timestamp that carries a Z or an offset.
@@ -150,6 +185,6 @@ public record class CamEvent
             return null;
         }
 
-        return Deserialize(json);
+        return Deserialize(json, path);
     }
 }

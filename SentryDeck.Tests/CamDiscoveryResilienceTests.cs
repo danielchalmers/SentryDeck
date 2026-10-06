@@ -78,6 +78,25 @@ public sealed class CamDiscoveryResilienceTests
     }
 
     [Fact]
+    public void FindClips_EventJsonWithADuplicateKeyAndABlankField_StillLoadsTheClip()
+    {
+        // The event metadata is optional, so a malformed event.json must never hide the playable footage beside it.
+        using var temp = new TempDirectory();
+
+        var dir = CreateSubDir(temp.Path, "2025-01-01_00-00-17");
+        Touch(dir, "2025-01-01_00-00-17-front.mp4");
+        File.WriteAllText(
+            Path.Combine(dir, "event.json"),
+            """{"timestamp":"2025-01-01T00:00:17","city":"DupA","city":"DupB","est_lat":""}""");
+
+        var clip = CamClip.FindClips(temp.Path).ShouldHaveSingleItem();
+
+        clip.FullPath.ShouldBe(dir);
+        clip.Event.ShouldNotBeNull();
+        clip.Event.City.ShouldBe("DupB");
+    }
+
+    [Fact]
     public void Map_CalendarInvalidFolderName_DoesNotThrowAndKeepsChunks()
     {
         using var temp = new TempDirectory();
