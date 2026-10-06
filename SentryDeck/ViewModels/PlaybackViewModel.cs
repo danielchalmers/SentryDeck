@@ -28,6 +28,14 @@ public sealed partial class PlaybackViewModel : ObservableObject
     // EndSeekAsync's slow tail (the accurate seek can queue behind in-flight scrubs) may complete after the user has already started a NEW drag; only the completion belonging to the latest gesture may clear _isSeeking, or the position sync would yank the thumb out from under the active drag.
     private int _seekGeneration;
 
+    // The clip the current seek gesture began on.
+    // The thumb's position is a fraction of that clip's length, so it means nothing once the player moves to another clip.
+    private CamClip _seekGestureClip;
+
+    // Set when a clip change ended the seek gesture while the thumb was still held, so the release that follows seeks nothing.
+    // Only a clip change makes the thumb's position meaningless: a release with no gesture begun (a click on the seek-bar rail, whose press the Slider can handle before BeginSeek runs) still seeks to where the thumb was put.
+    private bool _seekGestureEndedByClipChange;
+
     // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
     // Recomputed whenever the selection changes or the controller opens/replaces its media source; plain fields (not ObservableProperty) because they're derived, not independently settable.
     private double? _eventPosition;
@@ -333,6 +341,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
         {
             _seekGeneration++;
             _isSeeking = true;
+            _seekGestureClip = _playerController.CurrentClip;
+            _seekGestureEndedByClipChange = false;
             _scrubCoalescer.Reset();
 
             // Holds playback paused for the gesture, so each scrub is one cheap paused seek and the release resumes every camera together.
@@ -344,6 +354,14 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public async Task EndSeekAsync()
     {
         var generation = _seekGeneration;
+
+        // A clip change already ended this gesture, so there is nothing to release, and the new clip keeps the position it opened at.
+        if (_seekGestureEndedByClipChange)
+        {
+            _seekGestureEndedByClipChange = false;
+            UpdateSeekPositionFromController();
+            return;
+        }
 
         if (_playerController is null || !CanSeek)
         {
@@ -690,6 +708,25 @@ public sealed partial class PlaybackViewModel : ObservableObject
         OnPropertyChanged(nameof(CanGoPrevious));
     }
 
+    // Next or Previous from the keyboard can change the clip while the thumb is held.
+    // Releasing the thumb would then seek the new clip to the old clip's fraction, throwing away the position it opened at (the lead-in before its event), so the clip change ends the gesture instead.
+    // Ending it here also lets the thumb and time readout follow the new clip while the mouse is still down.
+    // A reloaded playlist reports no current clip but leaves the open clip as it was, still held paused for the gesture until the release resumes it, so only a move to another clip, which the controller opens afresh, ends the gesture.
+    private void EndSeekGestureIfClipChanged()
+    {
+        var clip = _playerController.CurrentClip;
+        if (!_isSeeking || clip is null || ReferenceEquals(clip, _seekGestureClip))
+            return;
+
+        _seekGeneration++;
+        _isSeeking = false;
+        _seekGestureClip = null;
+        _seekGestureEndedByClipChange = true;
+
+        // A scrub value still queued behind an in-flight one would otherwise be issued against the new clip.
+        _scrubCoalescer.CancelPending();
+    }
+
     private void UpdateSeekPositionFromController()
     {
         if (_playerController is null || _isSeeking)
@@ -766,6 +803,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 break;
 
             case nameof(VideoPlayerController.CurrentClip):
+                EndSeekGestureIfClipChanged();
                 CurrentClipChanged?.Invoke(this, _playerController.CurrentClip);
                 NowPlayingClip = _playerController.CurrentClip;
                 NotifyNavigationChanged();

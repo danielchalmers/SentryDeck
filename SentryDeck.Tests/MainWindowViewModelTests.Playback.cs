@@ -534,6 +534,73 @@ public sealed partial class MainWindowViewModelTests
         RunPinnedToTestThread(() => Task.WhenAll(running.Append(resume)));
     }
 
+    [Fact]
+    public void SeekThumbHeldAcrossAClipChange_ReleasingIt_LeavesTheNewClipAtItsOwnStart()
+    {
+        // The thumb's position is a fraction of the clip it was grabbed on, so releasing it after Ctrl+Left jumped the new clip there and skipped its event lead-in.
+        using var firstFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1);
+        var second = WithEventAt(secondFiles.Clip, secondFiles.Clip.Chunks[0].Timestamp.AddSeconds(25));
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([firstFiles.Clip, second]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = firstFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Playback.BeginSeek();
+        vm.Playback.SeekPosition = 0.75;
+        vm.Playback.OnSeekSliderValueChanged();
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        var seeksBeforeRelease = front.Seeks.Count;
+
+        // The new clip opens 10 seconds before its event, and the thumb follows it while the mouse is still down.
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(15));
+        vm.Playback.SeekPosition.ShouldBe(0.25, 0.0001);
+
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Seeks.Count.ShouldBe(seeksBeforeRelease);
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(15));
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SeekThumbHeldWhileThePlaylistReloads_ReleasingIt_SeeksThereAndResumes()
+    {
+        // A reloaded playlist reports no current clip yet keeps the open clip, which the player holds paused until the release; dropping the gesture there would leave it paused while showing Pause.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+
+        vm.Playback.BeginSeek();
+        vm.Playback.SeekPosition = 0.5;
+        vm.Playback.SetPlaylist([clipFiles.Clip]);
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(30), true));
+        front.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SeekBarRelease_WithNoGestureBegun_StillSeeksToTheThumb()
+    {
+        // WPF's Slider can handle a press on the seek-bar rail before BeginSeek runs, so a rail click may reach the view-model only as a thumb move and a release, and only a clip change may cancel that release.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+
+        vm.Playback.SeekPosition = 0.5;
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(30), true));
+        vm.Playback.SeekPosition.ShouldBe(0.5, 0.0001);
+    }
+
     // Selects the clip through the list and waits until the player has it open and playing.
     // The view-model's handlers run inline on whichever thread the controller raises them, because the open finishes on a thread-pool continuation.
     private MainWindowViewModel CreateViewModelPlayingClip(CamClip clip, out VideoPlayerController controller, out FakeCameraPlayer front)
