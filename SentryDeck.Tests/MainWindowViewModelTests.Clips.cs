@@ -156,6 +156,65 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.ShowOnMapCommand.CanExecute(withLocation).ShouldBeTrue();
     }
 
+    // --- Copy commands: the injectable clipboard shows what each one copies ---
+
+    // A clip as CamClip.Map builds it from a Tesla folder: the display name is the folder's date reformatted, so it differs from the folder name.
+    private static CamClip TeslaFolderClip(string path) =>
+        new(path, "12/16/2025 15:53:27", new DateTime(2025, 12, 16, 15, 53, 27), [], camEvent: null);
+
+    private static string Copied(ClipLibraryViewModel library, IRelayCommand<CamClip> command, CamClip clip)
+    {
+        string copied = null;
+        library.CopyToClipboard = text => copied = text;
+        command.Execute(clip);
+        return copied;
+    }
+
+    [Fact]
+    public void CopyClipName_TeslaClip_CopiesTheFolderName()
+    {
+        var vm = CreateViewModel();
+        var clip = TeslaFolderClip(@"C:\TeslaCam\SavedClips\2025-12-16_15-53-27");
+
+        Copied(vm.Library, vm.Library.CopyClipNameCommand, clip).ShouldBe("2025-12-16_15-53-27");
+    }
+
+    [Fact]
+    public void CopyClipName_PathEndsWithASeparator_CopiesTheFolderName()
+    {
+        var vm = CreateViewModel();
+        var clip = TeslaFolderClip(@"C:\TeslaCam\SavedClips\2025-12-16_15-53-27\");
+
+        Copied(vm.Library, vm.Library.CopyClipNameCommand, clip).ShouldBe("2025-12-16_15-53-27");
+    }
+
+    [Fact]
+    public void CopyClipName_ClipAtADriveRoot_CopiesTheDisplayName()
+    {
+        var vm = CreateViewModel();
+        var clip = TeslaFolderClip(@"E:\");
+
+        Copied(vm.Library, vm.Library.CopyClipNameCommand, clip).ShouldBe("12/16/2025 15:53:27");
+    }
+
+    [Fact]
+    public void CopyTimestamp_AnyClip_CopiesAnIso8601Timestamp()
+    {
+        var vm = CreateViewModel();
+        var clip = TeslaFolderClip(@"C:\TeslaCam\SavedClips\2025-12-16_15-53-27");
+
+        Copied(vm.Library, vm.Library.CopyTimestampCommand, clip).ShouldBe("2025-12-16 15:53:27");
+    }
+
+    [Fact]
+    public void CopyClipPath_AnyClip_CopiesTheFolderPath()
+    {
+        var vm = CreateViewModel();
+        var clip = TeslaFolderClip(@"C:\TeslaCam\SavedClips\2025-12-16_15-53-27");
+
+        Copied(vm.Library, vm.Library.CopyClipPathCommand, clip).ShouldBe(@"C:\TeslaCam\SavedClips\2025-12-16_15-53-27");
+    }
+
     // --- Scanning: what the sidebar and the overlay show when there is nothing to scan, or a root can't be read.
     // The overlay is the whole UI in these states, so its wording and its dismissibility are the behavior. ---
 

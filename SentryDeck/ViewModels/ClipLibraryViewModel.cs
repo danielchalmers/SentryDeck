@@ -326,12 +326,18 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Puts text on the Windows clipboard.
+    /// Overridable for tests, so they can check what a copy command copies without touching the real clipboard.
+    /// </summary>
+    internal Action<string> CopyToClipboard { get; set; } = Clipboard.SetText;
+
     [RelayCommand(CanExecute = nameof(CanUseClip))]
     private void CopyClipPath(CamClip clip)
     {
         if (clip is not null)
         {
-            Clipboard.SetText(clip.FullPath);
+            CopyToClipboard(clip.FullPath);
         }
     }
 
@@ -340,7 +346,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     {
         if (clip is not null)
         {
-            Clipboard.SetText(clip.Name);
+            CopyToClipboard(ClipFolderName(clip));
         }
     }
 
@@ -349,9 +355,17 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     {
         if (clip is not null)
         {
-            // Invariant (24-hour, culture-stable) so the copied value matches the clip name and is paste-searchable, unlike the ambiguous AM/PM current-culture rendering.
-            Clipboard.SetText(clip.Timestamp.ToString(CultureInfo.InvariantCulture));
+            // ISO 8601 puts the year first, so a pasted date can't be misread the way a month-first 03/04/2025 is in day-first countries.
+            CopyToClipboard(clip.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
         }
+    }
+
+    // The clip's own folder name, which is how Tesla, the drive, and other tools identify the clip, unlike the reformatted date in its display name.
+    // A clip read from the root of a drive has no folder name, so it falls back to the display name rather than copying nothing.
+    private static string ClipFolderName(CamClip clip)
+    {
+        var folderName = Path.GetFileName(Path.TrimEndingDirectorySeparator(clip.FullPath));
+        return string.IsNullOrEmpty(folderName) ? clip.Name : folderName;
     }
 
     /// <summary>
