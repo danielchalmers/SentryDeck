@@ -26,11 +26,11 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task FrontEnded_AfterFastPlayback_MovesEveryCameraThatRanOutOntoItsLastFrame()
+    public async Task FrontEnded_AfterFastPlayback_MovesEveryCameraOntoItsLastFrame()
     {
         // At 16x the front can reach its end on a frame 0.6 s early, having dropped the frames it couldn't decode in time, while the readout claims the end.
         // The left camera's shorter file already ran out too, and must not be seeked past its own last frame.
-        // The rear and right lag behind and are still mid-stream: seeking a camera to its last moments from there can park its decoder for good, so they stay where they stopped.
+        // The rear and right lag behind and are still mid-stream, so the final still would show them up to a second before the moment the readout names.
         using var rig = new Rig(chunkCount: 2);
         var end = ChunkDuration * 2;
         var leftShortfall = TimeSpan.FromMilliseconds(600);
@@ -48,9 +48,8 @@ public sealed partial class VideoPlayerControllerTests
 
         rig.Front.Seeks.ShouldHaveSingleItem().Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
         rig.Left.Seeks.ShouldHaveSingleItem().Position.ShouldBe(end - leftShortfall - VideoPlayerController.EndSeekMargin);
-        rig.Back.Seeks.ShouldBeEmpty();
-        rig.Right.Seeks.ShouldBeEmpty();
-        rig.Back.Position.ShouldBe(backStop);
+        rig.Back.Seeks.ShouldHaveSingleItem().Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Right.Seeks.ShouldHaveSingleItem().Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
         rig.All.ShouldAllBe(player => !player.IsWedged && !player.IsPlaying);
         rig.Controller.Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
         rig.Controller.IsPlaying.ShouldBeFalse();
@@ -74,11 +73,32 @@ public sealed partial class VideoPlayerControllerTests
         await rig.OpenAsync();
         rig.Left.RaiseEnded(at: ChunkDuration - leftShortfall);
         rig.Back.RaisePositionChanged(ChunkDuration - TimeSpan.FromMilliseconds(60));
+        rig.Right.RaisePositionChanged(ChunkDuration - TimeSpan.FromMilliseconds(30));
 
         rig.Front.RaiseEnded(at: ChunkDuration);
         await rig.Controller.WhenIdleAsync();
 
         rig.All.ShouldAllBe(player => player.Seeks.Count == 0);
+        rig.Controller.Position.ShouldBe(ChunkDuration);
+    }
+
+    [Fact]
+    public async Task FrontEnded_AtNormalSpeedWithASideCameraShortOfItsEnd_MovesOnlyThatCameraOntoItsLastFrame()
+    {
+        // A side camera that fell behind would otherwise end the clip showing an earlier moment than every other camera.
+        using var rig = new Rig(chunkCount: 1);
+        rig.PlaceLastFrames(ChunkDuration);
+        await rig.OpenAsync();
+        rig.Right.RaisePositionChanged(ChunkDuration - TimeSpan.FromSeconds(0.5));
+        rig.Back.RaisePositionChanged(ChunkDuration - TimeSpan.FromMilliseconds(60));
+        rig.Left.RaisePositionChanged(ChunkDuration - TimeSpan.FromMilliseconds(30));
+
+        rig.Front.RaiseEnded(at: ChunkDuration);
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Right.Seeks.ShouldHaveSingleItem().Position.ShouldBe(ChunkDuration - VideoPlayerController.EndSeekMargin);
+        rig.All.Where(player => player != rig.Right).ShouldAllBe(player => player.Seeks.Count == 0);
+        rig.All.ShouldAllBe(player => !player.IsWedged && !player.IsPlaying);
         rig.Controller.Position.ShouldBe(ChunkDuration);
     }
 

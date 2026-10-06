@@ -1034,10 +1034,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             // Deliberately no auto-advance to the next clip: each clip is its own incident, and the most likely follow-up is replaying it.
             // The media stays open so the scrubber and frame-step remain usable to review the final moments, and play replays from the start.
             // Past real time the front can reach its end on a frame most of a second early: it drops the frames it can't decode in time, then jumps its clock to the end without drawing the rest.
-            // So every camera that ran out of footage is moved onto its last frame, and the readout follows a front that had to move.
-            // A side camera still short of its end stays where it stopped: seeking a camera to its last moments while its decoder is still mid-stream can park that decoder for good, which froze side cameras that lagged behind at 16x.
-            var endedCameras = _players.Values.Where(player => player.IsEnded).ToList();
-            Position = await LineUpCamerasAsync(Duration, endedCameras) ? SeekableEnd : Duration;
+            // A side camera that lagged behind can still be mid-stream, half a second or more short of its own end.
+            // So every camera is moved onto its last frame, and the readout follows a front that had to move.
+            // These are paused seeks, which the Flyleaf player decodes at real time, so even a camera stopped mid-stream lands on a frame instead of parking its decoder.
+            Position = await LineUpCamerasAsync(Duration, _players.Values) ? SeekableEnd : Duration;
         });
     }
 
