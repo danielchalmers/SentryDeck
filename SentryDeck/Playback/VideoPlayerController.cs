@@ -54,6 +54,14 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// </summary>
     private static readonly TimeSpan ReplayFromEndWindow = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>
+    /// How far before the end of a camera's own footage its seeks stop.
+    /// An accurate Flyleaf seek past a stream's last frame finds no frame to show and leaves that camera's decoder thread parked for good, so the camera stays frozen on every clip until the app restarts.
+    /// Tesla files show their last frame up to about 60 ms before the duration they record (the final sample falls outside the file's edit list), so one frame of margin is not enough.
+    /// A tenth of a second clears every file measured with room to spare, and stays well inside <see cref="ReplayFromEndWindow"/> so play still replays a clip sent to its end.
+    /// </summary>
+    internal static readonly TimeSpan EndSeekMargin = TimeSpan.FromMilliseconds(100);
+
     private readonly string _primaryCamera;
     private readonly ICameraPlayer _primaryPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
@@ -298,8 +306,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var anchor = _primaryPlayer.Position;
         await Task.WhenAll(SecondaryPlayers()
-            .Where(player => !forward || (player.Position - anchor).Duration() > StepAlignmentTolerance)
-            .Select(player => player.SeekAsync(anchor)));
+            .Where(player => !forward || !IsAlignedWith(player, anchor, StepAlignmentTolerance))
+            .Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
 
         Position = Clamp(anchor, TimeSpan.Zero, Duration);
     });
@@ -483,6 +491,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         Duration = mediaSource.Duration;
+        session.SeekLimits = _players.ToDictionary(
+            pair => pair.Value,
+            pair => Clamp(mediaSource.DurationOf(pair.Key) - EndSeekMargin, TimeSpan.Zero, Duration));
 
         var opens = _players.Select(async pair => (pair.Key, Opened: await OpenCameraAsync(pair.Key, pair.Value, mediaSource))).ToList();
         var results = await Task.WhenAll(opens);
@@ -496,10 +507,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         ApplyPlaybackSpeed();
 
-        var start = Clamp(startPosition, TimeSpan.Zero, Duration);
+        var start = Clamp(startPosition, TimeSpan.Zero, SeekableEnd);
         if (start > TimeSpan.Zero)
         {
-            await ForEachOpenPlayerAsync(player => player.SeekAsync(start));
+            await ForEachOpenPlayerAsync(player => player.SeekAsync(SeekTargetFor(player, start)));
             token.ThrowIfCancellationRequested();
         }
 
@@ -632,7 +643,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!IsSessionOpen || Duration <= TimeSpan.Zero)
             return;
 
-        var target = Clamp(position, TimeSpan.Zero, Duration);
+        var target = Clamp(position, TimeSpan.Zero, SeekableEnd);
         var playersRunning = IsPlaying && !_isScrubbing;
 
         if (playersRunning)
@@ -640,7 +651,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             await ForEachOpenPlayerAsync(player => player.PauseAsync());
         }
 
-        await ForEachOpenPlayerAsync(player => player.SeekAsync(target, accurate));
+        await ForEachOpenPlayerAsync(player => player.SeekAsync(SeekTargetFor(player, target), accurate));
         Position = target;
 
         if (playersRunning)
@@ -656,7 +667,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     {
         var anchor = _primaryPlayer.Position;
         var drifted = SecondaryPlayers()
-            .Where(player => player.IsEnded || (player.Position - anchor).Duration() > ResumeAlignmentTolerance)
+            .Where(player => player.IsEnded || !IsAlignedWith(player, anchor, ResumeAlignmentTolerance))
             .ToList();
 
         if (drifted.Count == 0)
@@ -665,7 +676,32 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         Log.Debug("Realigning side cameras before resuming. Count={Count}; Anchor={Anchor}", drifted.Count, anchor);
-        return Task.WhenAll(drifted.Select(player => player.SeekAsync(anchor)));
+        return Task.WhenAll(drifted.Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
+    }
+
+    /// <summary>
+    /// The furthest the shared timeline can be seeked: the front's last frame, since the front drives the clock.
+    /// </summary>
+    private TimeSpan SeekableEnd => SeekTargetFor(_primaryPlayer, Duration);
+
+    /// <summary>
+    /// Where <paramref name="player"/> goes for a seek to <paramref name="position"/>: there, or its own last frame when its footage runs out sooner.
+    /// </summary>
+    private TimeSpan SeekTargetFor(ICameraPlayer player, TimeSpan position) =>
+        _session?.SeekLimits.TryGetValue(player, out var limit) == true && position > limit ? limit : position;
+
+    /// <summary>
+    /// Whether <paramref name="player"/> already shows what a seek to <paramref name="anchor"/> would show it.
+    /// </summary>
+    private bool IsAlignedWith(ICameraPlayer player, TimeSpan anchor, TimeSpan tolerance)
+    {
+        var target = SeekTargetFor(player, anchor);
+
+        // Past the end of its own footage a camera only has its last frame to show, and anywhere from its seek limit on already shows it.
+        // Reseeking it there on every frame step would only make it jump back and forth.
+        return target < anchor
+            ? player.Position >= target
+            : (player.Position - target).Duration() <= tolerance;
     }
 
     private async Task PlayAllAsync()
@@ -1018,6 +1054,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         public CamClip Clip { get; } = clip;
 
         public ClipMediaSource Source { get; set; }
+
+        /// <summary>
+        /// The furthest each player can be seeked and still land on one of its own frames (see <see cref="EndSeekMargin"/>).
+        /// </summary>
+        public IReadOnlyDictionary<ICameraPlayer, TimeSpan> SeekLimits { get; set; } = new Dictionary<ICameraPlayer, TimeSpan>();
 
         /// <summary>True once every camera is open and positioned; false while opening, after a failure, or once replaced.</summary>
         public bool IsOpen { get; set; }

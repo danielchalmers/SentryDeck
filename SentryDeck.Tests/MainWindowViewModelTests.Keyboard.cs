@@ -27,7 +27,8 @@ public sealed partial class MainWindowViewModelTests
         controller.Position = TimeSpan.FromSeconds(60); // parked at the very end
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Right, ModifierKeys.None));
 
-        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(60));
+        // Stops just short of the end: a seek past the last frame would freeze the camera for good.
+        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(60) - VideoPlayerController.EndSeekMargin);
     }
 
     [Fact]

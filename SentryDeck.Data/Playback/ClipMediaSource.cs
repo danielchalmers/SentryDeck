@@ -15,7 +15,8 @@ public sealed record class ClipMediaSource(
     IReadOnlyList<int> AutoExcludedChunkIndices,
     IReadOnlyList<DateTime> ChunkTimestamps = null,
     IReadOnlyList<TimeSpan> ChunkDurations = null,
-    DateTime? ClipStartTimestamp = null)
+    DateTime? ClipStartTimestamp = null,
+    IReadOnlyDictionary<string, TimeSpan> CameraDurations = null)
 {
     /// <summary>
     /// How large a wall-clock gap between consecutive included chunks must be before it counts as a real discontinuity worth marking on the timeline, rather than the normal small skew between a chunk's nominal timestamp and the previous chunk's probed end.
@@ -25,6 +26,17 @@ public sealed record class ClipMediaSource(
     private IReadOnlyList<DateTime> ChunkTimestamps { get; } = ChunkTimestamps ?? [];
 
     private IReadOnlyList<TimeSpan> ChunkDurations { get; } = ChunkDurations ?? [];
+
+    private IReadOnlyDictionary<string, TimeSpan> CameraDurations { get; } = CameraDurations ?? new Dictionary<string, TimeSpan>();
+
+    /// <summary>
+    /// How far into the shared timeline <paramref name="camera"/>'s own footage runs, which can be short of <see cref="Duration"/>.
+    /// A missing or unreadable later file truncates that camera's playlist, and Tesla's side files often stop a few hundred milliseconds before the front file of the same minute.
+    /// A player seeked past the end of its own footage has no frame to land on, so callers need this per camera rather than the front-driven <see cref="Duration"/>.
+    /// Falls back to <see cref="Duration"/> for a camera the builder didn't measure.
+    /// </summary>
+    public TimeSpan DurationOf(string camera) =>
+        camera is not null && CameraDurations.TryGetValue(camera, out var duration) ? duration : Duration;
 
     /// <summary>
     /// Media-time positions where the preceding wall-clock gap between chunks exceeds <see cref="GapThreshold"/> -- i.e. where playback jumps forward in time even though it plays through with no visible stall.

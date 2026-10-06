@@ -397,6 +397,24 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
         File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.Front]).ShouldContain(FfconcatMediaSourceBuilder.EscapeConcatPath(copyPath));
     }
 
+    [Fact]
+    public void Build_SideCamerasEndingEarly_ReportWhereEachCamerasFootageEnds()
+    {
+        // A player seeked past the end of its own footage has no frame to land on, so each camera's end must be known, not just the front's.
+        // Tesla's side files often stop a few hundred milliseconds before the front file of the same minute, and an unreadable file truncates a camera outright.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.LeftRepeater), TestMp4.BuildWithDuration(TimeSpan.FromSeconds(59.4)));
+        File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.Back), TestMp4.GarbageBytes);
+
+        var mediaSource = Build(clipFiles.Clip);
+
+        mediaSource.Duration.ShouldBe(TimeSpan.FromSeconds(120));
+        mediaSource.DurationOf(CameraNames.Front).ShouldBe(TimeSpan.FromSeconds(120));
+        mediaSource.DurationOf(CameraNames.LeftRepeater).ShouldBe(TimeSpan.FromSeconds(119.4));
+        mediaSource.DurationOf(CameraNames.Back).ShouldBe(TimeSpan.FromSeconds(60));
+        mediaSource.DurationOf(CameraNames.RightRepeater).ShouldBe(TimeSpan.FromSeconds(120));
+    }
+
     // --- Chunks whose probed durations differ from their nominal one-minute spacing ---
 
     [Fact]

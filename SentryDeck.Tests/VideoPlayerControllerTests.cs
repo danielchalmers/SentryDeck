@@ -13,8 +13,15 @@ public sealed partial class VideoPlayerControllerTests
 {
     private static readonly TimeSpan ChunkDuration = FakeClipMediaSourceBuilder.ChunkDuration;
 
+    /// <summary>
+    /// How far before the end of its recorded duration a real Tesla file shows its last frame, at the worst measured on real footage: the file's final sample falls outside its edit list.
+    /// </summary>
+    private static readonly TimeSpan LastFrameCut = TimeSpan.FromMilliseconds(58);
+
     private sealed class Rig : IDisposable
     {
+        private readonly Dictionary<string, TimeSpan> _shortfalls = [];
+
         public Rig(
             int chunkCount = 3,
             FakeCameraPlayer front = null,
@@ -63,6 +70,26 @@ public sealed partial class VideoPlayerControllerTests
             Controller.LoadClips(clips.Length == 0 ? [Clip] : clips);
             Controller.Playlist.MoveTo(0);
             await Controller.WhenIdleAsync();
+        }
+
+        /// <summary>
+        /// Ends <paramref name="camera"/>'s footage <paramref name="shortfall"/> before the clip's, like a Tesla side file that stops before the front file of the same minute.
+        /// </summary>
+        public void ShortenCamera(string camera, TimeSpan shortfall)
+        {
+            FakeBuilder.ShortenCamera(camera, shortfall);
+            _shortfalls[camera] = shortfall;
+        }
+
+        /// <summary>
+        /// Puts every camera's last frame where a real Tesla file has it, <see cref="LastFrameCut"/> before the end of its footage, so seeking a camera past it wedges the fake the way it wedges Flyleaf.
+        /// </summary>
+        public void PlaceLastFrames(TimeSpan footageEnd)
+        {
+            foreach (var (camera, player) in Players)
+            {
+                player.LastFrame = footageEnd - _shortfalls.GetValueOrDefault(camera) - LastFrameCut;
+            }
         }
 
         public void Dispose()
@@ -242,6 +269,23 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task SelectingClip_WithEventPastWhereASideCamerasFootageEnds_StartsThatCameraOnItsLastFrame()
+    {
+        // The event sits 55 s into the second chunk, so the clip opens at 1:45, but the left camera's footage stops at 1:30.
+        using var rig = new Rig(chunkCount: 2);
+        rig.ShortenCamera(CameraNames.LeftRepeater, TimeSpan.FromSeconds(30));
+        rig.PlaceLastFrames(ChunkDuration * 2);
+        var clip = WithEvent(rig.Clip, rig.Clip.Chunks[1].Timestamp.AddSeconds(55));
+
+        await rig.OpenAsync(clip);
+
+        rig.Front.Seeks.ShouldHaveSingleItem().Position.ShouldBe(TimeSpan.FromSeconds(105));
+        rig.Left.Seeks.ShouldHaveSingleItem().Position.ShouldBe(TimeSpan.FromSeconds(90) - VideoPlayerController.EndSeekMargin);
+        rig.All.ShouldAllBe(player => !player.IsWedged && player.IsPlaying);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(105));
+    }
+
+    [Fact]
     public async Task SelectingClip_WhileAnotherIsStillOpening_OnlyTheLatestPlays()
     {
         // Arrowing quickly through the list: the first clip's open is still in flight when the second is picked.
@@ -337,6 +381,28 @@ public sealed partial class VideoPlayerControllerTests
         // Within a frame or two is just where each camera's pause landed; reseeking those would only slow resume down.
         rig.Left.Seeks.ShouldBeEmpty();
         rig.Right.Seeks.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task PlayAsync_WhenTheFrontIsPastWhereASideCamerasFootageEnded_RealignsThatCameraOnlyAsFarAsItsLastFrame()
+    {
+        // The left camera ran out of footage a second before the front and ended there while the front played on.
+        // Lining it up with the front on resume must not ask it for a moment it has no frame for.
+        using var rig = new Rig(chunkCount: 1);
+        var leftEnd = ChunkDuration - TimeSpan.FromSeconds(1);
+        rig.ShortenCamera(CameraNames.LeftRepeater, TimeSpan.FromSeconds(1));
+        rig.PlaceLastFrames(ChunkDuration);
+        await rig.OpenAsync();
+        rig.Left.RaiseEnded(at: leftEnd - LastFrameCut);
+        rig.Front.RaisePositionChanged(ChunkDuration - TimeSpan.FromSeconds(0.5));
+        await rig.Controller.PauseAsync();
+
+        await rig.Controller.PlayAsync();
+
+        rig.Left.IsWedged.ShouldBeFalse();
+        rig.Left.Seeks.ShouldHaveSingleItem().Position.ShouldBe(leftEnd - VideoPlayerController.EndSeekMargin);
+        rig.Front.IsPlaying.ShouldBeTrue();
+        rig.Controller.IsPlaying.ShouldBeTrue();
     }
 
     [Fact]
@@ -444,7 +510,7 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task SeekAsync_BeyondDuration_ClampsToDuration()
+    public async Task SeekAsync_BeyondDuration_StopsJustShortOfTheEnd()
     {
         using var rig = new Rig(chunkCount: 3);
         await rig.OpenAsync();
@@ -452,8 +518,58 @@ public sealed partial class VideoPlayerControllerTests
 
         await rig.Controller.SeekAsync(TimeSpan.FromMinutes(10));
 
-        rig.Front.Seeks[^1].Position.ShouldBe(ChunkDuration * 3);
-        rig.Controller.Position.ShouldBe(ChunkDuration * 3);
+        rig.Front.Seeks[^1].Position.ShouldBe((ChunkDuration * 3) - VideoPlayerController.EndSeekMargin);
+        rig.Controller.Position.ShouldBe((ChunkDuration * 3) - VideoPlayerController.EndSeekMargin);
+    }
+
+    [Theory]
+    [InlineData("seek")]
+    [InlineData("seek by")]
+    [InlineData("scrub release")]
+    public async Task SeekingToTheEnd_ThenPlaying_ReplaysWithoutSeekingAnyCameraPastItsLastFrame(string route)
+    {
+        // An accurate seek past a stream's last frame leaves Flyleaf no frame to show and its decoder parked for good, so that camera froze on every clip until a restart.
+        // The left camera's file stops 600 ms before the front's, as Tesla side files often do, so each camera has to stop at its own last frame rather than the front's.
+        using var rig = new Rig(chunkCount: 2);
+        var end = ChunkDuration * 2;
+        var leftShortfall = TimeSpan.FromMilliseconds(600);
+        rig.ShortenCamera(CameraNames.LeftRepeater, leftShortfall);
+        rig.PlaceLastFrames(end);
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+
+        switch (route)
+        {
+            case "seek":
+                await rig.Controller.SeekAsync(end);
+                break;
+            case "seek by":
+                await rig.Controller.SeekAsync(end - TimeSpan.FromSeconds(2));
+                await rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5));
+                break;
+            case "scrub release":
+                await rig.Controller.BeginScrubAsync();
+                await rig.Controller.ScrubSeekAsync(end);
+                await rig.Controller.EndScrubAsync(end);
+                break;
+        }
+
+        rig.All.ShouldAllBe(player => !player.IsWedged);
+        rig.Front.Seeks[^1].Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Back.Seeks[^1].Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Left.Seeks[^1].Position.ShouldBe(end - leftShortfall - VideoPlayerController.EndSeekMargin);
+        rig.Controller.Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+
+        await rig.Controller.PlayAsync();
+
+        // Still close enough to the end that play replays the clip from the top.
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(2).ShouldBe(["seek:0", "play"], camera);
+            player.IsPlaying.ShouldBeTrue(camera);
+        }
+
+        rig.Controller.Position.ShouldBe(TimeSpan.Zero);
     }
 
     [Fact]
@@ -510,7 +626,7 @@ public sealed partial class VideoPlayerControllerTests
         rig.Controller.Position.ShouldBe(TimeSpan.Zero);
 
         await rig.Controller.SeekByAsync(TimeSpan.FromMinutes(5));
-        rig.Controller.Position.ShouldBe(ChunkDuration);
+        rig.Controller.Position.ShouldBe(ChunkDuration - VideoPlayerController.EndSeekMargin);
     }
 
     [Fact]
@@ -617,6 +733,26 @@ public sealed partial class VideoPlayerControllerTests
         }
 
         rig.Controller.Position.ShouldBe(anchor);
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_PastWhereASideCamerasFootageEnds_LeavesThatCameraOnItsLastFrame()
+    {
+        // Past the end of its own footage a camera only has its last frame to show, so it follows the front there and then stays put instead of being reseeked on every step.
+        using var rig = new Rig(chunkCount: 1);
+        var leftLimit = ChunkDuration - TimeSpan.FromSeconds(1) - VideoPlayerController.EndSeekMargin;
+        rig.ShortenCamera(CameraNames.LeftRepeater, TimeSpan.FromSeconds(1));
+        rig.PlaceLastFrames(ChunkDuration);
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        await rig.Controller.SeekAsync(ChunkDuration - TimeSpan.FromSeconds(0.5));
+
+        await rig.Controller.StepFrameAsync(forward: false);
+        await rig.Controller.StepFrameAsync(forward: true);
+
+        rig.Left.IsWedged.ShouldBeFalse();
+        rig.Left.Seeks.ShouldAllBe(seek => seek.Position == leftLimit);
+        rig.Left.Calls[^1].ShouldBe("step:forward");
     }
 
     [Fact]

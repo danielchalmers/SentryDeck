@@ -14,6 +14,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
     private readonly List<IReadOnlySet<int>> _exclusionsPerBuild = [];
     private readonly List<CamClip> _clipsPerBuild = [];
     private readonly HashSet<int> _autoExcludeChunkIndices = [];
+    private readonly Dictionary<string, TimeSpan> _cameraShortfalls = [];
 
     public int BuildCount
     {
@@ -82,17 +83,31 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
         }
     }
 
+    /// <summary>
+    /// Makes <paramref name="camera"/>'s footage stop <paramref name="shortfall"/> before the end of its playlist, like a Tesla side file that ends a little before the front file of the same minute.
+    /// Reported through <see cref="ClipMediaSource.DurationOf"/>.
+    /// </summary>
+    public void ShortenCamera(string camera, TimeSpan shortfall)
+    {
+        lock (_recordingLock)
+        {
+            _cameraShortfalls[camera] = shortfall;
+        }
+    }
+
     public ClipMediaSource Build(CamClip clip, IReadOnlySet<int> excludedChunkIndices = null)
     {
         // Snapshot the set before recording: the controller passes (and later mutates) its live exclusion set, so recording the reference would retroactively rewrite earlier entries.
         var exclusionsSnapshot = excludedChunkIndices is null ? new HashSet<int>() : new HashSet<int>(excludedChunkIndices);
 
         HashSet<int> autoExcluded;
+        Dictionary<string, TimeSpan> cameraShortfalls;
         lock (_recordingLock)
         {
             _clipsPerBuild.Add(clip);
             _exclusionsPerBuild.Add(exclusionsSnapshot);
             autoExcluded = [.. _autoExcludeChunkIndices];
+            cameraShortfalls = new Dictionary<string, TimeSpan>(_cameraShortfalls);
         }
 
         var autoExcludedIndices = Enumerable.Range(0, clip.Chunks.Count)
@@ -115,6 +130,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
         var chunkDurations = includedIndices.Select(_ => ChunkDuration).ToList();
 
         var playlistPaths = new Dictionary<string, string>();
+        var cameraDurations = new Dictionary<string, TimeSpan>();
         foreach (var camera in CameraNames.All)
         {
             if (includedIndices.Count == 0 || !clip.Chunks[includedIndices[0]].Files.TryGetValue(camera, out var firstFile))
@@ -124,6 +140,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
 
             // Mirror the real builder: stop at the first (remaining) chunk missing this camera's file.
             var lastAvailableFile = firstFile;
+            var entryCount = 1;
             for (var i = 1; i < includedIndices.Count; i++)
             {
                 if (!clip.Chunks[includedIndices[i]].Files.TryGetValue(camera, out var file))
@@ -132,6 +149,7 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
                 }
 
                 lastAvailableFile = file;
+                entryCount++;
             }
 
             var playlistPath = $"{lastAvailableFile.FullPath}.fake-{camera}.ffconcat";
@@ -141,11 +159,12 @@ internal sealed class FakeClipMediaSourceBuilder : IClipMediaSourceBuilder
             }
 
             playlistPaths[camera] = playlistPath;
+            cameraDurations[camera] = TimeSpan.FromTicks(ChunkDuration.Ticks * entryCount) - cameraShortfalls.GetValueOrDefault(camera);
         }
 
         // Mirror the real builder: the clip's original start, even when leading chunks are excluded.
         DateTime? clipStartTimestamp = clip.Chunks.Count > 0 ? clip.Chunks[0].Timestamp : null;
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp);
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp, cameraDurations);
     }
 }
