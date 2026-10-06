@@ -95,6 +95,7 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     /// <summary>
     /// The row the clip list highlights, which the list binds two-way: the selected clip while the search shows it, otherwise none.
     /// Kept apart from <see cref="SelectedClip"/> so a search that hides the open clip only hides its row, and the clip keeps playing in view.
+    /// The open clip's row can't be deselected either.
     /// </summary>
     public CamClip ListSelection
     {
@@ -104,6 +105,13 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
             // The list drops its selection, and writes null back here, when a search hides the selected row.
             // That isn't the user closing the clip, so the clip stays selected and its row is highlighted again once the search shows it.
             if (value is null && !IsShownInList(SelectedClip))
+            {
+                return;
+            }
+
+            // Ctrl+click on the selected row deselects it, but nothing closes the clip the player has open, so it played on behind "Select a clip to begin" with the transport still live.
+            // A stopped clip has nothing left playing out of sight, so its row can still be deselected.
+            if (value is null && SelectedClip is not null && ReferenceEquals(SelectedClip, _playback.NowPlayingClip))
             {
                 return;
             }

@@ -65,6 +65,7 @@ public partial class MainWindow : Window
 
         HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
         KeepSelectionInView(ClipListBox);
+        HighlightRowWhenDeselectIsTurnedDown(ClipListBox);
         HookSearchEscape(SearchBox, _viewModel.Library.ClearFilterCommand, LeaveSearchBox);
         NameSearchClearButton(SearchBox);
     }
@@ -254,6 +255,27 @@ public partial class MainWindow : Window
                 if (list.IsKeyboardFocusWithin && list.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem row)
                 {
                     row.Focus();
+                }
+            });
+    }
+
+    /// <summary>
+    /// Highlights a row again when the view-model turns down its deselect, as it does for the open clip's row.
+    /// </summary>
+    /// <remarks>
+    /// WPF unhighlights the row first and only then hears, through the selection binding, that the view-model kept it, so the list ends up pointing at a row that shows as unselected.
+    /// Selecting it again has to wait until the list has finished its own selection change.
+    /// </remarks>
+    internal static void HighlightRowWhenDeselectIsTurnedDown(ListBox list)
+    {
+        list.SelectionChanged += (_, _) =>
+            list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                if (list.SelectedIndex < 0
+                    && list.SelectedItem is { } kept
+                    && list.ItemContainerGenerator.ContainerFromItem(kept) is ListBoxItem { IsSelected: false } row)
+                {
+                    row.IsSelected = true;
                 }
             });
     }

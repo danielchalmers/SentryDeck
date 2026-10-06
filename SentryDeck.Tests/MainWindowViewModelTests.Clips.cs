@@ -359,19 +359,40 @@ public sealed partial class MainWindowViewModelTests
         changed.ShouldNotContain(nameof(ClipLibraryViewModel.SelectedClip));
     }
 
-    [Fact]
-    public async Task ListSelection_ClearedWhileItsRowIsShown_DeselectsTheClip()
-    {
-        var clips = TestClips.Create(3);
-        var vm = await LoadedViewModelAsync(clips);
-        vm.Library.ListSelection = clips[1];
+    // --- Deselecting the open clip's row (Ctrl+click): the list writes null back through its selection binding while the row is still shown. ---
 
-        vm.Library.FilterText = "Clip 1";
-        vm.Library.ApplyFilter();
+    [Fact]
+    public async Task ListSelection_ClearedOnTheOpenClipsRow_KeepsItSelectedAndInView()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, _) = CreateRescannableViewModel(_ => [clipFiles.Clip]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        var open = vm.Library.SelectedClip;
+
+        vm.Library.ListSelection = null;
+        await controller.WhenIdleAsync();
+
+        // Nothing closed the clip, so it kept playing behind "Select a clip to begin" with live transport controls.
+        vm.Library.SelectedClip.ShouldBe(open);
+        vm.Library.ListSelection.ShouldBe(open);
+        vm.Playback.IsPlaying.ShouldBeTrue();
+        vm.ShowVideoHosts.ShouldBeTrue();
+        vm.HasNoClipSelected.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ListSelection_ClearedOnAStoppedClipsRow_DeselectsIt()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, _) = CreateRescannableViewModel(_ => [clipFiles.Clip]);
+        await OpenClipAsync(vm, controller, clipFiles.Clip);
+        await vm.Playback.StopCommand.ExecuteAsync(null);
+
         vm.Library.ListSelection = null;
 
-        // Only a row the search hides is protected; deselecting a row the user can see still reaches the selection.
+        // Stop already closed the clip, so the deselect leaves nothing playing out of sight.
         vm.Library.SelectedClip.ShouldBeNull();
+        vm.HasNoClipSelected.ShouldBeTrue();
     }
 
     [Fact]
