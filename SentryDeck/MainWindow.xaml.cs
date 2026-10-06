@@ -64,6 +64,7 @@ public partial class MainWindow : Window
 
         HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
         KeepSelectionInView(ClipListBox);
+        HookSearchEscape(SearchBox, _viewModel.Library.ClearFilterCommand, LeaveSearchBox);
     }
 
     // Only called once Flyleaf has started.
@@ -277,6 +278,43 @@ public partial class MainWindow : Window
     {
         SearchBox.Focus();
         SearchBox.SelectAll();
+    }
+
+    /// <summary>
+    /// Gives Escape in the search box its usual meaning: it clears the query, and on an empty box it leaves the box.
+    /// </summary>
+    /// <remarks>
+    /// Every other key is text while the box has focus, so without this a keyboard user who pressed Ctrl+F had no way back to the playback shortcuts short of Tab or the mouse, and Space typed into the query instead of playing.
+    /// </remarks>
+    internal static void HookSearchEscape(TextBox searchBox, ICommand clearFilter, Action leaveSearch)
+    {
+        searchBox.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape)
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(searchBox.Text))
+            {
+                leaveSearch();
+            }
+            else
+            {
+                clearFilter.Execute(null);
+            }
+
+            e.Handled = true;
+        };
+    }
+
+    // The player is where the shortcuts work; with no clip open it isn't shown, so the clip list is the next best place for the keyboard.
+    private void LeaveSearchBox()
+    {
+        if (!VideoContainer.Focus())
+        {
+            ClipListBox.Focus();
+        }
     }
 
     // The FlyleafHost creates its native Surface window when it loads (and reuses it across reparenting), so subscribe once it exists. handledEventsToo ensures we still see the click if Flyleaf marks it handled, and the HashSet guards against re-subscribing when Loaded fires again on a reparent.
