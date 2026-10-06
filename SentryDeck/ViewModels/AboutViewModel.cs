@@ -101,14 +101,16 @@ public sealed partial class AboutViewModel : ObservableObject
             IsUpdateAvailable);
     }
 
-    private static string FormatVersion(Version version)
+    internal static string FormatVersion(Version version)
     {
         if (version is null)
         {
             return "Unknown";
         }
 
-        if (version.Revision >= 0)
+        // A three-part <Version> still builds a four-part assembly version ending in 0.
+        // Showing that 0 makes the About page disagree with the release tag and release notes the user compares it against.
+        if (version.Revision > 0)
         {
             return version.ToString(4);
         }

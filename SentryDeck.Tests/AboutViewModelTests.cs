@@ -77,6 +77,25 @@ public sealed class AboutViewModelTests
         about.LatestReleaseUrl.ShouldBe("https://example.test/latest");
     }
 
+    [Fact]
+    public void FileVersion_OfAThreePartBuildVersion_MatchesTheReleaseTag()
+    {
+        // The build sets <Version> to the three-part release version, but the assembly version always carries a fourth part.
+        var about = new AboutViewModel();
+
+        about.FileVersion.ShouldBe(about.CurrentVersion.ToString(3));
+    }
+
+    [Theory]
+    [InlineData("1.1.0.0", "1.1.0")]
+    [InlineData("1.1.0", "1.1.0")]
+    [InlineData("1.1.0.3", "1.1.0.3")]
+    [InlineData("1.2", "1.2")]
+    public void FormatVersion_FourthPart_ShownOnlyWhenNonZero(string version, string expected)
+    {
+        AboutViewModel.FormatVersion(Version.Parse(version)).ShouldBe(expected);
+    }
+
     private static HttpResponseMessage Releases(string tagName) => new(HttpStatusCode.OK)
     {
         Content = new StringContent($$"""
