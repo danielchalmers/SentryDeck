@@ -690,6 +690,121 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.ClipCount.ShouldBe(expectedScans.Length);
     }
 
+    // --- Remembered folders: the folders picked last time are loaded again at launch, since auto-discovery only finds USB drives. ---
+
+    // A fresh launch of the app that keeps its settings in the given store and would auto-discover the given folders.
+    private static (MainWindowViewModel Vm, List<string> Scanned) Launch(SettingsStore settings, params string[] discovered)
+    {
+        var scanned = new List<string>();
+        var vm = new MainWindowViewModel(() => null!, clipLoader: root =>
+        {
+            scanned.Add(root);
+            return [ClipAt(Path.Combine(root, "clip"), root, new DateTime(2025, 1, 1))];
+        });
+        vm.Library.Settings = settings;
+        vm.Library.DiscoverRoots = () => discovered;
+        return (vm, scanned);
+    }
+
+    private static string FolderThatIsGone() => Path.Combine(Path.GetTempPath(), $"SentryDeckTests-{Guid.NewGuid():N}");
+
+    [Fact]
+    public async Task Reload_AfterPickingAFolder_TheNextLaunchLoadsItAgain()
+    {
+        using var settingsFolder = new TempDirectory();
+        using var footage = new TempDirectory();
+        var settings = new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json"));
+        var (firstLaunch, _) = Launch(settings);
+        await firstLaunch.Library.OpenPickedFoldersAsync([footage.Path]);
+
+        var (vm, scanned) = Launch(settings, @"E:\TeslaCam");
+        await vm.Library.ReloadAsync();
+
+        // Footage copied to the PC isn't on a USB drive, so it was gone after every restart until the folder was picked again.
+        scanned.ShouldBe([footage.Path]);
+        vm.Library.ClipCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Reload_ARememberedFolderIsGone_LoadsTheOthersWithoutAnError()
+    {
+        using var settingsFolder = new TempDirectory();
+        using var footage = new TempDirectory();
+        var settings = new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json"));
+        settings.SavePickedFolders([FolderThatIsGone(), footage.Path]);
+
+        var (vm, scanned) = Launch(settings);
+        await vm.Library.ReloadAsync();
+
+        // A remembered folder on a drive that isn't plugged in is no reason to greet the launch with an error.
+        scanned.ShouldBe([footage.Path]);
+        vm.Error.IsVisible.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Reload_NoRememberedFolderIsThere_FindsDrivesAsBefore()
+    {
+        using var settingsFolder = new TempDirectory();
+        var settings = new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json"));
+        settings.SavePickedFolders([FolderThatIsGone()]);
+
+        var (vm, scanned) = Launch(settings, @"E:\TeslaCam");
+        await vm.Library.ReloadAsync();
+
+        scanned.ShouldBe([@"E:\TeslaCam"]);
+    }
+
+    [Fact]
+    public async Task Reload_NothingWasEverPicked_FindsDrives()
+    {
+        using var settingsFolder = new TempDirectory();
+        var (vm, scanned) = Launch(new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json")), @"E:\TeslaCam");
+
+        await vm.Library.ReloadAsync();
+
+        scanned.ShouldBe([@"E:\TeslaCam"]);
+    }
+
+    [Fact]
+    public async Task Reload_AnotherWindowPickedAFolderSinceLaunch_RescansTheRememberedFolderAgain()
+    {
+        using var settingsFolder = new TempDirectory();
+        using var footage = new TempDirectory();
+        using var otherFootage = new TempDirectory();
+        var settings = new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json"));
+        settings.SavePickedFolders([footage.Path]);
+        var (vm, scanned) = Launch(settings);
+        await vm.Library.ReloadAsync();
+
+        // Every window keeps its settings in the same file, so a second window's pick replaces the folder remembered there.
+        var (otherWindow, _) = Launch(settings);
+        await otherWindow.Library.OpenPickedFoldersAsync([otherFootage.Path]);
+
+        await vm.Library.ReloadAsync();
+
+        // Rescanning swapped this window's list for the other window's folder, and closed the clip playing here, without a word.
+        scanned.ShouldBe([footage.Path, footage.Path]);
+    }
+
+    [Fact]
+    public async Task Reload_ARememberedFolderMissingAtLaunchIsBack_LoadsItToo()
+    {
+        using var settingsFolder = new TempDirectory();
+        using var footage = new TempDirectory();
+        using var drive = new TempDirectory();
+        var unplugged = Path.Combine(drive.Path, "TeslaCam");
+        var settings = new SettingsStore(Path.Combine(settingsFolder.Path, "settings.json"));
+        settings.SavePickedFolders([unplugged, footage.Path]);
+        var (vm, scanned) = Launch(settings);
+        await vm.Library.ReloadAsync();
+
+        // The drive holding the other remembered folder is plugged in after launch.
+        Directory.CreateDirectory(unplugged);
+        await vm.Library.ReloadAsync();
+
+        scanned.ShouldBe([footage.Path, unplugged, footage.Path]);
+    }
+
     // --- Next/Previous with a search: they walk the clips the list shows, so the list can highlight every clip they open. ---
 
     // A clip recorded in a city on 2025-08-08 at the given hour, so a search for the city shows it and hides the others.

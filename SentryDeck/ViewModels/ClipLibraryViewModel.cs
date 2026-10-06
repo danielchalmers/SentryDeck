@@ -24,14 +24,30 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
     private readonly DispatcherTimer _filterDebounceTimer;
 
     /// <summary>
-    /// The source of dashcam roots: auto-discovery by default, or the user's last picked folders.
+    /// The source of dashcam roots: the folders the user picked, in this session or an earlier one, or auto-discovery when there are none.
     /// Refresh re-evaluates it to rescan for newly added clips (and, for auto-discovery, newly connected drives).
     /// Overridable for tests, which must not depend on the drives of the machine running them.
     /// </summary>
-    internal Func<IEnumerable<string>> RootSource { get; set; } = CamStorage.FindCommonRoots;
+    internal Func<IEnumerable<string>> RootSource { get; set; }
+
+    /// <summary>
+    /// Finds TeslaCam folders on its own: next to the app, and on USB drives.
+    /// Overridable for tests, which must not depend on the drives of the machine running them.
+    /// </summary>
+    internal Func<IEnumerable<string>> DiscoverRoots { get; set; } = CamStorage.FindCommonRoots;
+
+    /// <summary>
+    /// Remembers the picked folders for the next launch.
+    /// Overridable for tests, which must not read or overwrite the user's own settings.
+    /// </summary>
+    internal SettingsStore Settings { get; set; } = new();
 
     // The roots the last scan read, so an empty library can name the folders it looked in.
     private IReadOnlyList<string> _scannedRoots = [];
+
+    // Read once, at the first scan, because every window shares the settings file.
+    // Reading it again on each rescan swapped this window's folders for whatever another window picked since, and closed the clip playing here.
+    private readonly Lazy<IReadOnlyList<string>> _rememberedFolders;
 
     /// <param name="clipLoader">Maps a dashcam root to its clips.</param>
     /// <param name="playback">The player, which is stopped before a rescan or a delete and follows the clip list's playlist.</param>
@@ -46,6 +62,8 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         _clipLoader = clipLoader;
         _playback = playback;
         _error = error;
+        _rememberedFolders = new(() => Settings.LoadPickedFolders());
+        RootSource = RememberedOrDiscoveredRoots;
 
         // Coalesces the expensive clip-list regroup/rebind so fast typing in search stays smooth; the getters stay live, so only the (debounced) change notification is deferred.
         _filterDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
@@ -329,6 +347,34 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
         _playback.SetNavigationFilter(MatchesFilter);
     }
 
+    /// <summary>
+    /// The folders picked at an earlier launch that are still there, or the auto-discovered ones when none are.
+    /// Auto-discovery only looks at USB drives, so footage copied to the PC (common, since the car's drive gets reformatted) had to be picked again on every launch.
+    /// A remembered folder that is gone, such as one on a drive that isn't plugged in, is skipped rather than reported, so launching without it still opens whatever else is there.
+    /// Each rescan checks the folders again, so that drive's footage comes back once it is plugged in.
+    /// Deferred until the scan enumerates it off the UI thread, because checking a folder on a disconnected network share can take seconds.
+    /// </summary>
+    private IEnumerable<string> RememberedOrDiscoveredRoots()
+    {
+        var remembered = new List<string>();
+        foreach (var folder in _rememberedFolders.Value)
+        {
+            if (Directory.Exists(folder))
+            {
+                remembered.Add(folder);
+            }
+            else
+            {
+                Log.Information("Skipping remembered dashcam folder that no longer exists. Folder={Folder}", folder);
+            }
+        }
+
+        foreach (var root in remembered.Count > 0 ? remembered : DiscoverRoots())
+        {
+            yield return root;
+        }
+    }
+
     private ScanResult ScanRoots(IEnumerable<string> roots)
     {
         var rootList = WithoutOverlappingRoots(roots?.Where(root => !string.IsNullOrWhiteSpace(root)) ?? []);
@@ -486,15 +532,25 @@ public sealed partial class ClipLibraryViewModel : ObservableObject
                 folders.Length,
                 folders);
 
-            await _playback.StopPlayerAsync();
-
-            RootSource = () => folders;
-            await LoadClipsAsync(folders);
+            await OpenPickedFoldersAsync(folders);
         }
         else
         {
             Log.Debug("Folder picker canceled");
         }
+    }
+
+    /// <summary>
+    /// Loads the folders the user picked, and keeps loading them on later launches instead of auto-discovering.
+    /// Kept apart from the folder dialog so tests can pick folders without one.
+    /// </summary>
+    internal async Task OpenPickedFoldersAsync(IReadOnlyList<string> folders)
+    {
+        await _playback.StopPlayerAsync();
+
+        Settings.SavePickedFolders(folders);
+        RootSource = () => folders;
+        await LoadClipsAsync(folders);
     }
 
     [RelayCommand(CanExecute = nameof(CanRefreshClips))]
