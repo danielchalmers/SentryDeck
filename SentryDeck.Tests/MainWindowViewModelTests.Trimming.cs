@@ -431,8 +431,9 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public void ExportSelection_ExporterFailure_ShowsErrorAndResetsBusyState()
+    public void ExportSelection_ExporterFailure_ReportsItWithoutHidingTheVideo()
     {
+        // The error overlay can't draw over the native video surface, so showing a failed export there would blank the clip that is still playing.
         using var clipFiles = TestClipFiles.Create(chunkCount: 1);
         var exporter = new FakeClipExporter { ExceptionToThrow = new InvalidOperationException("ffmpeg exploded") };
         var (vm, _, _) = CreateViewModelWithOpenedClip(clipFiles.Clip, exporter, _ => @"C:\out\clip.mp4");
@@ -444,9 +445,9 @@ public sealed partial class MainWindowViewModelTests
 
         RunPinnedToTestThread(() => vm.Trim.ExportSelectionCommand.ExecuteAsync(null));
 
-        vm.Error.IsVisible.ShouldBeTrue();
-        vm.Error.Title.ShouldBe("Export Failed");
-        vm.Error.Details.ShouldContain("ffmpeg exploded");
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Trim.HasExportNotice.ShouldBeTrue();
+        vm.Trim.ExportNotice.ShouldContain("ffmpeg exploded");
         vm.Trim.IsExporting.ShouldBeFalse();
     }
 
@@ -540,10 +541,10 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task SaveEventClip_BuilderThrows_ShowsErrorInsteadOfCrashing()
+    public async Task SaveEventClip_BuilderThrows_ReportsItInsteadOfCrashing()
     {
         // Building an unopened clip's media source does real IO and can throw (drive unplugged, temp write fails).
-        // It must surface an Export Failed dialog, not escape to the dispatcher.
+        // It must be reported, not escape to the dispatcher.
         var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
         var exporter = new FakeClipExporter();
         var vm = new MainWindowViewModel(
@@ -557,10 +558,95 @@ public sealed partial class MainWindowViewModelTests
 
         await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
 
-        vm.Error.IsVisible.ShouldBeTrue();
-        vm.Error.Title.ShouldBe("Export Failed");
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Trim.ExportNotice.ShouldContain("drive gone");
         exporter.Requests.ShouldBeEmpty();
         vm.Trim.IsExporting.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SaveEventClip_EventOutsideAnUnopenedClipsFootage_ReportsItWithoutHidingTheVideo()
+    {
+        // Only building the clip's source shows where its footage ends, so this one fails after the click; the clip playing meanwhile must stay visible.
+        var clip = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromMinutes(10));
+        var exporter = new FakeClipExporter();
+        var pickerOpened = false;
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: exporter,
+            savePathPicker: _ =>
+            {
+                pickerOpened = true;
+                return null;
+            },
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(clip);
+
+        vm.Error.IsVisible.ShouldBeFalse();
+        vm.Trim.ExportNotice.ShouldContain("isn't within its saved footage");
+        pickerOpened.ShouldBeFalse();
+        exporter.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ExportNotice_DismissedOrSupersededByTheNextExport_Clears()
+    {
+        var unplaceable = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromMinutes(10));
+        var placeable = ClipWithChunksAndEvent(chunkCount: 1, eventOffset: TimeSpan.FromSeconds(10));
+        var vm = new MainWindowViewModel(
+            () => null!,
+            clipExporter: new FakeClipExporter(),
+            savePathPicker: _ => null,
+            exportMediaSourceBuilder: new FakeClipMediaSourceBuilder());
+
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(unplaceable);
+        vm.Trim.DismissExportNoticeCommand.Execute(null);
+        vm.Trim.HasExportNotice.ShouldBeFalse();
+
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(unplaceable);
+        await vm.Trim.SaveEventClipCommand.ExecuteAsync(placeable);
+        vm.Trim.HasExportNotice.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SaveEventClip_OpenClipWhoseEventIsOutsideItsFootage_IsDisabled()
+    {
+        // The open clip's footage is already probed, so the menu can tell up front instead of failing after the click.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Timestamp.AddMinutes(10));
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+
+        vm.Trim.SaveEventClipCommand.CanExecute(clip).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SaveEventClip_OpenClipWhoseEventIsInItsFootage_IsEnabled()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Timestamp.AddSeconds(30));
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+
+        vm.Trim.SaveEventClipCommand.CanExecute(clip).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SaveEventClip_WhenTheOpenClipsMediaIsRebuilt_IsRequeried()
+    {
+        // The context menu only asks again when told to, so an item enabled before the footage was probed would otherwise stay enabled.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Timestamp.AddMinutes(10));
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clip, uiInvoker: action => action());
+        RunPinnedToTestThread(controller.PauseAsync);
+        var requeried = false;
+        vm.Trim.SaveEventClipCommand.CanExecuteChanged += (_, _) => requeried = true;
+
+        // Ending 90s into 180s of footage makes recovery exclude the middle chunk and reopen the clip.
+        front.RaisePositionChanged(TimeSpan.FromSeconds(90));
+        front.RaiseEnded();
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        requeried.ShouldBeTrue();
     }
 
     private sealed class ThrowingClipMediaSourceBuilder(Exception exception) : IClipMediaSourceBuilder

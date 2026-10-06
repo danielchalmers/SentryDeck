@@ -19,7 +19,6 @@ public sealed partial class TrimViewModel : ObservableObject
 
     private readonly PlaybackViewModel _playback;
     private readonly CameraViewsViewModel _cameras;
-    private readonly ErrorOverlayViewModel _error;
     private readonly IClipExporter _clipExporter;
     private readonly Func<string, string> _savePathPicker;
     private readonly IClipMediaSourceBuilder _exportMediaSourceBuilder;
@@ -34,21 +33,18 @@ public sealed partial class TrimViewModel : ObservableObject
 
     /// <param name="playback">Supplies the playhead the marks are set at, and the open clip an export reads from.</param>
     /// <param name="cameras">Decides which camera a range export uses.</param>
-    /// <param name="error">Where export failures are reported.</param>
     /// <param name="clipExporter">Exports trimmed clip ranges.</param>
     /// <param name="savePathPicker">Maps a suggested save path (folder and file name) to the chosen one (null = canceled).</param>
     /// <param name="exportMediaSourceBuilder">Builds a media source for exporting a clip that isn't currently open.</param>
     public TrimViewModel(
         PlaybackViewModel playback,
         CameraViewsViewModel cameras,
-        ErrorOverlayViewModel error,
         IClipExporter clipExporter,
         Func<string, string> savePathPicker,
         IClipMediaSourceBuilder exportMediaSourceBuilder)
     {
         _playback = playback;
         _cameras = cameras;
-        _error = error;
         _clipExporter = clipExporter;
         _savePathPicker = savePathPicker ?? PickSavePathWithDialog;
         _exportMediaSourceBuilder = exportMediaSourceBuilder;
@@ -135,6 +131,16 @@ public sealed partial class TrimViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SaveEventClipCommand))]
     private bool _isExporting;
 
+    /// <summary>
+    /// Why the last export didn't happen, shown in a strip under the video (null when there is nothing to report).
+    /// Not the error overlay: that can't draw over the native video surface, so it would hide a clip that is still playing.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasExportNotice))]
+    private string _exportNotice;
+
+    public bool HasExportNotice => !string.IsNullOrEmpty(ExportNotice);
+
     /// <summary>Points Explorer at the exported file so it's immediately ready to share.
     /// Overridable for tests.</summary>
     internal Action<string> RevealInExplorer { get; set; } = path =>
@@ -207,6 +213,9 @@ public sealed partial class TrimViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private void DismissExportNotice() => ExportNotice = null;
+
     [RelayCommand(CanExecute = nameof(CanExportSelection))]
     private async Task ExportSelectionAsync()
     {
@@ -218,6 +227,7 @@ public sealed partial class TrimViewModel : ObservableObject
             return;
         }
 
+        ExportNotice = null;
         var start = TimeSpan.FromSeconds(startFraction * mediaSource.Duration.TotalSeconds);
         var end = TimeSpan.FromSeconds(endFraction * mediaSource.Duration.TotalSeconds);
         var camera = _cameras.ExportCamera;
@@ -238,26 +248,32 @@ public sealed partial class TrimViewModel : ObservableObject
             return;
         }
 
+        ExportNotice = null;
         ClipMediaSource mediaSource;
         try
         {
             mediaSource = _playback.CurrentClip == clip ? _playback.OpenedMediaSource : null;
 
             // Building an unopened clip's source does real IO (probe every chunk, write ffconcat files) and can throw (drive unplugged, temp write fails).
-            // Unlike ExportSelectionAsync, nothing downstream caught it, so the fault escaped to the dispatcher; surface a normal "Export Failed" dialog instead.
+            // Unlike ExportSelectionAsync, nothing downstream caught it, so the fault escaped to the dispatcher; report it like any other failed export instead.
             mediaSource ??= await Task.Run(() => _exportMediaSourceBuilder.Build(clip));
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to build media source for event clip. ClipName={ClipName}; ClipPath={ClipPath}", clip.Name, clip.FullPath);
-            _error.Show("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
+            ExportNotice = $"Couldn't export {clip.Name}: {ex.Message}";
             return;
         }
 
         var eventTime = mediaSource.Duration > TimeSpan.Zero ? mediaSource.ToMediaTime(clip.Event.Timestamp) : null;
         if (eventTime is null)
         {
-            _error.Show("Export Failed", "The event moment isn't within this clip's saved footage.");
+            Log.Warning(
+                "Not saving event clip: the event moment is outside the clip's footage. ClipName={ClipName}; EventTimestamp={EventTimestamp}; Duration={Duration}",
+                clip.Name,
+                clip.Event.Timestamp,
+                mediaSource.Duration);
+            ExportNotice = $"Couldn't save an event clip of {clip.Name}: the event moment isn't within its saved footage.";
             return;
         }
 
@@ -277,7 +293,15 @@ public sealed partial class TrimViewModel : ObservableObject
     }
 
     private bool CanSaveEventClip(CamClip clip) =>
-        clip?.Event is not null && clip.Event.Timestamp != default && !IsExporting;
+        clip?.Event is not null && clip.Event.Timestamp != default && !IsExporting && !IsEventOutsideOpenedFootage(clip);
+
+    // The open clip's footage is already probed, so an event outside it is known before the click, and a disabled item beats a failed export.
+    // Other clips aren't probed until an export builds their source, so they stay enabled and report it then.
+    private bool IsEventOutsideOpenedFootage(CamClip clip) =>
+        _playback.CurrentClip == clip
+        && _playback.OpenedMediaSource is { } mediaSource
+        && mediaSource.Duration > TimeSpan.Zero
+        && mediaSource.ToMediaTime(clip.Event.Timestamp) is null;
 
     private async Task ExportAsync(CamClip clip, ClipMediaSource mediaSource, string camera, TimeSpan start, TimeSpan end, string defaultFileName)
     {
@@ -309,7 +333,7 @@ public sealed partial class TrimViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Export failed. Clip={ClipName}; Camera={Camera}; Output={Output}", clip.Name, camera, outputPath);
-            _error.Show("Export Failed", $"Could not export clip: {clip.Name}\n\nError: {ex.Message}");
+            ExportNotice = $"Couldn't export {clip.Name}: {ex.Message}";
         }
         finally
         {
@@ -381,6 +405,9 @@ public sealed partial class TrimViewModel : ObservableObject
                 break;
 
             case nameof(PlaybackViewModel.OpenedMediaSource):
+                // Whether the open clip's event falls inside its footage is only known once the source is probed.
+                SaveEventClipCommand.NotifyCanExecuteChanged();
+
                 // A rebuild can reshape the timeline (chunks excluded during recovery), so in/out fractions marked against the old timeline no longer point at the same footage.
                 if (HasAnySelectionMark)
                 {

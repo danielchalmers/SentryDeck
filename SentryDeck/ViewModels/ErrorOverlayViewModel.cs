@@ -5,8 +5,9 @@ namespace SentryDeck;
 
 /// <summary>
 /// The notice that covers the video area: a genuine error, or the friendly prompt shown when there is no footage yet.
-/// Every feature reports through the one instance the main window owns, so a newer notice replaces the one on screen.
+/// Features report through the one instance the main window owns, so a newer notice replaces the one on screen.
 /// The FFmpeg prompt is the exception: it stands until it is withdrawn, so clearing a notice returns to it.
+/// Covering the video hides it, so a failure that leaves playback untouched (a failed export) is reported elsewhere.
 /// </summary>
 public sealed partial class ErrorOverlayViewModel : ObservableObject
 {

@@ -67,7 +67,6 @@ public partial class MainWindowViewModel : ObservableObject
         Trim = new TrimViewModel(
             Playback,
             Cameras,
-            Error,
             clipExporter ?? new ClipExporter(PackageManager.FindFFmpegDirectory),
             savePathPicker,
             exportMediaSourceBuilder ?? new FfconcatMediaSourceBuilder());
@@ -97,7 +96,7 @@ public partial class MainWindowViewModel : ObservableObject
     public event EventHandler SearchBoxFocusRequested;
 
     /// <summary>
-    /// The notice over the video area; every feature reports errors through it.
+    /// The notice over the video area; features report errors through it, except exports, which mustn't hide a playing clip.
     /// </summary>
     public ErrorOverlayViewModel Error { get; } = new();
 
