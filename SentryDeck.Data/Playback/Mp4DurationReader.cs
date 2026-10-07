@@ -11,6 +11,22 @@ public static class Mp4DurationReader
     private const int LargeSizeFieldSize = 8;
 
     /// <summary>
+    /// Tesla writes chunks of about a minute; a header claiming far more is corrupt, and trusting it would stretch the clip's timeline by hours of footage that isn't there.
+    /// </summary>
+    private static readonly TimeSpan MaxPlausibleChunkDuration = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Returns the duration of a dashcam chunk file, or null when it can't be played as one: no readable duration, a zero one, or one no real chunk has.
+    /// Choosing between a file and its numbered copy and building the playlist both go through this, so a file picked as playable is never dropped as unplayable later.
+    /// </summary>
+    public static TimeSpan? TryReadChunkDuration(string path)
+    {
+        return TryReadDuration(path) is { } duration && duration > TimeSpan.Zero && duration <= MaxPlausibleChunkDuration
+            ? duration
+            : null;
+    }
+
+    /// <summary>
     /// Returns the duration encoded in the file's "moov/mvhd" box, or null if it cannot be determined (missing boxes, malformed data, or any IO error).
     /// </summary>
     public static TimeSpan? TryReadDuration(string path)

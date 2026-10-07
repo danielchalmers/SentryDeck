@@ -60,6 +60,104 @@ public sealed class CamDiscoveryResilienceTests
         clips.Count.ShouldBe(3); // the bad file is skipped; every real clip still loads
     }
 
+    [Theory]
+    [InlineData(FileAttributes.Hidden)]
+    [InlineData(FileAttributes.System)]
+    public void FindClips_ClipUnderAHiddenOrSystemSubfolder_IsFound(FileAttributes attribute)
+    {
+        // Copy and repair tools can leave these attributes on SavedClips or SentryClips, and the clips under them used to vanish without a word.
+        using var temp = new TempDirectory();
+
+        var savedClips = CreateSubDir(temp.Path, "SavedClips");
+        var dir = CreateSubDir(savedClips, "2023-01-01_10-00-00");
+        Touch(dir, "2023-01-01_10-00-00-front.mp4");
+        File.SetAttributes(savedClips, File.GetAttributes(savedClips) | attribute);
+
+        var clip = CamClip.FindClips(temp.Path).ShouldHaveSingleItem();
+
+        clip.FullPath.ShouldBe(dir);
+    }
+
+    [Theory]
+    [InlineData("$RECYCLE.BIN")]
+    [InlineData("$Recycle.Bin")]
+    [InlineData("System Volume Information")]
+    public void FindClips_ClipInsideTheRecycleBinOrSystemVolumeInformation_IsNotListed(string folderName)
+    {
+        // Deleting a clip from the app sends it to the drive's Recycle Bin, so scanning a drive root must not bring it back as a live clip.
+        using var temp = new TempDirectory();
+
+        var live = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(live, "2023-01-01_10-00-00-front.mp4");
+
+        var bin = CreateSubDir(temp.Path, folderName);
+        var recycled = CreateSubDir(CreateSubDir(bin, "S-1-5-21-1000"), "$R1A2B3C");
+        Touch(recycled, "2023-01-02_10-00-00-front.mp4");
+        File.SetAttributes(bin, File.GetAttributes(bin) | FileAttributes.Hidden | FileAttributes.System);
+
+        var clip = CamClip.FindClips(temp.Path).ShouldHaveSingleItem();
+
+        clip.FullPath.ShouldBe(live);
+    }
+
+    [Fact]
+    public void FindClips_FolderDeletedMidScan_StillFindsTheFoldersAfterIt()
+    {
+        // Deleting a clip in Explorer while the app scans must not cut the scan short and hide the clips listed after it.
+        using var temp = new TempDirectory();
+
+        var first = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(first, "2023-01-01_10-00-00-front.mp4");
+
+        var deleted = CreateSubDir(temp.Path, "2023-01-01_11-00-00");
+        Touch(deleted, "2023-01-01_11-00-00-front.mp4");
+
+        var last = CreateSubDir(temp.Path, "2023-01-01_12-00-00");
+        Touch(last, "2023-01-01_12-00-00-front.mp4");
+
+        var found = new List<string>();
+        foreach (var clip in CamClip.FindClips(temp.Path))
+        {
+            found.Add(clip.FullPath);
+            if (found.Count == 1)
+            {
+                Directory.Delete(deleted, recursive: true);
+            }
+        }
+
+        found.ShouldBe([first, last], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void FindClips_FolderThatCanNoLongerBeListed_StillFindsTheFoldersAfterIt()
+    {
+        // The scan lists each event folder before it reaches the ones after it, so one folder it can't list must not hide the rest of the library.
+        // A folder swapped for a file mid-scan stands in for a corrupt directory, which a test can't make on demand.
+        using var temp = new TempDirectory();
+
+        var first = CreateSubDir(temp.Path, "2023-01-01_10-00-00");
+        Touch(first, "2023-01-01_10-00-00-front.mp4");
+
+        var broken = CreateSubDir(temp.Path, "2023-01-01_11-00-00");
+        Touch(broken, "2023-01-01_11-00-00-front.mp4");
+
+        var last = CreateSubDir(temp.Path, "2023-01-01_12-00-00");
+        Touch(last, "2023-01-01_12-00-00-front.mp4");
+
+        var found = new List<string>();
+        foreach (var clip in CamClip.FindClips(temp.Path))
+        {
+            found.Add(clip.FullPath);
+            if (found.Count == 1)
+            {
+                Directory.Delete(broken, recursive: true);
+                File.WriteAllBytes(broken, []);
+            }
+        }
+
+        found.ShouldBe([first, last], ignoreOrder: true);
+    }
+
     [Fact]
     public void Map_DateLessFolderWithoutEvent_FallsBackToFirstChunkTimestamp()
     {
@@ -75,6 +173,25 @@ public sealed class CamDiscoveryResilienceTests
 
         clip.ShouldNotBeNull();
         clip.Timestamp.ShouldBe(new DateTime(2023, 8, 28, 13, 9, 35)); // earliest chunk, not MinValue
+    }
+
+    [Fact]
+    public void FindClips_EventJsonWithADuplicateKeyAndABlankField_StillLoadsTheClip()
+    {
+        // The event metadata is optional, so a malformed event.json must never hide the playable footage beside it.
+        using var temp = new TempDirectory();
+
+        var dir = CreateSubDir(temp.Path, "2025-01-01_00-00-17");
+        Touch(dir, "2025-01-01_00-00-17-front.mp4");
+        File.WriteAllText(
+            Path.Combine(dir, "event.json"),
+            """{"timestamp":"2025-01-01T00:00:17","city":"DupA","city":"DupB","est_lat":""}""");
+
+        var clip = CamClip.FindClips(temp.Path).ShouldHaveSingleItem();
+
+        clip.FullPath.ShouldBe(dir);
+        clip.Event.ShouldNotBeNull();
+        clip.Event.City.ShouldBe("DupB");
     }
 
     [Fact]

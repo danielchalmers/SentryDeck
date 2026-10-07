@@ -11,6 +11,15 @@ internal sealed class FakeClipExporter : IClipExporter
     /// <summary>When set, ExportAsync throws this instead of recording a success.</summary>
     public Exception ExceptionToThrow { get; set; }
 
+    /// <summary>
+    /// When set, ExportAsync keeps running until it is canceled, like FFmpeg still writing a long export.
+    /// It then completes asynchronously, so leave it off in controller-backed tests.
+    /// </summary>
+    public bool RunsUntilCanceled { get; set; }
+
+    /// <summary>The token the most recent export was given.</summary>
+    public CancellationToken LastCancellationToken { get; private set; }
+
     public Task ExportAsync(ClipExportRequest request, CancellationToken cancellationToken = default)
     {
         if (ExceptionToThrow is not null)
@@ -19,6 +28,7 @@ internal sealed class FakeClipExporter : IClipExporter
         }
 
         Requests.Add(request);
-        return Task.CompletedTask;
+        LastCancellationToken = cancellationToken;
+        return RunsUntilCanceled ? Task.Delay(Timeout.Infinite, cancellationToken) : Task.CompletedTask;
     }
 }

@@ -3,8 +3,10 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using FlyleafLib;
 using FlyleafLib.Controls.WPF;
+using FlyleafLib.MediaFramework.MediaDecoder;
 using FlyleafLib.MediaPlayer;
 using Serilog;
+using DecoderStatus = FlyleafLib.MediaFramework.Status;
 
 namespace SentryDeck;
 
@@ -47,8 +49,15 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
     /// </summary>
     private static readonly SemaphoreSlim RendererResetGate = new(1, 1);
 
+    /// <summary>
+    /// How long a video decoder thread gets to finish on its own before <see cref="WakeStrandedDecoder"/> treats it as stranded.
+    /// A thread on its way out exits within milliseconds; a stranded one waits forever.
+    /// </summary>
+    private static readonly TimeSpan StrandedDecoderGrace = TimeSpan.FromMilliseconds(100);
+
     private readonly FlyleafHost _host;
     private readonly Player _player;
+    private readonly PlaybackSpeedGate _speedGate;
     private readonly Dispatcher _dispatcher;
     private readonly SemaphoreSlim _commandGate = new(1, 1);
     private TaskCompletionSource<bool> _pendingSeek;
@@ -67,6 +76,7 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _dispatcher = host.Dispatcher;
         _player = new Player(CreateConfig());
+        _speedGate = new PlaybackSpeedGate(() => _player.IsPlaying, speed => _player.Speed = speed);
 
         // All shortcuts are app-wide and act on every camera at once; Flyleaf's default bindings (space, arrows, …) would pause/seek only the player whose surface has focus.
         // Must run AFTER the Player ctor: KeysConfig.SetPlayer force-loads the defaults into any empty binding list, so clearing the config up front is undone.
@@ -91,12 +101,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
 
     public double Speed
     {
-        get => _player.Speed;
+        get => _speedGate.ChosenSpeed;
         set
         {
             if (value > 0)
             {
-                _player.Speed = value;
+                _speedGate.ChosenSpeed = value;
             }
         }
     }
@@ -140,7 +150,8 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
     {
         if (_isOpen)
         {
-            _player.Play();
+            WakeStrandedDecoder();
+            _speedGate.Play(_player.Play);
         }
     });
 
@@ -166,7 +177,12 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         await RendererResetGate.WaitAsync();
         try
         {
-            await RunCommandAsync(_player.Stop);
+            await RunCommandAsync(() =>
+            {
+                // Stop leaves a stranded decoder thread waiting, which would then come back to life inside the next clip.
+                WakeStrandedDecoder();
+                _player.Stop();
+            });
         }
         finally
         {
@@ -200,6 +216,9 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             {
                 return;
             }
+
+            // At fast speeds a forward step would otherwise skip the frames Flyleaf thins out of fast playback.
+            _speedGate.BeforePausedDecode();
 
             if (forward)
             {
@@ -351,6 +370,8 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (awaitCompletion)
         {
+            // A paused seek decodes on Flyleaf's seek thread, and at fast speeds it would see only the frames fast playback keeps.
+            _speedGate.BeforePausedDecode();
             _pendingSeek = completion;
         }
 
@@ -379,6 +400,39 @@ internal sealed class FlyleafCameraPlayer : ICameraPlayer
             Interlocked.CompareExchange(ref _pendingSeek, null, completion);
         }
     }
+
+    /// <summary>
+    /// Wakes a video decoder thread that Flyleaf has left waiting behind a finished status, the frozen-camera state that <see cref="PlaybackSpeedGate"/> keeps seeks out of.
+    /// This is the safety net for any other way a paused decode might run out of frames.
+    /// </summary>
+    /// <remarks>
+    /// A paused seek decodes on Flyleaf's seek thread while the decoder thread waits to be resumed.
+    /// When that decode runs out of frames, Flyleaf marks the decoder Ended (a later flush turns it into Stopped) without stopping the waiting thread.
+    /// From then on Start sees a live thread and leaves it alone, and Stop sees a finished decoder and does nothing, so the camera stays frozen on every clip until the app restarts.
+    /// A decoder thread that still claims to be finished but is alive after <see cref="StrandedDecoderGrace"/> can only be that waiting thread.
+    /// Marking it paused again tells Flyleaf the truth: Start then resumes it and Stop ends it, as they would for any paused decoder.
+    /// </remarks>
+    private void WakeStrandedDecoder()
+    {
+        var decoder = _player.VideoDecoder;
+        if (!LooksStranded(decoder))
+        {
+            return;
+        }
+
+        Thread.Sleep(StrandedDecoderGrace);
+        if (!LooksStranded(decoder))
+        {
+            return;
+        }
+
+        Log.Warning("Waking a video decoder thread Flyleaf left waiting. DecoderStatus={DecoderStatus}; Position={Position}", decoder.Status, Position);
+        decoder.Status = DecoderStatus.Paused;
+    }
+
+    // IsRunning means the decoder thread is alive and not paused.
+    private static bool LooksStranded(VideoDecoder decoder) =>
+        decoder is { IsRunning: true, Status: DecoderStatus.Ended or DecoderStatus.Stopped };
 
     private void OnSeekCompleted(object sender, int milliseconds)
     {

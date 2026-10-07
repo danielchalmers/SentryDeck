@@ -55,6 +55,94 @@ public sealed class ClipPlaylistTests
     }
 
     [Fact]
+    public void MoveNextAndPrevious_WithANavigationFilter_SkipTheClipsItRejects()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(5);
+        playlist.SetClips(clips);
+        playlist.SetNavigationFilter(clip => clip != clips[1] && clip != clips[3]);
+        playlist.MoveTo(2);
+
+        // With a search active, stepping by one landed on clips the search hides, which the list can't show as selected.
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[4]);
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[2]);
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[0]);
+    }
+
+    [Fact]
+    public void HasNextAndPrevious_WithANavigationFilter_IgnoreTheClipsItRejects()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(4);
+        playlist.SetClips(clips);
+        playlist.SetNavigationFilter(clip => clip == clips[1] || clip == clips[2]);
+        playlist.MoveTo(2);
+
+        // The buttons stayed enabled at the edge of the search results and then opened a hidden clip.
+        playlist.HasNext.ShouldBeFalse();
+        playlist.MoveNext().ShouldBeFalse();
+        playlist.CurrentClip.ShouldBe(clips[2]);
+
+        playlist.MoveTo(1);
+        playlist.HasPrevious.ShouldBeFalse();
+        playlist.MovePrevious().ShouldBeFalse();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void SetNavigationFilter_RejectingTheCurrentClip_KeepsItCurrentAndStepsToItsNearestAcceptedNeighbours()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(5);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+        var currentChanged = 0;
+        playlist.CurrentClipChanged += (_, _) => currentChanged++;
+
+        playlist.SetNavigationFilter(clip => clip == clips[0] || clip == clips[4]);
+
+        // A search that hides the open clip mustn't close it, and Next and Previous carry on from its place.
+        currentChanged.ShouldBe(0);
+        playlist.CurrentClip.ShouldBe(clips[2]);
+        playlist.HasNext.ShouldBeTrue();
+        playlist.HasPrevious.ShouldBeTrue();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[4]);
+    }
+
+    [Fact]
+    public void SetNavigationFilter_Null_LetsNextAndPreviousReachEveryClipAgain()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.SetNavigationFilter(clip => clip != clips[1]);
+        playlist.MoveTo(0);
+
+        playlist.SetNavigationFilter(null);
+
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void SetClips_WithANavigationFilterSet_KeepsTheFilter()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetNavigationFilter(clip => clip != clips[0]);
+
+        playlist.SetClips(clips);
+
+        // A rescan replaces the clips while the search stays in the box, so Next has to keep skipping what it hides.
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
     public void MoveTo_WithClipReference_SelectsClipAndRaisesEvent()
     {
         var playlist = new ClipPlaylist();
@@ -145,6 +233,106 @@ public sealed class ClipPlaylistTests
         playlist.CurrentIndex.ShouldBe(-1);
         playlist.CurrentClip.ShouldBeNull();
         playlist.Clips.ShouldBe(new[] { clips[0], clips[2] });
+    }
+
+    [Fact]
+    public void RemoveClip_TheCurrentClip_NextOpensTheClipThatFollowedIt()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(4);
+        playlist.SetClips(clips);
+        playlist.MoveTo(1);
+
+        playlist.RemoveClip(clips[1]);
+
+        // Watching a clip, deleting it, then pressing Next is a triage loop; restarting from the first clip would lose the user's place in the library.
+        playlist.HasNext.ShouldBeTrue();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[2]);
+    }
+
+    [Fact]
+    public void RemoveClip_TheCurrentClip_PreviousOpensTheClipBeforeIt()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(4);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+
+        playlist.RemoveClip(clips[2]);
+
+        playlist.HasPrevious.ShouldBeTrue();
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void RemoveClip_TheCurrentClipAtTheEnd_HasNoNextButKeepsPrevious()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+
+        playlist.RemoveClip(clips[2]);
+
+        playlist.HasNext.ShouldBeFalse();
+        playlist.MoveNext().ShouldBeFalse();
+        playlist.HasPrevious.ShouldBeTrue();
+        playlist.MovePrevious().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void RemoveClip_TheCurrentClipAtTheStart_HasNoPreviousButKeepsNext()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(0);
+
+        playlist.RemoveClip(clips[0]);
+
+        playlist.HasPrevious.ShouldBeFalse();
+        playlist.MovePrevious().ShouldBeFalse();
+        playlist.HasNext.ShouldBeTrue();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[1]);
+    }
+
+    [Fact]
+    public void RemoveClip_AnEarlierClipAfterTheCurrentWasRemoved_KeepsThePlace()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(4);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+        playlist.RemoveClip(clips[2]);
+
+        // Deleting a second clip from earlier in the list shifts every later clip down, so the remembered place has to shift with them.
+        playlist.RemoveClip(clips[0]);
+
+        playlist.Clips.ShouldBe(new[] { clips[1], clips[3] });
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(clips[3]);
+    }
+
+    [Fact]
+    public void SetClips_AfterTheCurrentClipWasRemoved_NextStartsFromTheFirstClip()
+    {
+        var playlist = new ClipPlaylist();
+        var clips = TestClips.Create(3);
+        playlist.SetClips(clips);
+        playlist.MoveTo(2);
+        playlist.RemoveClip(clips[2]);
+        var reloaded = TestClips.Create(3);
+
+        // A rescan replaces the list, so a place remembered from the old list means nothing in the new one.
+        playlist.SetClips(reloaded);
+
+        playlist.HasPrevious.ShouldBeFalse();
+        playlist.MoveNext().ShouldBeTrue();
+        playlist.CurrentClip.ShouldBe(reloaded[0]);
     }
 
     [Fact]

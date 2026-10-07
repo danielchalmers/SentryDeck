@@ -34,6 +34,17 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
     /// <summary>Invoked inside <see cref="SeekAsync"/> after the seek is recorded, so a test can act while a seek is executing.</summary>
     public Action SeekCallback { get; set; }
 
+    /// <summary>
+    /// When set, the timestamp of the stream's last frame; an accurate seek past it wedges the player (see <see cref="IsWedged"/>).
+    /// </summary>
+    public TimeSpan? LastFrame { get; set; }
+
+    /// <summary>
+    /// Set once an accurate seek lands past <see cref="LastFrame"/>.
+    /// The real player finds no frame there and its decoder thread is never woken again, so that camera stays frozen on every clip until the app restarts.
+    /// </summary>
+    public bool IsWedged { get; private set; }
+
     public bool IsOpen { get; private set; }
 
     public bool IsEnded { get; private set; }
@@ -161,6 +172,7 @@ internal sealed class FakeCameraPlayer : ICameraPlayer
 
         Record(accurate ? $"seek:{position.TotalSeconds}" : $"scrub:{position.TotalSeconds}", () => _seeks.Add((position, accurate)));
         SeekCallback?.Invoke();
+        IsWedged |= accurate && position > LastFrame;
         IsEnded = false;
         MoveTo(position);
         return Task.CompletedTask;

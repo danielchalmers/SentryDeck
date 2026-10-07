@@ -211,4 +211,90 @@ public sealed class ClipExporterTests
         File.Exists(outputPath).ShouldBeFalse();
         File.Exists(scriptPath).ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task ExportAsync_Canceled_DeletesPartialOutputAndScript()
+    {
+        // Closing the app cancels a running export, and nothing the export wrote may outlive it.
+        var fixture = CreateClip();
+        using var output = new TempFile();
+        var outputPath = output.Path;
+        string scriptPath = null;
+        using var cancellation = new CancellationTokenSource();
+
+        var exporter = new ClipExporter(
+            () => @"C:\ffmpeg",
+            async (_, arguments, cancellationToken) =>
+            {
+                scriptPath = ScriptPathFromArguments(arguments);
+                await File.WriteAllTextAsync(outputPath, "half-written", CancellationToken.None);
+                cancellation.Cancel();
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            });
+
+        await Should.ThrowAsync<OperationCanceledException>(() => exporter.ExportAsync(
+            Request(fixture, CameraNames.Front, TimeSpan.Zero, TimeSpan.FromSeconds(60), outputPath),
+            cancellation.Token));
+
+        File.Exists(outputPath).ShouldBeFalse();
+        File.Exists(scriptPath).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunFfmpegAsync_Canceled_StopsTheProcessSoItsFilesCanBeDeleted()
+    {
+        // Closing the app cancels a running export, and the cleanup right after must be able to delete the files the process was writing.
+        // cmd.exe spinning in a built-in loop stands in for FFmpeg: it holds its redirected output open without starting a child process.
+        using var held = new TempFile(extension: ".txt");
+        using var cancellation = new CancellationTokenSource();
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+
+        var run = ClipExporter.RunFfmpegAsync(cmd, $"/d /c \"(for /l %i in (0,0,1) do @type nul) > \"{held.Path}\"\"", cancellation.Token);
+        await Wait.UntilAsync(() => File.Exists(held.Path));
+        cancellation.Cancel();
+
+        await Should.ThrowAsync<OperationCanceledException>(run);
+
+        // A virus scanner may open the file for a moment once its writer exits, so the delete is retried; a process that kept running would hold the file until the wait gives up.
+        await Wait.UntilAsync(() => TryDelete(held.Path));
+    }
+
+    [Fact]
+    public async Task ExportAsync_PartialOutputBrieflyHeldOpen_StillDeletesIt()
+    {
+        // Antivirus opens a file the moment FFmpeg closes it, so the first delete can fail even though the file is free a moment later.
+        var fixture = CreateClip();
+        using var output = new TempFile();
+        var outputPath = output.Path;
+        FileStream scanner = null;
+
+        var exporter = new ClipExporter(
+            () => @"C:\ffmpeg",
+            (_, _, _) =>
+            {
+                File.WriteAllText(outputPath, "half-written");
+                scanner = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                _ = Task.Delay(100).ContinueWith(_ => scanner.Dispose(), TaskScheduler.Default);
+                throw new InvalidOperationException("FFmpeg exited with code 1.");
+            });
+
+        await Should.ThrowAsync<InvalidOperationException>(() => exporter.ExportAsync(
+            Request(fixture, CameraNames.Front, TimeSpan.Zero, TimeSpan.FromSeconds(60), outputPath)));
+
+        File.Exists(outputPath).ShouldBeFalse();
+    }
+
+    // True once the file is deleted (or already gone); false while another process still holds it open.
+    private static bool TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
 }

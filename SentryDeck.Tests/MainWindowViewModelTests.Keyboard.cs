@@ -27,7 +27,8 @@ public sealed partial class MainWindowViewModelTests
         controller.Position = TimeSpan.FromSeconds(60); // parked at the very end
         RunPinnedToTestThread(() => vm.HandleKeyDownAsync(Key.Right, ModifierKeys.None));
 
-        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(60));
+        // Stops just short of the end: a seek past the last frame would freeze the camera for good.
+        front.Seeks[^1].Position.ShouldBe(TimeSpan.FromSeconds(60) - VideoPlayerController.EndSeekMargin);
     }
 
     [Fact]
@@ -130,7 +131,7 @@ public sealed partial class MainWindowViewModelTests
         vm.Library.SelectedClip = ClipWithChunks(1);
         vm.IsLoading.ShouldBeTrue();
 
-        // Clear the selection before the yield resumes (Ctrl+click deselect, or a search filter dropping the clip).
+        // Clear the selection before the yield resumes (a Ctrl+click deselect).
         // The superseded load must not leave IsLoading stuck true forever.
         vm.Library.SelectedClip = null;
         yieldGate.SetResult();

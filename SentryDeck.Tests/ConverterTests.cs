@@ -172,10 +172,34 @@ public sealed class ConverterTests
     [InlineData(95, "~1h 35m")]
     public void ClipDurationConverter_RendersTheModeledChunkDuration(int chunkCount, string expected)
     {
-        // Every chunk models 60s (ClipTimeline.EstimatedChunkSeconds), so the chunk count is the estimate in minutes; a clip whose chunks were all filtered out has nothing to estimate.
+        // A clip built without a scan has no measured final chunk, so every chunk models 60s and the chunk count is the estimate in minutes.
+        // A clip whose chunks were all filtered out has nothing to estimate.
         var result = new ClipDurationConverter().Convert(ClipWithChunks(chunkCount), typeof(string), null, null);
 
         result.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ClipDurationConverter_ScannedClipEndingInAPartialChunk_ReadsTheRecordedLength()
+    {
+        // Ten full minutes plus the short tail Tesla writes when recording stops: the player shows about 10:08, so the list must not say "~11 min".
+        var durations = Enumerable.Repeat(TimeSpan.FromSeconds(60), 10).Append(TimeSpan.FromSeconds(8.5)).ToList();
+        using var files = TestClipFiles.Create(durations.Count, chunkDurations: durations);
+
+        var result = new ClipDurationConverter().Convert(CamClip.Map(files.RootPath), typeof(string), null, null);
+
+        result.ShouldBe("~10 min");
+    }
+
+    [Fact]
+    public void ClipDurationConverter_ScannedClipShorterThanHalfAMinute_ReadsLessThanAMinute()
+    {
+        // A 10s clip used to read "~1 min"; rounding it down to "0 min" or the no-footage dash would be just as wrong.
+        using var files = TestClipFiles.Create(1, chunkDurations: [TimeSpan.FromSeconds(10)]);
+
+        var result = new ClipDurationConverter().Convert(CamClip.Map(files.RootPath), typeof(string), null, null);
+
+        result.ShouldBe("<1 min");
     }
 
     [Fact]
@@ -208,6 +232,15 @@ public sealed class ConverterTests
     }
 
     [Fact]
+    public void ThumbnailConverter_ZeroByteThumbnail_YieldsNoImage()
+    {
+        // The card's missing-thumbnail glyph follows this null image, so an empty file must not decode to an empty bitmap that hides the glyph.
+        using var thumbnail = new TempFile([], ".png");
+
+        new ThumbnailConverter().Convert(thumbnail.Path, typeof(ImageSource), null, null).ShouldBeNull();
+    }
+
+    [Fact]
     public void ThumbnailConverter_ValidThumbnail_YieldsADecodedImageAndReleasesTheFile()
     {
         using var thumbnail = new TempFile(BuildPng(width: 384, height: 288), ".png");
@@ -221,25 +254,46 @@ public sealed class ConverterTests
     }
 
     [Fact]
-    public void ThumbnailConverter_FallbackParameter_IsVisibleOnlyWhenTheFileIsMissing()
-    {
-        // The placeholder behind the image is driven purely by the file's presence.
-        var converter = new ThumbnailConverter();
-
-        converter.Convert(MissingThumbnailPath(), typeof(Visibility), "fallback", null).ShouldBe(Visibility.Visible);
-        converter.Convert(null, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Visible);
-
-        using var thumbnail = new TempFile("not a png"u8.ToArray(), ".png");
-        converter.Convert(thumbnail.Path, typeof(Visibility), "fallback", null).ShouldBe(Visibility.Collapsed);
-    }
-
-    [Fact]
     public void EventConverters_NonEventValues_FallBackToTheNoEventDefaults()
     {
         // These bind against clip rows that may carry no event.json at all.
         new ReasonLabelConverter().Convert(null, typeof(string), null, null).ShouldBe("Recent");
         new ReasonKeyConverter().Convert(null, typeof(string), null, null).ShouldBe(ClipDisplay.ReasonRecent);
-        new MapAvailabilityConverter().Convert("not an event", typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        new CityVisibilityConverter().Convert(null, typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+        new CityVisibilityConverter().Convert("not an event", typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(30.5, -97.5)]
+    public void CityVisibilityConverter_EventWithACity_ShowsTheLocationLineWithOrWithoutCoordinates(double lat, double lon)
+    {
+        // Tesla can write a city with blank or 0,0 coordinates, and search still finds the clip by that city, so the card has to show it.
+        var camEvent = new CamEvent { City = "Hutto", EstLat = (decimal)lat, EstLon = (decimal)lon };
+
+        new CityVisibilityConverter().Convert(camEvent, typeof(Visibility), null, null).ShouldBe(Visibility.Visible);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void CityVisibilityConverter_EventWithoutACity_HidesTheLocationLineEvenWithCoordinates(string city)
+    {
+        // Coordinates alone would leave a lone pin with nothing beside it.
+        var camEvent = new CamEvent { City = city, EstLat = 30.5m, EstLon = -97.5m };
+
+        new CityVisibilityConverter().Convert(camEvent, typeof(Visibility), null, null).ShouldBe(Visibility.Collapsed);
+    }
+
+    [Fact]
+    public void ReasonConverters_SentryClipWithoutEventJson_UseItsFolder()
+    {
+        // The clip row binds the clip itself, because a missing event.json leaves only the folder to say how the clip was recorded.
+        var clip = new CamClip(@"D:\TeslaCam\SentryClips\2024-05-02_16-49-35", "Sentry Without Event", Moment, [], camEvent: null);
+
+        new ReasonLabelConverter().Convert(clip, typeof(string), null, null).ShouldBe("Sentry");
+        new ReasonKeyConverter().Convert(clip, typeof(string), null, null).ShouldBe(ClipDisplay.ReasonSentry);
     }
 
     private static CamClip ClipWithChunks(int chunkCount)

@@ -64,6 +64,13 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         return new CamClip(@"C:\clips", "Event Camera Clip", start, [new CamChunk(start, files)], camEvent);
     }
 
+    // The same clip folder with event metadata naming the Tesla camera id that triggered the recording.
+    private static CamClip WithEventCamera(CamClip clip, int eventCamera)
+    {
+        var camEvent = new CamEvent { Reason = "user_interaction_honk", Timestamp = clip.Timestamp, Camera = eventCamera };
+        return new CamClip(clip.FullPath, clip.Name, clip.Timestamp, clip.Chunks, camEvent);
+    }
+
     private static readonly string[] SixCameras =
     [
         CameraNames.Front,
@@ -301,14 +308,14 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Theory]
-    [InlineData(0, CameraNames.Front)]
+    [InlineData(0, null)] // front, and also what a missing or unreadable field reads as -> no preference
     [InlineData(3, CameraNames.LeftRepeater)]
     [InlineData(4, CameraNames.RightRepeater)]
     [InlineData(5, CameraNames.LeftPillar)]
     [InlineData(6, CameraNames.RightPillar)]
     [InlineData(7, CameraNames.Back)]
-    [InlineData(8, CameraNames.Front)] // cabin camera isn't written to USB -> front
-    [InlineData(99, CameraNames.Front)] // unknown id -> front
+    [InlineData(8, null)] // cabin camera isn't written to USB -> no preference
+    [InlineData(99, null)] // unknown id -> no preference
     public void CameraIdToView_MapsDocumentedEventCameraIds(int cameraId, string expectedView)
     {
         var vm = CreateViewModel();
@@ -318,13 +325,48 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void CameraIdToView_FallsBackToFront_WhenTheClipLacksThatCamera()
+    public void CameraIdToView_IsNoPreference_WhenTheClipLacksThatCamera()
     {
         var vm = CreateViewModel();
         vm.Library.SelectedClip = ClipWithCameras(CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater);
 
-        vm.Cameras.CameraIdToView(5).ShouldBe(CameraNames.Front);
+        vm.Cameras.CameraIdToView(5).ShouldBeNull();
         vm.Cameras.CameraIdToView(7).ShouldBe(CameraNames.Back);
+    }
+
+    [Fact]
+    public void ShowPlayableCamerasOf_DropsTheTilesOfCamerasTheMediaCantPlay_AndLeavesTheWatchedOneForFront()
+    {
+        var vm = CreateViewModel();
+        var clip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = clip;
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        vm.Cameras.ShowPlayableCamerasOf(clip, [CameraNames.Front, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+            [
+                CameraViewsViewModel.GridCameraView,
+                CameraNames.Front,
+                CameraNames.LeftRepeater,
+                CameraNames.RightRepeater,
+            ]);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
+        vm.Cameras.CameraViewOptions.Single(option => option.IsSelected).ViewId.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void ShowPlayableCamerasOf_WhenEveryRecordedCameraPlays_KeepsTheTilesItAlreadyShows()
+    {
+        // Replacing the tiles makes the view rebuild the strip and re-parent every video host, which flashes the video for nothing.
+        var vm = CreateViewModel();
+        var clip = ClipWithCameras(SixCameras);
+        vm.Library.SelectedClip = clip;
+        var tiles = vm.Cameras.CameraViewOptions;
+
+        vm.Cameras.ShowPlayableCamerasOf(clip, SixCameras);
+
+        vm.Cameras.CameraViewOptions.ShouldBeSameAs(tiles);
     }
 
     [Fact]
@@ -380,6 +422,47 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void OpeningAbout_WhilePlaying_PausesUntilTheUserPlaysAgain()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+
+        // The clip started playing before the view-model subscribed, so restart it where the view-model sees it, as it would in the app.
+        RunPinnedToTestThread(controller.PauseAsync);
+        RunPinnedToTestThread(controller.PlayAsync);
+        vm.Playback.IsPlaying.ShouldBeTrue();
+        var pausesAfterOpen = front.Count("pause");
+
+        vm.ToggleAboutCommand.Execute(null);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeFalse();
+        vm.Playback.IsPlaying.ShouldBeFalse();
+        front.Count("pause").ShouldBe(pausesAfterOpen + 1);
+
+        // Back on the player, the clip waits at the frame the user left, instead of jumping ahead the moment the page closes.
+        vm.ShowAboutPage = false;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void OpeningAbout_WhilePaused_LeavesThePlayerAlone()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var (vm, controller, front) = CreateViewModelWithOpenedClip(clipFiles.Clip);
+        RunPinnedToTestThread(controller.PauseAsync);
+        var callsBefore = front.Calls.Count;
+
+        vm.ShowAboutPage = true; // F1
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeFalse();
+        front.Calls.Count.ShouldBe(callsBefore);
+    }
+
+    [Fact]
     public void Loading_ShowsStatusOverlay_AndHidesVideo()
     {
         var vm = CreateViewModel();
@@ -406,9 +489,9 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     [Fact]
     public void SelectingClip_HidesOverlay_AndShowsVideo()
     {
-        var vm = CreateViewModel();
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
 
-        vm.Library.SelectedClip = TestClips.Create(1)[0];
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
 
         vm.HasNoClipSelected.ShouldBeFalse();
         vm.ShowStatusOverlay.ShouldBeFalse();
@@ -418,10 +501,10 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     [Fact]
     public void CanPlayPause_RequiresClipOrPlayback_AndNotLoading()
     {
-        var vm = CreateViewModel();
-        vm.Playback.CanPlayPause.ShouldBeFalse();
+        CreateViewModelWithController(out _, out _).Playback.CanPlayPause.ShouldBeFalse();
 
-        vm.Library.SelectedClip = TestClips.Create(1)[0];
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
         vm.Playback.CanPlayPause.ShouldBeTrue();
 
         vm.Playback.IsLoading = true;
@@ -430,7 +513,7 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         // Even with no selected clip, an in-flight playback keeps the toggle live.
         vm.Playback.IsLoading = false;
         vm.Library.SelectedClip = null;
-        vm.Playback.IsPlaying = true;
+        vm.Playback.IsPlaying.ShouldBeTrue();
         vm.Playback.CanPlayPause.ShouldBeTrue();
     }
 
@@ -461,14 +544,14 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void UpdateBadge_DefaultsToUpToDate()
+    public void UpdateBadge_BeforeAnyCheck_DoesNotClaimUpToDate()
     {
         var vm = CreateViewModel();
 
         vm.About.IsUpdateAvailable.ShouldBeFalse();
         vm.About.HasUpdateBadge.ShouldBeFalse();
-        vm.About.UpdateStatusTitle.ShouldBe("You're up to date");
-        vm.About.UpdateStatusDetails.ShouldBe("No newer release was found.");
+        vm.About.UpdateStatusTitle.ShouldBe("Updates not checked");
+        vm.About.UpdateStatusDetails.ShouldBe("This build doesn't check for updates.");
         vm.About.LatestVersionText.ShouldBe("Unknown");
         vm.About.LatestReleaseUrl.ShouldBe(UpdateService.ReleasesPageUrl);
     }
@@ -542,7 +625,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
     {
         var vm = CreateViewModel();
         vm.Error.IsVisible = true;
-        vm.Error.ShowFFmpegDownloadButton = true;
         vm.Error.CanDismiss = false;
         vm.Error.Title = "Boom";
         vm.Error.Details = "Something went wrong";
@@ -550,7 +632,6 @@ public sealed partial class MainWindowViewModelTests : IDisposable
         vm.Error.DismissCommand.Execute(null);
 
         vm.Error.IsVisible.ShouldBeFalse();
-        vm.Error.ShowFFmpegDownloadButton.ShouldBeFalse();
         vm.Error.CanDismiss.ShouldBeTrue();
         vm.Error.Title.ShouldBeNull();
         vm.Error.Details.ShouldBeNull();

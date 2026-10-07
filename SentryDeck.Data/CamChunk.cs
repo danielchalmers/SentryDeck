@@ -26,7 +26,10 @@ public record class CamChunk
     // Keyed by camera name, one file per camera.
     // Several files can claim one camera at a timestamp: numbered copies ("front-2.mp4") left by copying a drive, or a rear_view -> back alias collision.
     // An unguarded ToDictionary would throw, and since CamClip.TryMap swallows that, the WHOLE clip folder would be silently dropped.
-    // The original wins, unless it's empty and a copy isn't; ties keep enumeration order.
+    // The first playable file wins, originals before copies.
+    // A copied or merged drive can hold a truncated original beside an intact copy, and the player drops a file it can't play, so going by name alone would lose footage that is on disk.
+    // When nothing is playable, the original wins unless it's empty and a copy isn't; ties keep enumeration order.
+    // Only cameras with several files are probed, so a scan doesn't open every file on the drive.
     private static IReadOnlyDictionary<string, CamFile> BuildFileMap(IEnumerable<CamFile> files)
     {
         var map = new Dictionary<string, CamFile>();
@@ -38,16 +41,20 @@ public record class CamChunk
                 .ThenBy(file => file.CopyNumber)
                 .ToList();
 
-            map[group.Key] = candidates[0];
+            var chosen = candidates.Count == 1
+                ? candidates[0]
+                : candidates.FirstOrDefault(file => Mp4DurationReader.TryReadChunkDuration(file.FullPath) is not null) ?? candidates[0];
+
+            map[group.Key] = chosen;
 
             if (candidates.Count > 1)
             {
                 Log.Debug(
                     "Several files for one camera at one timestamp; using one and ignoring the rest. Camera={Camera}; Timestamp={Timestamp}; Using={UsedPath}; Ignored={IgnoredPaths}",
                     group.Key,
-                    candidates[0].Timestamp,
-                    candidates[0].FullPath,
-                    candidates.Skip(1).Select(file => file.FullPath).ToArray());
+                    chosen.Timestamp,
+                    chosen.FullPath,
+                    candidates.Where(file => !ReferenceEquals(file, chosen)).Select(file => file.FullPath).ToArray());
             }
         }
 

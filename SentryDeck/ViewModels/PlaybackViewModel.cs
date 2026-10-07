@@ -21,9 +21,20 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private CancellationTokenSource _selectionCts;
     private bool _isSeeking;
 
+    // Where the next selection picks up instead of just before its event (see ResumeAt), or null.
+    private PlaybackPlace _resumePlace;
+
     // Identifies the current seek gesture.
     // EndSeekAsync's slow tail (the accurate seek can queue behind in-flight scrubs) may complete after the user has already started a NEW drag; only the completion belonging to the latest gesture may clear _isSeeking, or the position sync would yank the thumb out from under the active drag.
     private int _seekGeneration;
+
+    // The clip the current seek gesture began on.
+    // The thumb's position is a fraction of that clip's length, so it means nothing once the player moves to another clip.
+    private CamClip _seekGestureClip;
+
+    // Set when a clip change ended the seek gesture while the thumb was still held, so the release that follows seeks nothing.
+    // Only a clip change makes the thumb's position meaningless: a release with no gesture begun still seeks to where the thumb was put.
+    private bool _seekGestureEndedByClipChange;
 
     // --- Seek-bar overlays for the selected clip (event moment + chunk seams + gaps) ---
     // Recomputed whenever the selection changes or the controller opens/replaces its media source; plain fields (not ObservableProperty) because they're derived, not independently settable.
@@ -31,11 +42,14 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private IReadOnlyList<double> _chunkBoundaries = [];
     private IReadOnlyList<double> _gapPositions = [];
 
+    // The clip whose opened media the overlays above were measured from, or null while they are an estimate.
+    private CamClip _measuredOverlaysClip;
+
     /// <param name="playerControllerFactory">Creates the playback controller (the view supplies one bound to its Flyleaf hosts).</param>
     /// <param name="backgroundYield">Yields to the UI before a clip loads so the window stays responsive.</param>
     /// <param name="uiInvoker">Runs an action on the UI thread.</param>
     /// <param name="error">Where playback failures are reported.</param>
-    /// <param name="cameras">Refocused on the camera that triggered an event clip once it opens.</param>
+    /// <param name="cameras">Refocused on the camera that triggered an event clip once it opens, and narrowed to the cameras the opened clip can play.</param>
     public PlaybackViewModel(
         Func<VideoPlayerController> playerControllerFactory,
         Func<Task> backgroundYield,
@@ -55,6 +69,11 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// Raised when the player moves to another clip on its own or through Next/Previous, so the clip list can follow.
     /// </summary>
     public event EventHandler<CamClip> CurrentClipChanged;
+
+    /// <summary>
+    /// Raised after the user stops playback, so features working on the open media can close along with it.
+    /// </summary>
+    public event EventHandler Stopped;
 
     /// <summary>
     /// Ladder the speed stepper walks: fine increments around 1x, doubling above.
@@ -101,9 +120,11 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
     public bool CanSeek => _playerController?.IsMediaOpen == true && !IsLoading && _playerController.Duration > TimeSpan.Zero;
 
-    public bool CanPlayPause => (SelectedClip is not null || IsPlaying) && !IsLoading;
+    // Without a player (FFmpeg missing) Play would do nothing at all, so it must not look available.
+    public bool CanPlayPause => HasPlayer && (SelectedClip is not null || IsPlaying) && !IsLoading;
 
-    public bool CanStop => IsPlaying || IsLoading;
+    // A paused or finished clip still holds its files open, so Stop must stay available to let go of them without resuming first.
+    public bool CanStop => IsPlaying || IsLoading || _playerController?.IsMediaOpen == true;
 
     public bool CanGoNext => _playerController?.CanGoNext == true;
 
@@ -119,9 +140,18 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// <summary>True when the selected clip has a locatable event moment to mark on the seek bar and jump to.</summary>
     public bool HasEventMarker => _eventPosition.HasValue;
 
-    /// <summary>Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".</summary>
+    /// <summary>
+    /// True when the player can jump to the event marker.
+    /// A stopped or still-loading clip has nothing to seek, so a jump would only move the thumb on a disabled seek bar.
+    /// </summary>
+    public bool CanJumpToEvent => HasEventMarker && CanSeek;
+
+    /// <summary>
+    /// Friendly reason + time for the event marker tooltip, e.g. "Honk · 3:53 PM".
+    /// The reason comes from the clip rather than its event, so a saved clip whose event.json has no reason is called Saved here, as on its card.
+    /// </summary>
     public string EventMarkerTooltip => SelectedClip?.Event is { } camEvent && HasEventMarker
-        ? $"{ClipDisplay.ReasonLabel(camEvent)} · {camEvent.Timestamp:t}"
+        ? $"{ClipDisplay.ReasonLabel(SelectedClip)} · {camEvent.Timestamp:t}"
         : string.Empty;
 
     /// <summary>Interior chunk-boundary fractions (i/Count for i in 1..Count-1); empty for fewer than two chunks.</summary>
@@ -138,8 +168,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
     [NotifyPropertyChangedFor(nameof(CanStop))]
     [NotifyPropertyChangedFor(nameof(CanSeek))]
+    [NotifyPropertyChangedFor(nameof(CanJumpToEvent))]
     [NotifyCanExecuteChangedFor(nameof(StepFrameBackwardCommand))]
     [NotifyCanExecuteChangedFor(nameof(StepFrameForwardCommand))]
+    [NotifyCanExecuteChangedFor(nameof(JumpToEventCommand))]
     private bool _isLoading;
 
     [ObservableProperty]
@@ -173,6 +205,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
         _playerController = _playerControllerFactory();
         _playerController.PropertyChanged += PlayerControllerOnPropertyChanged;
         _playerController.PlaybackSpeed = PlaybackSpeed;
+
+        // The player can arrive mid-session, once a first-run FFmpeg download finishes.
+        OnPropertyChanged(nameof(HasPlayer));
+        OnPropertyChanged(nameof(CanPlayPause));
     }
 
     public void Shutdown()
@@ -203,6 +239,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
         RecomputeSelectedClipTimeline();
         NotifyMarkersChanged();
+        ShowPlayableCameras();
 
         _selectionCts?.Cancel();
         _selectionCts?.Dispose();
@@ -219,7 +256,15 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 "Selected clip changed. ClipName={ClipName}; ClipPath={ClipPath}",
                 clip.Name,
                 clip.FullPath);
-            _ = PlaySelectedClipAsync(clip, _selectionCts.Token);
+
+            var resumePlace = TakeResumePlace(clip);
+            if (resumePlace is not null)
+            {
+                // Nothing was selected while the clip was reread, so the tiles fell back to the classic four cameras and a B-pillar view dropped to the front.
+                _cameras.SelectCameraViewCommand.Execute(resumePlace.CameraView);
+            }
+
+            _ = PlaySelectedClipAsync(clip, resumePlace, _selectionCts.Token);
         }
     }
 
@@ -237,10 +282,48 @@ public sealed partial class PlaybackViewModel : ObservableObject
         NotifyNavigationChanged();
     }
 
+    /// <summary>
+    /// Limits Next and Previous to the clips <paramref name="canNavigateTo"/> accepts, such as the ones a search shows, so they never open a clip the list can't highlight.
+    /// The open clip stays open even when it is rejected.
+    /// </summary>
+    public void SetNavigationFilter(Func<CamClip, bool> canNavigateTo)
+    {
+        _playerController?.Playlist.SetNavigationFilter(canNavigateTo);
+        NotifyNavigationChanged();
+    }
+
     /// <summary>Closes whatever the player has open, releasing its file handles.</summary>
     public Task StopPlayerAsync() => _playerController?.StopAsync() ?? Task.CompletedTask;
 
+    /// <summary>
+    /// Puts <paramref name="clip"/> back in the player at <paramref name="position"/> after <see cref="StopPlayerAsync"/> released its files for a change that didn't happen.
+    /// Unlike selecting it, this keeps the user's place and camera instead of jumping to the event.
+    /// </summary>
+    public Task ReopenAsync(CamClip clip, TimeSpan position, bool play) =>
+        _playerController?.ReopenAsync(clip, position, play) ?? Task.CompletedTask;
+
+    /// <summary>Where the viewer is in the open clip, or null while no clip is open.</summary>
+    public PlaybackPlace CurrentPlace => _playerController is { IsMediaOpen: true, CurrentClip: { } clip } controller
+        ? new PlaybackPlace(clip.FullPath, controller.Position, controller.IsPlaying, _cameras.SelectedCameraView)
+        : null;
+
+    /// <summary>
+    /// Has the next selection open at <paramref name="place"/> if it is the same clip folder, instead of just before its event.
+    /// A rescan reads every clip into a new object, and selecting the open clip's new object would otherwise start it over.
+    /// </summary>
+    public void ResumeAt(PlaybackPlace place) => _resumePlace = place;
+
+    // A place only applies to the selection right after it, so picking that clip again later starts it over as usual.
+    private PlaybackPlace TakeResumePlace(CamClip clip)
+    {
+        var place = _resumePlace;
+        _resumePlace = null;
+        return string.Equals(place?.ClipPath, clip.FullPath, StringComparison.OrdinalIgnoreCase) ? place : null;
+    }
+
     public Task TogglePlayPauseAsync() => _playerController?.TogglePlayPauseAsync() ?? Task.CompletedTask;
+
+    public Task PauseAsync() => _playerController?.PauseAsync() ?? Task.CompletedTask;
 
     public Task StepFrameAsync(bool forward) => _playerController?.StepFrameAsync(forward) ?? Task.CompletedTask;
 
@@ -260,6 +343,8 @@ public sealed partial class PlaybackViewModel : ObservableObject
         {
             _seekGeneration++;
             _isSeeking = true;
+            _seekGestureClip = _playerController.CurrentClip;
+            _seekGestureEndedByClipChange = false;
             _scrubCoalescer.Reset();
 
             // Holds playback paused for the gesture, so each scrub is one cheap paused seek and the release resumes every camera together.
@@ -271,6 +356,14 @@ public sealed partial class PlaybackViewModel : ObservableObject
     public async Task EndSeekAsync()
     {
         var generation = _seekGeneration;
+
+        // A clip change already ended this gesture, so there is nothing to release, and the new clip keeps the position it opened at.
+        if (_seekGestureEndedByClipChange)
+        {
+            _seekGestureEndedByClipChange = false;
+            UpdateSeekPositionFromController();
+            return;
+        }
 
         if (_playerController is null || !CanSeek)
         {
@@ -296,7 +389,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     /// <summary>
     /// Called on every seek-bar value change.
     /// While a seek gesture is active (<see cref="_isSeeking"/>, set by <see cref="BeginSeek"/> on mouse-down for clicks and drags alike), each value feeds the scrub coalescer so the video follows the thumb in near-real-time.
-    /// A plain click therefore issues one scrub seek too; the accurate seek from <see cref="EndSeekAsync"/> runs behind the same serialized lock and always lands last.
+    /// A press on the seek-bar rail jumps the value before the gesture starts, so it issues no scrub seek; the accurate seek from <see cref="EndSeekAsync"/> lands on that value directly.
     /// Value changes from playback position sync arrive with <see cref="_isSeeking"/> false and are ignored.
     /// </summary>
     public void OnSeekSliderValueChanged()
@@ -335,18 +428,21 @@ public sealed partial class PlaybackViewModel : ObservableObject
         IsLoading = false;
         SeekPosition = 0;
         NowPlayingClip = null;
+        Stopped?.Invoke(this, EventArgs.Empty);
     }
 
-    [RelayCommand(CanExecute = nameof(CanSeek))]
+    // These buttons stay enabled while their command runs: WPF disables a button whose command can't execute, and a disabled button drops keyboard focus and never gets it back, so a keyboard user's next Enter or Tab would go nowhere.
+    // Overlapping runs are safe because the controller queues every step and seek in order, just as it does for the , . and E keys.
+    [RelayCommand(CanExecute = nameof(CanSeek), AllowConcurrentExecutions = true)]
     private Task StepFrameBackwardAsync() => StepFrameAsync(forward: false);
 
-    [RelayCommand(CanExecute = nameof(CanSeek))]
+    [RelayCommand(CanExecute = nameof(CanSeek), AllowConcurrentExecutions = true)]
     private Task StepFrameForwardAsync() => StepFrameAsync(forward: true);
 
-    [RelayCommand(CanExecute = nameof(HasEventMarker))]
+    [RelayCommand(CanExecute = nameof(CanJumpToEvent), AllowConcurrentExecutions = true)]
     private async Task JumpToEventAsync()
     {
-        if (!HasEventMarker)
+        if (!CanJumpToEvent)
             return;
 
         Log.Debug("Jumping to event moment. Position={EventMarkerPosition}", EventMarkerPosition);
@@ -394,7 +490,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         }
     }
 
-    private async Task PlaySelectedClipAsync(CamClip clip, CancellationToken cancellationToken)
+    private async Task PlaySelectedClipAsync(CamClip clip, PlaybackPlace resumePlace, CancellationToken cancellationToken)
     {
         if (clip is null || _playerController is null)
             return;
@@ -406,7 +502,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
         // A newer selection superseded this one while we yielded, so drop it and let the latest win and the selection doesn't rubber-band backwards as earlier, slower loads complete.
         if (cancellationToken.IsCancellationRequested || !ReferenceEquals(clip, SelectedClip))
         {
-            // A newer selection's own load owns IsLoading now, but if the selection was cleared outright (deselect, or a filter dropping the clip), no load is in flight and nothing else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
+            // A newer selection's own load owns IsLoading now, but if the selection was cleared outright (a deselect), no load is in flight and nothing else ever resets the flag, leaving a permanent "Loading…" overlay over the video pane.
             if (SelectedClip is null)
             {
                 IsLoading = false;
@@ -417,15 +513,27 @@ public sealed partial class PlaybackViewModel : ObservableObject
 
         try
         {
-            await _playerController.GoToClipAsync(clip);
+            if (clip == _playerController.CurrentClip)
+            {
+                await ResyncWithLoadedClipAsync(cancellationToken);
+            }
+            else if (resumePlace is null)
+            {
+                await _playerController.GoToClipAsync(clip);
+            }
+            else
+            {
+                await _playerController.GoToClipAsync(clip, resumePlace.Position, resumePlace.IsPlaying);
+            }
 
-            if (cancellationToken.IsCancellationRequested)
+            // A clip picked up where the viewer was stays on the camera they were watching.
+            if (cancellationToken.IsCancellationRequested || resumePlace is not null)
                 return;
 
-            // Auto-focus the camera that triggered the event (Full metadata mode).
-            if (clip.Event is not null)
+            // Auto-focus the camera that triggered the event (Full metadata mode), when the event names one; otherwise the view the user picked carries over.
+            if (clip.Event is not null && _cameras.CameraIdToView(clip.Event.Camera) is { } eventCameraView)
             {
-                _cameras.SelectedCameraView = _cameras.CameraIdToView(clip.Event.Camera);
+                _cameras.SelectedCameraView = eventCameraView;
             }
         }
         catch (Exception ex)
@@ -451,6 +559,22 @@ public sealed partial class PlaybackViewModel : ObservableObject
         }
     }
 
+    // The playlist ignores a move to the clip it already has, so selecting the clip that is still loaded (after a search hid it, or a deselect) opens nothing, and no loading change would ever arrive to clear IsLoading and re-enable the transport.
+    // A paused or playing clip carries on where it was; only a stopped or failed one is reopened, as selecting it would normally do.
+    private async Task ResyncWithLoadedClipAsync(CancellationToken cancellationToken)
+    {
+        if (!_playerController.IsMediaOpen)
+        {
+            await _playerController.PlayAsync();
+        }
+
+        // A newer selection owns IsLoading now, and its own load sets it.
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        IsLoading = _playerController.IsLoading;
+    }
+
     private async Task SeekToCurrentPositionAsync()
     {
         if (_playerController is null)
@@ -473,6 +597,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
     //
     // Prefers the controller's actually-opened ClipMediaSource when it belongs to this clip: that source has real probed durations and gap-aware wall-clock mapping (see ClipMediaSource.ToMediaTime), so its positions match what's actually playing.
     // Selecting a clip is synchronous but opening its media is not, so immediately after selection (or for a clip that never opens, e.g. in tests with no controller) there is no opened source yet; a ClipTimeline estimate (uniform assumed chunk length) is used as a same-frame placeholder so the markers don't flash empty, and is superseded once OpenedMediaSource changes.
+    // Once a clip's media has been measured, its overlays outlive that media closing (Stop, or a recovery rebuild in progress): they still describe its footage, whereas the estimate would move the seams and the event marker, or show a marker the footage doesn't reach.
     private void RecomputeSelectedClipTimeline()
     {
         var clip = SelectedClip;
@@ -481,6 +606,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
             _eventPosition = null;
             _chunkBoundaries = [];
             _gapPositions = [];
+            _measuredOverlaysClip = null;
             return;
         }
 
@@ -489,10 +615,12 @@ public sealed partial class PlaybackViewModel : ObservableObject
         if (mediaSource is not null && mediaSource.Duration > TimeSpan.Zero)
         {
             RecomputeFromMediaSource(clip, mediaSource);
+            _measuredOverlaysClip = clip;
         }
-        else
+        else if (_measuredOverlaysClip != clip)
         {
             RecomputeFromEstimatedTimeline(clip);
+            _measuredOverlaysClip = null;
         }
     }
 
@@ -543,10 +671,22 @@ public sealed partial class PlaybackViewModel : ObservableObject
         _eventPosition = fraction is >= 0 and <= 1 ? fraction : null;
     }
 
+    // Selecting a clip offers a tile for every camera it recorded, but playback can leave a recorded camera out, and its tile would then stay black.
+    // Only the selected clip's opened media knows which cameras it plays; a clip selected again while it is still open gets no new media, so this also runs on selection.
+    // Next and Previous select the new clip while the previous clip's media is still open, and narrowing to its cameras would hide the new clip's own tiles and with them the camera its event names.
+    private void ShowPlayableCameras()
+    {
+        if (SelectedClip is { } clip && _playerController?.OpenedClip == clip && _playerController.OpenedMediaSource is { } mediaSource)
+        {
+            _cameras.ShowPlayableCamerasOf(clip, mediaSource.CameraPlaylistPaths.Keys);
+        }
+    }
+
     private void NotifyMarkersChanged()
     {
         OnPropertyChanged(nameof(EventMarkerPosition));
         OnPropertyChanged(nameof(HasEventMarker));
+        OnPropertyChanged(nameof(CanJumpToEvent));
         OnPropertyChanged(nameof(EventMarkerTooltip));
         OnPropertyChanged(nameof(ChunkBoundaries));
         OnPropertyChanged(nameof(GapPositions));
@@ -557,8 +697,10 @@ public sealed partial class PlaybackViewModel : ObservableObject
     private void NotifyCanSeekChanged()
     {
         OnPropertyChanged(nameof(CanSeek));
+        OnPropertyChanged(nameof(CanJumpToEvent));
         StepFrameBackwardCommand.NotifyCanExecuteChanged();
         StepFrameForwardCommand.NotifyCanExecuteChanged();
+        JumpToEventCommand.NotifyCanExecuteChanged();
     }
 
     private void NotifyNavigationChanged()
@@ -566,6 +708,25 @@ public sealed partial class PlaybackViewModel : ObservableObject
         OnPropertyChanged(nameof(CanPlayPause));
         OnPropertyChanged(nameof(CanGoNext));
         OnPropertyChanged(nameof(CanGoPrevious));
+    }
+
+    // Next or Previous from the keyboard can change the clip while the thumb is held.
+    // Releasing the thumb would then seek the new clip to the old clip's fraction, throwing away the position it opened at (the lead-in before its event), so the clip change ends the gesture instead.
+    // Ending it here also lets the thumb and time readout follow the new clip while the mouse is still down.
+    // A reloaded playlist reports no current clip but leaves the open clip as it was, still held paused for the gesture until the release resumes it, so only a move to another clip, which the controller opens afresh, ends the gesture.
+    private void EndSeekGestureIfClipChanged()
+    {
+        var clip = _playerController.CurrentClip;
+        if (!_isSeeking || clip is null || ReferenceEquals(clip, _seekGestureClip))
+            return;
+
+        _seekGeneration++;
+        _isSeeking = false;
+        _seekGestureClip = null;
+        _seekGestureEndedByClipChange = true;
+
+        // A scrub value still queued behind an in-flight one would otherwise be issued against the new clip.
+        _scrubCoalescer.CancelPending();
     }
 
     private void UpdateSeekPositionFromController()
@@ -596,6 +757,13 @@ public sealed partial class PlaybackViewModel : ObservableObject
         {
             case nameof(VideoPlayerController.IsLoading):
                 IsLoading = _playerController.IsLoading;
+
+                // Play after Stop reopens the clip the player still has, which raises no clip change, so the badge Stop took off comes back here.
+                if (_playerController.IsLoading)
+                {
+                    NowPlayingClip = _playerController.CurrentClip;
+                }
+
                 break;
 
             case nameof(VideoPlayerController.IsPlaying):
@@ -620,6 +788,7 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 OnPropertyChanged(nameof(OpenedMediaSource));
                 RecomputeSelectedClipTimeline();
                 NotifyMarkersChanged();
+                ShowPlayableCameras();
                 break;
 
             case nameof(VideoPlayerController.ErrorMessage):
@@ -627,16 +796,23 @@ public sealed partial class PlaybackViewModel : ObservableObject
                 {
                     _error.Show("Playback Error", _playerController.ErrorMessage);
                 }
+                else if (_error.IsVisible && _error.Title == "Playback Error")
+                {
+                    // Play retries a clip that failed to open (one whose file another program had locked, say), so the old failure must not stay over the video that now plays.
+                    _error.Clear();
+                }
 
                 break;
 
             case nameof(VideoPlayerController.CurrentClip):
+                EndSeekGestureIfClipChanged();
                 CurrentClipChanged?.Invoke(this, _playerController.CurrentClip);
                 NowPlayingClip = _playerController.CurrentClip;
                 NotifyNavigationChanged();
                 break;
 
             case nameof(VideoPlayerController.IsMediaOpen):
+                OnPropertyChanged(nameof(CanStop));
                 NotifyCanSeekChanged();
                 break;
         }

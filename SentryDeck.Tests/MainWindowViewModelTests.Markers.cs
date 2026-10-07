@@ -22,6 +22,20 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void EventMarkerTooltip_SavedClipWithBlankReason_SaysSavedLikeItsCard()
+    {
+        var vm = CreateViewModel();
+        var start = new DateTime(2025, 1, 1, 12, 0, 0);
+        var camEvent = new CamEvent { Reason = " ", Timestamp = start.AddSeconds(30) };
+
+        // The card names this clip by its SavedClips folder, so the marker over the same clip must not call it Recent.
+        vm.Library.SelectedClip = new CamClip(@"D:\TeslaCam\SavedClips\2025-01-01_12-00-00", "Saved Clip", start, [new CamChunk(start, [])], camEvent);
+
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.EventMarkerTooltip.ShouldStartWith("Saved · ");
+    }
+
+    [Fact]
     public void EventMarker_AbsentWithoutEvent()
     {
         var vm = CreateViewModel();
@@ -179,14 +193,114 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public void JumpToEvent_CanExecute_FollowsHasEventMarker()
+    public void JumpToEvent_WithAMarkerButNothingOpen_IsDisabled()
     {
         var vm = CreateViewModel();
         vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
 
         vm.Library.SelectedClip = ClipWithChunksAndEvent(10, TimeSpan.FromSeconds(570));
 
+        // With no media open, a jump could only move the thumb on a disabled seek bar.
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void JumpToEvent_OnceTheSelectedClipOpens_IsAnnouncedAsAvailable()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        var controller = BuildFourCameraController(new FakeCameraPlayer());
+        controller.LoadClips([clip]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        var announced = new List<bool>();
+        vm.Playback.JumpToEventCommand.CanExecuteChanged += (_, _) => announced.Add(vm.Playback.JumpToEventCommand.CanExecute(null));
+
+        vm.Library.SelectedClip = clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        // The Event button only re-reads CanExecute when told to, so the last announcement has to come once the clip can seek.
+        announced.ShouldNotBeEmpty();
+        announced[^1].ShouldBeTrue();
+    }
+
+    [Fact]
+    public void JumpToEvent_AfterStop_IsDisabledAndTheEKeyIsIgnored()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+        vm.Library.SelectedClip = clip;
         vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeTrue();
+
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Playback.JumpToEventCommand.CanExecute(null).ShouldBeFalse();
+        vm.HandleKeyDown(Key.E, ModifierKeys.None).ShouldBeFalse();
+        vm.Playback.SeekPosition.ShouldBe(0);
+    }
+
+    [Fact]
+    public void StoppingTheOpenClip_KeepsItsMeasuredMarkers()
+    {
+        // Chunks of 60, 60 and 20 seconds put the measured seams at 60/140 and 120/140 and the event at 90/140, where the 60-seconds-per-chunk estimate would put them at thirds and the event at the middle.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 3,
+            chunkDurations: [TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(20)]);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+        vm.Library.SelectedClip = clip;
+        vm.Playback.ChunkBoundaries.ShouldBe([60.0 / 140, 120.0 / 140], 0.0001);
+        vm.Playback.EventMarkerPosition.ShouldBe(90.0 / 140, 0.0001);
+
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Playback.ChunkBoundaries.ShouldBe([60.0 / 140, 120.0 / 140], 0.0001);
+        vm.Playback.HasEventMarker.ShouldBeTrue();
+        vm.Playback.EventMarkerPosition.ShouldBe(90.0 / 140, 0.0001);
+    }
+
+    [Fact]
+    public void StoppingTheOpenClip_WhenItsEventIsPastTheFootage_ShowsNoMarker()
+    {
+        // The estimate models 180 s, but the footage is 140 s long, so an event at 175 s only fits the estimate.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 3,
+            chunkDurations: [TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(20)]);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Chunks[2].Timestamp.AddSeconds(55));
+        var (vm, _, _) = CreateViewModelWithOpenedClip(clip);
+        vm.Library.SelectedClip = clip;
+        vm.Playback.HasEventMarker.ShouldBeFalse();
+
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Playback.HasEventMarker.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SelectingClipsAfterStop_ShowsEachClipsOwnMarkers()
+    {
+        // The kept markers belong to the stopped clip only, and only until another clip replaces them.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 3,
+            chunkDurations: [TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(20)]);
+        var controller = BuildFourCameraController(new FakeCameraPlayer());
+        controller.LoadClips([clipFiles.Clip]);
+        controller.Playlist.MoveTo(0);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        // Selection loads wait at this never-released gate, so each selection's markers are read before any reopen could replace them.
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => new TaskCompletionSource().Task);
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Library.SelectedClip = ClipWithChunks(4);
+        vm.Playback.ChunkBoundaries.ShouldBe([0.25, 0.5, 0.75], 0.0001);
+
+        vm.Library.SelectedClip = clipFiles.Clip;
+        vm.Playback.ChunkBoundaries.ShouldBe([1.0 / 3, 2.0 / 3], 0.0001);
     }
 
     [Fact]
@@ -236,4 +350,7 @@ public sealed partial class MainWindowViewModelTests
         changed.ShouldContain(nameof(PlaybackViewModel.HasEventMarker));
         changed.ShouldContain(nameof(PlaybackViewModel.ChunkBoundaries));
     }
+
+    private static CamClip WithEventAt(CamClip clip, DateTime timestamp) =>
+        new(clip.FullPath, clip.Name, clip.Timestamp, clip.Chunks, new CamEvent { Reason = "user_interaction_honk", Timestamp = timestamp });
 }

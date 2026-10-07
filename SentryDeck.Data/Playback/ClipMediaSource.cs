@@ -15,7 +15,8 @@ public sealed record class ClipMediaSource(
     IReadOnlyList<int> AutoExcludedChunkIndices,
     IReadOnlyList<DateTime> ChunkTimestamps = null,
     IReadOnlyList<TimeSpan> ChunkDurations = null,
-    DateTime? ClipStartTimestamp = null)
+    DateTime? ClipStartTimestamp = null,
+    IReadOnlyDictionary<string, TimeSpan> CameraDurations = null)
 {
     /// <summary>
     /// How large a wall-clock gap between consecutive included chunks must be before it counts as a real discontinuity worth marking on the timeline, rather than the normal small skew between a chunk's nominal timestamp and the previous chunk's probed end.
@@ -25,6 +26,17 @@ public sealed record class ClipMediaSource(
     private IReadOnlyList<DateTime> ChunkTimestamps { get; } = ChunkTimestamps ?? [];
 
     private IReadOnlyList<TimeSpan> ChunkDurations { get; } = ChunkDurations ?? [];
+
+    private IReadOnlyDictionary<string, TimeSpan> CameraDurations { get; } = CameraDurations ?? new Dictionary<string, TimeSpan>();
+
+    /// <summary>
+    /// How far into the shared timeline <paramref name="camera"/>'s own footage runs, which can be short of <see cref="Duration"/>.
+    /// A missing or unreadable later file truncates that camera's playlist, and Tesla's side files often stop a few hundred milliseconds before the front file of the same minute.
+    /// A player seeked past the end of its own footage has no frame to land on, so callers need this per camera rather than the front-driven <see cref="Duration"/>.
+    /// Falls back to <see cref="Duration"/> for a camera the builder didn't measure.
+    /// </summary>
+    public TimeSpan DurationOf(string camera) =>
+        camera is not null && CameraDurations.TryGetValue(camera, out var duration) ? duration : Duration;
 
     /// <summary>
     /// Media-time positions where the preceding wall-clock gap between chunks exceeds <see cref="GapThreshold"/> -- i.e. where playback jumps forward in time even though it plays through with no visible stall.
@@ -57,7 +69,8 @@ public sealed record class ClipMediaSource(
     }
 
     /// <summary>
-    /// Maps a wall-clock instant to the corresponding media-time position, or null when it falls outside the clip entirely (before the clip's original start or after the last chunk's probed end).
+    /// Maps a wall-clock instant to the corresponding media-time position, or null when it falls outside the clip entirely (before the clip's original start or more than <see cref="GapThreshold"/> after the last chunk's probed end).
+    /// An instant within <see cref="GapThreshold"/> after the last chunk's probed end maps to the end of the footage, since that is where Tesla's whole-second timestamps put a saved clip's own event.
     /// An instant that falls inside a gap between chunks (deleted/corrupt/excluded footage, or a Sentry idle period) has no media time of its own -- since playback skips straight over the gap, this returns the position of the chunk that resumes right after it, which is the first media time where footage anywhere near that moment is visible.
     /// This mirrors the existing "jump to event" behavior of landing on the nearest available frame rather than refusing to show a marker at all.
     /// A leading gap gets the same treatment: an instant inside excluded leading footage (at or after <see cref="ClipStartTimestamp"/> but before the first included chunk) snaps forward to media time zero.
@@ -98,7 +111,10 @@ public sealed record class ClipMediaSource(
         var lastIndex = ChunkTimestamps.Count - 1;
         var lastChunkEnd = ChunkTimestamps[lastIndex] + ChunkDurations[lastIndex];
 
-        return wallClock == lastChunkEnd ? ChunkStarts[lastIndex] + ChunkDurations[lastIndex] : null;
+        // Tesla stamps event.json at the save moment, and both it and the chunk file names are truncated to whole seconds, so a saved clip's event lands up to about 2 s past the probed end as often as just inside it.
+        // Treating that ordinary skew as outside the clip would cost the clip its event marker, its event start position and Save event clip.
+        // Anything later than GapThreshold is footage that was never saved, so it stays unmapped.
+        return wallClock - lastChunkEnd <= GapThreshold ? ChunkStarts[lastIndex] + ChunkDurations[lastIndex] : null;
     }
 
     /// <summary>

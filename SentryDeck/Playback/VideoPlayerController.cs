@@ -13,6 +13,7 @@ namespace SentryDeck;
 /// Anything that talks to the players runs as a serialized operation, so a seek never interleaves with a clip change or a recovery, and events that arrive mid-operation queue behind it.
 /// Every opened clip is a <see cref="Session"/>; replacing or stopping it cancels its token, and queued work for a session that is no longer current does nothing.
 /// Cameras stay in lockstep because every reposition pauses all players, seeks them all to the same instant, and only then resumes them together.
+/// Each player still runs its own clock while playing, so fast playback can pull them apart; they are lined up again whenever playback pauses or reaches the end (see <see cref="LineUpCamerasAsync"/>).
 /// </remarks>
 public sealed partial class VideoPlayerController : ObservableObject, IDisposable
 {
@@ -38,10 +39,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private static readonly TimeSpan EventLeadIn = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// How far a paused side camera may sit from the front before resuming realigns it.
+    /// How far a paused side camera may sit from the front before pausing or resuming realigns it.
     /// Pausing stops each camera's play thread independently, so they park a frame or two apart; anything beyond that means a camera fell behind and would stay behind.
     /// </summary>
-    private static readonly TimeSpan ResumeAlignmentTolerance = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan PausedAlignmentTolerance = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// How far a side camera may sit from the front after a forward frame step before it is reseeked onto the front's frame.
@@ -54,6 +55,15 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// </summary>
     private static readonly TimeSpan ReplayFromEndWindow = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>
+    /// How far before the end of a camera's own footage its seeks stop.
+    /// An accurate Flyleaf seek past a stream's last frame finds no frame to show and leaves that camera's decoder thread parked for good, so the camera stays frozen on every clip until the app restarts.
+    /// Tesla files show their last frame up to about 60 ms before the duration they record (the final sample falls outside the file's edit list), so one frame of margin is not enough.
+    /// A tenth of a second clears every file measured with room to spare, and stays well inside <see cref="ReplayFromEndWindow"/> so play still replays a clip sent to its end.
+    /// That only holds for a seek that decodes every frame, which is why the Flyleaf player seeks at real time even when playback is fast (see <see cref="PlaybackSpeedGate"/>).
+    /// </summary>
+    internal static readonly TimeSpan EndSeekMargin = TimeSpan.FromMilliseconds(100);
+
     private readonly string _primaryCamera;
     private readonly ICameraPlayer _primaryPlayer;
     private readonly IReadOnlyDictionary<string, ICameraPlayer> _players;
@@ -61,9 +71,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private Session _session;
     private QueuedSeek _queuedSeek;
+    private QueuedSeek _runningSeek;
     private bool _isScrubbing;
     private bool _resumeAfterScrub;
     private bool _isDisposed;
+    private (CamClip Clip, TimeSpan Position, bool Play)? _requestedStart;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPlayPause))]
@@ -160,6 +172,12 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// </summary>
     public ClipMediaSource OpenedMediaSource => _session is { IsOpen: true } session ? session.Source : null;
 
+    /// <summary>
+    /// The clip <see cref="OpenedMediaSource"/> belongs to, or null when nothing is open; it changes along with <see cref="OpenedMediaSource"/>.
+    /// Next and Previous move <see cref="CurrentClip"/> at once, and the previous clip's media stays open until the new clip starts opening, so the two can briefly disagree.
+    /// </summary>
+    public CamClip OpenedClip => _session is { IsOpen: true } session ? session.Clip : null;
+
     public bool CanPlayPause => CurrentClip is not null && !IsLoading;
 
     public bool CanGoNext => Playlist.HasNext;
@@ -191,9 +209,17 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
     public Task PauseAsync() => RunOperationAsync(_session, "Playback error", async _ =>
     {
+        // A scrub already holds the players paused, and its release seek lines them up.
+        var wasPlaying = IsPlaying && !_isScrubbing;
         _resumeAfterScrub = false;
         await ForEachOpenPlayerAsync(player => player.PauseAsync());
         IsPlaying = false;
+
+        if (wasPlaying)
+        {
+            await LineUpPausedCamerasAsync();
+        }
+
         Log.Debug("Paused playback. ClipName={ClipName}; Position={Position}", CurrentClip?.Name, Position);
     });
 
@@ -221,13 +247,19 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     public Task SeekAsync(TimeSpan position) => QueueSeek(position, accurate: true);
 
     /// <summary>
-    /// Seeks relative to where playback is headed: a seek still waiting to run counts as the starting point, so holding an arrow key moves five seconds per press instead of collapsing onto the stale on-screen position.
+    /// Seeks relative to where playback is headed: a seek still waiting to run or still landing counts as the starting point, so holding an arrow key moves five seconds per press instead of collapsing onto the stale on-screen position.
     /// </summary>
     public Task SeekByAsync(TimeSpan offset)
     {
-        var origin = _queuedSeek is { } queued && ReferenceEquals(queued.Session, _session) ? queued.Target : Position;
+        var origin = PendingSeekOf(_queuedSeek) ?? PendingSeekOf(_runningSeek) ?? Position;
         return QueueSeek(Clamp(origin + offset, TimeSpan.Zero, Duration), accurate: true);
     }
+
+    /// <summary>
+    /// Where <paramref name="seek"/> is headed, when it belongs to the open clip.
+    /// </summary>
+    private TimeSpan? PendingSeekOf(QueuedSeek seek) =>
+        seek is not null && ReferenceEquals(seek.Session, _session) ? seek.Target : null;
 
     /// <summary>
     /// Like <see cref="SeekAsync"/> but jumps to the nearest keyframe, which is far cheaper.
@@ -283,6 +315,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             await ForEachOpenPlayerAsync(player => player.PauseAsync());
             IsPlaying = false;
+
+            // Stepping on from wherever fast playback left each camera would keep them apart, so they start the step from one frame.
+            await LineUpPausedCamerasAsync();
         }
 
         _resumeAfterScrub = false;
@@ -298,8 +333,8 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var anchor = _primaryPlayer.Position;
         await Task.WhenAll(SecondaryPlayers()
-            .Where(player => !forward || (player.Position - anchor).Duration() > StepAlignmentTolerance)
-            .Select(player => player.SeekAsync(anchor)));
+            .Where(player => !forward || !IsAlignedWith(player, anchor, StepAlignmentTolerance))
+            .Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
 
         Position = Clamp(anchor, TimeSpan.Zero, Duration);
     });
@@ -329,6 +364,39 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     {
         Playlist.MoveTo(index);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Like <see cref="GoToClipAsync(CamClip)"/>, but the clip opens at <paramref name="startPosition"/>, playing or paused, instead of just before its event.
+    /// A clip read from disk again keeps the viewer's place this way, without first playing on from its event.
+    /// </summary>
+    public Task GoToClipAsync(CamClip clip, TimeSpan startPosition, bool play)
+    {
+        // Moving to the clip starts its open before returning, so only that open sees the request.
+        _requestedStart = (clip, startPosition, play);
+        try
+        {
+            Playlist.MoveTo(clip);
+        }
+        finally
+        {
+            _requestedStart = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="clip"/> again at <paramref name="position"/>, after <see cref="StopAsync"/> closed it to release its files for something that then didn't happen.
+    /// A plain open starts at the event instead, which would lose the user's place.
+    /// Does nothing once anything has been opened since the stop, so a late call can't take the player back from what the user moved on to.
+    /// </summary>
+    public Task ReopenAsync(CamClip clip, TimeSpan position, bool play)
+    {
+        if (_session is not null || clip is null || !ReferenceEquals(CurrentClip, clip))
+            return Task.CompletedTask;
+
+        return OpenClipAsync(clip, position, play);
     }
 
     public async Task LoadClipsAsync(IEnumerable<CamClip> clips)
@@ -383,7 +451,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
     }
 
-    private async Task OpenClipAsync(CamClip clip)
+    private async Task OpenClipAsync(CamClip clip, TimeSpan? startPosition = null, bool play = true)
     {
         _session?.Cancel();
         var session = new Session(clip);
@@ -398,7 +466,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         {
             try
             {
-                await OpenClipCoreAsync(session, token);
+                await OpenClipCoreAsync(session, startPosition, play, token);
             }
             finally
             {
@@ -410,7 +478,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         });
     }
 
-    private async Task OpenClipCoreAsync(Session session, CancellationToken token)
+    private async Task OpenClipCoreAsync(Session session, TimeSpan? startPosition, bool play, CancellationToken token)
     {
         var clip = session.Clip;
 
@@ -435,7 +503,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             clip.Chunks.Count,
             mediaSource.Duration);
 
-        await OpenSourceAsync(session, mediaSource, ResolveEventStartPosition(clip, mediaSource), play: true, token);
+        await OpenSourceAsync(session, mediaSource, startPosition ?? ResolveEventStartPosition(clip, mediaSource), play, token);
     }
 
     /// <summary>
@@ -462,16 +530,20 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         if (!mediaSource.CameraPlaylistPaths.ContainsKey(_primaryCamera))
         {
+            // A fully encrypted clip lands here too: the builder finds no readable moov in any front file and excludes every chunk.
+            // Telling these apart means opening the clip's files, which can stall on a slow or disconnected drive, so it runs off the UI thread like the build.
+            var reason = await Task.Run(
+                () => EncryptedClipDetector.LooksEncrypted(clip) ? EncryptedClipMessage : DescribeUnplayablePrimary(clip),
+                token);
+            token.ThrowIfCancellationRequested();
+            ErrorMessage = reason;
+
             Log.Warning(
-                "Cannot open clip because the primary camera is missing. PrimaryCamera={PrimaryCamera}; ClipName={ClipName}; Cameras={Cameras}",
+                "Cannot open clip because the primary camera is missing. PrimaryCamera={PrimaryCamera}; ClipName={ClipName}; Cameras={Cameras}; Reason={Reason}",
                 _primaryCamera,
                 clip.Name,
-                mediaSource.CameraPlaylistPaths.Keys.Order().ToArray());
-
-            // A fully encrypted clip lands here too: the builder finds no readable moov in any front file and excludes every chunk.
-            ErrorMessage = EncryptedClipDetector.LooksEncrypted(clip)
-                ? EncryptedClipMessage
-                : $"No {CameraNames.DisplayName(_primaryCamera)} camera footage found.";
+                mediaSource.CameraPlaylistPaths.Keys.Order().ToArray(),
+                ErrorMessage);
             return;
         }
 
@@ -483,6 +555,9 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         Duration = mediaSource.Duration;
+        session.SeekLimits = _players.ToDictionary(
+            pair => pair.Value,
+            pair => Clamp(mediaSource.DurationOf(pair.Key) - EndSeekMargin, TimeSpan.Zero, Duration));
 
         var opens = _players.Select(async pair => (pair.Key, Opened: await OpenCameraAsync(pair.Key, pair.Value, mediaSource))).ToList();
         var results = await Task.WhenAll(opens);
@@ -496,10 +571,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         ApplyPlaybackSpeed();
 
-        var start = Clamp(startPosition, TimeSpan.Zero, Duration);
+        var start = Clamp(startPosition, TimeSpan.Zero, SeekableEnd);
         if (start > TimeSpan.Zero)
         {
-            await ForEachOpenPlayerAsync(player => player.SeekAsync(start));
+            await ForEachOpenPlayerAsync(player => player.SeekAsync(SeekTargetFor(player, start)));
             token.ThrowIfCancellationRequested();
         }
 
@@ -521,6 +596,59 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             start,
             IsPlaying,
             results.Where(result => result.Opened).Select(result => result.Key).Order().ToArray());
+    }
+
+    /// <summary>
+    /// Says why a clip has no primary-camera footage to play.
+    /// The builder drops a missing, locked, or damaged file alike, but each needs something different from the user: a locked file plays as soon as the other program lets go of it, and a moved clip needs a rescan.
+    /// </summary>
+    private string DescribeUnplayablePrimary(CamClip clip)
+    {
+        var camera = CameraNames.DisplayName(_primaryCamera);
+        var paths = clip.Chunks
+            .Select(chunk => chunk.Files.GetValueOrDefault(_primaryCamera)?.FullPath)
+            .OfType<string>()
+            .ToList();
+
+        if (paths.Count == 0)
+        {
+            return $"No {camera} camera footage found.";
+        }
+
+        if (paths.Any(IsInUseByAnotherProgram))
+        {
+            return $"The {camera} camera video can't be read because another program is using it. Close that program, then press Play to try again.";
+        }
+
+        if (paths.Any(File.Exists))
+        {
+            return $"The {camera} camera video can't be read. The file may be damaged or incomplete.";
+        }
+
+        return $"The {camera} camera video can't be found. The clip may have been moved or deleted; rescan the folder to update the list.";
+    }
+
+    /// <summary>
+    /// True when another program holds <paramref name="path"/> open without sharing it.
+    /// Opens it the way the duration probe does, so a file this reports as free is one the probe could open too.
+    /// </summary>
+    private static bool IsInUseByAnotherProgram(string path)
+    {
+        const int ErrorSharingViolation = 32;
+
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return false;
+        }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) == ErrorSharingViolation)
+        {
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private async Task<bool> OpenCameraAsync(string camera, ICameraPlayer player, ClipMediaSource mediaSource)
@@ -603,7 +731,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
         var seek = new QueuedSeek(_session, target, accurate);
         _queuedSeek = seek;
-        seek.Completion = RunOperationAsync(_session, "Seek error", _ =>
+        seek.Completion = RunOperationAsync(_session, "Seek error", async _ =>
         {
             // From here on a new request queues a fresh seek instead of retargeting this one.
             if (ReferenceEquals(_queuedSeek, seek))
@@ -611,7 +739,16 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
                 _queuedSeek = null;
             }
 
-            return RepositionAsync(seek.Target, seek.Accurate);
+            // Relative seeks start from this target until it lands, because Position only moves once every camera has landed and a held key repeats sooner than that.
+            _runningSeek = seek;
+            try
+            {
+                await RepositionAsync(seek.Target, seek.Accurate);
+            }
+            finally
+            {
+                _runningSeek = null;
+            }
         });
 
         if (ReferenceEquals(_queuedSeek, seek) && seek.Completion.IsCompleted)
@@ -632,7 +769,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         if (!IsSessionOpen || Duration <= TimeSpan.Zero)
             return;
 
-        var target = Clamp(position, TimeSpan.Zero, Duration);
+        var target = Clamp(position, TimeSpan.Zero, SeekableEnd);
         var playersRunning = IsPlaying && !_isScrubbing;
 
         if (playersRunning)
@@ -640,7 +777,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             await ForEachOpenPlayerAsync(player => player.PauseAsync());
         }
 
-        await ForEachOpenPlayerAsync(player => player.SeekAsync(target, accurate));
+        await ForEachOpenPlayerAsync(player => player.SeekAsync(SeekTargetFor(player, target), accurate));
         Position = target;
 
         if (playersRunning)
@@ -656,7 +793,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     {
         var anchor = _primaryPlayer.Position;
         var drifted = SecondaryPlayers()
-            .Where(player => player.IsEnded || (player.Position - anchor).Duration() > ResumeAlignmentTolerance)
+            .Where(player => player.IsEnded || !IsAlignedWith(player, anchor, PausedAlignmentTolerance))
             .ToList();
 
         if (drifted.Count == 0)
@@ -665,7 +802,76 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         Log.Debug("Realigning side cameras before resuming. Count={Count}; Anchor={Anchor}", drifted.Count, anchor);
-        return Task.WhenAll(drifted.Select(player => player.SeekAsync(anchor)));
+        return Task.WhenAll(drifted.Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
+    }
+
+    /// <summary>
+    /// Lines the just-paused cameras up on the front's moment, and moves the readout onto the frame the front then shows.
+    /// </summary>
+    private async Task LineUpPausedCamerasAsync()
+    {
+        // An ended front is parked by the end handler queued behind this.
+        if (!IsSessionOpen || !_primaryPlayer.IsOpen || _primaryPlayer.IsEnded)
+            return;
+
+        var anchor = Clamp(_primaryPlayer.Position, TimeSpan.Zero, SeekableEnd);
+        if (await LineUpCamerasAsync(anchor, _players.Values))
+        {
+            Position = anchor;
+        }
+    }
+
+    /// <summary>
+    /// Once playback has stopped, seeks each of <paramref name="players"/> that isn't showing the moment at <paramref name="anchor"/> onto it (or onto its own last frame when its footage ends sooner), so the still frame the user studies shows every camera at the same moment as the time readout.
+    /// </summary>
+    /// <remarks>
+    /// Every camera runs its own clock.
+    /// Faster than real time, a camera that can't decode every frame drops the late ones and restarts its clock wherever its decoder caught up, so at 16x the cameras drift up to a second and a half apart while playing.
+    /// A camera's reported time also trails the frame it shows by up to a third of a second then, because the next frame is drawn before its time is published.
+    /// So after fast playback no camera's position can be trusted, and every camera, the front included, is reseeked.
+    /// At real time the positions are accurate, and only a camera that is actually out of step moves.
+    /// </remarks>
+    /// <returns>Whether the front was reseeked, in which case the readout has to follow it.</returns>
+    private async Task<bool> LineUpCamerasAsync(TimeSpan anchor, IEnumerable<ICameraPlayer> players)
+    {
+        var positionsAreTrustworthy = PlaybackSpeed <= 1.0;
+        var outOfStep = players
+            .Where(player => player.IsOpen && !(positionsAreTrustworthy && IsAlignedWith(player, anchor, PausedAlignmentTolerance)))
+            .ToList();
+
+        if (outOfStep.Count == 0)
+        {
+            return false;
+        }
+
+        Log.Debug("Lining the cameras up after playback stopped. Count={Count}; Anchor={Anchor}; PlaybackSpeed={PlaybackSpeed}", outOfStep.Count, anchor, PlaybackSpeed);
+        await Task.WhenAll(outOfStep.Select(player => player.SeekAsync(SeekTargetFor(player, anchor))));
+        return outOfStep.Contains(_primaryPlayer);
+    }
+
+    /// <summary>
+    /// The furthest the shared timeline can be seeked: the front's last frame, since the front drives the clock.
+    /// </summary>
+    private TimeSpan SeekableEnd => SeekTargetFor(_primaryPlayer, Duration);
+
+    /// <summary>
+    /// Where <paramref name="player"/> goes for a seek to <paramref name="position"/>: there, or its own last frame when its footage runs out sooner.
+    /// </summary>
+    private TimeSpan SeekTargetFor(ICameraPlayer player, TimeSpan position) =>
+        _session?.SeekLimits.TryGetValue(player, out var limit) == true && position > limit ? limit : position;
+
+    /// <summary>
+    /// Whether <paramref name="player"/> already shows what a seek to <paramref name="anchor"/> would show it.
+    /// </summary>
+    private bool IsAlignedWith(ICameraPlayer player, TimeSpan anchor, TimeSpan tolerance)
+    {
+        var target = SeekTargetFor(player, anchor);
+
+        // Past the end of its own footage a camera only has its last frame to show, and anywhere from its seek limit on already shows it.
+        // Reseeking it there on every frame step would only make it jump back and forth.
+        return target < anchor
+            ? player.Position >= target
+            : (player.Position - target).Duration() <= tolerance;
     }
 
     private async Task PlayAllAsync()
@@ -787,7 +993,10 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             Playlist.CurrentIndex,
             Playlist.Clips.Count);
 
-        _ = OpenClipAsync(clip);
+        // A clip reached through GoToClipAsync with a start position opens there instead of just before its event.
+        _ = _requestedStart is { } start && start.Clip == clip
+            ? OpenClipAsync(clip, start.Position, start.Play)
+            : OpenClipAsync(clip);
     }
 
     private void OnPlaylistChanged(object sender, EventArgs e)
@@ -824,7 +1033,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
 
             // Deliberately no auto-advance to the next clip: each clip is its own incident, and the most likely follow-up is replaying it.
             // The media stays open so the scrubber and frame-step remain usable to review the final moments, and play replays from the start.
-            Position = Duration;
+            // Past real time the front can reach its end on a frame most of a second early: it drops the frames it can't decode in time, then jumps its clock to the end without drawing the rest.
+            // A side camera that lagged behind can still be mid-stream, half a second or more short of its own end.
+            // So every camera is moved onto its last frame, and the readout follows a front that had to move.
+            // These are paused seeks, which the Flyleaf player decodes at real time, so even a camera stopped mid-stream lands on a frame instead of parking its decoder.
+            Position = await LineUpCamerasAsync(Duration, _players.Values) ? SeekableEnd : Duration;
         });
     }
 
@@ -869,7 +1082,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
     /// Handles the front camera stopping well short of <see cref="Duration"/>, which means the concat demuxer hit a corrupt or truncated chunk.
     /// Recovery is probe-first: rebuild with the current exclusions and let the builder's per-file probe find the culprit (the demuxer reads ahead of the presentation position, so the failure position can sit inside a healthy chunk).
     /// Only when the probe finds nothing new is the chunk containing the failure position excluded.
-    /// Playback resumes at the start of the chunk that failed, and gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on one clip.
+    /// Playback resumes on the footage where it failed, or where the following footage now begins when the chunk under the failure was excluded, and gives up after <see cref="MaxRecoveryAttemptsPerClip"/> attempts on one clip.
     /// </summary>
     private async Task RecoverAsync(Session session, TimeSpan failurePosition, bool wasPlaying, CancellationToken token)
     {
@@ -883,7 +1096,7 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
             badChunkTimelineIndex = i;
         }
 
-        var resumePosition = mediaSource.ChunkStarts.Count > 0 ? mediaSource.ChunkStarts[badChunkTimelineIndex] : TimeSpan.Zero;
+        var offsetInBadChunk = mediaSource.ChunkStarts.Count > 0 ? failurePosition - mediaSource.ChunkStarts[badChunkTimelineIndex] : TimeSpan.Zero;
         var positionDerivedIndex = MapTimelineIndexToOriginalChunkIndex(clip, session.ExcludedChunks, badChunkTimelineIndex);
 
         if (session.RecoveryAttempts >= MaxRecoveryAttemptsPerClip)
@@ -929,6 +1142,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         token.ThrowIfCancellationRequested();
+
+        // A file that turns unreadable mid-playback fails as the demuxer reaches it, at the end of the healthy chunk before it.
+        // Resuming at that chunk's start would replay up to a minute the user just watched, so playback picks up on the same footage instead.
+        var excludedAfter = session.ExcludedChunks.Union(rebuilt.AutoExcludedChunkIndices).ToHashSet();
+        var resumePosition = MapChunkOffsetToTimeline(rebuilt, excludedAfter, positionDerivedIndex, offsetInBadChunk);
         await OpenSourceAsync(session, rebuilt, resumePosition, wasPlaying, token);
     }
 
@@ -972,6 +1190,36 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// Finds where the footage <paramref name="offsetInChunk"/> into the clip's chunk <paramref name="chunkIndex"/> sits on <paramref name="source"/>, a timeline built without the chunks in <paramref name="excluded"/>.
+    /// An excluded chunk has no footage left to show, so a moment inside one lands where the next surviving chunk begins, or at the end when none follows.
+    /// </summary>
+    private static TimeSpan MapChunkOffsetToTimeline(ClipMediaSource source, IReadOnlySet<int> excluded, int chunkIndex, TimeSpan offsetInChunk)
+    {
+        var timelineIndex = 0;
+        for (var index = 0; index < chunkIndex; index++)
+        {
+            if (!excluded.Contains(index))
+            {
+                timelineIndex++;
+            }
+        }
+
+        if (timelineIndex >= source.ChunkStarts.Count)
+        {
+            return source.Duration;
+        }
+
+        var chunkStart = source.ChunkStarts[timelineIndex];
+        if (excluded.Contains(chunkIndex))
+        {
+            return chunkStart;
+        }
+
+        var chunkEnd = timelineIndex + 1 < source.ChunkStarts.Count ? source.ChunkStarts[timelineIndex + 1] : source.Duration;
+        return Clamp(chunkStart + offsetInChunk, chunkStart, chunkEnd);
     }
 
     private void OnPositionChanged(object sender, CameraPositionChangedEventArgs e)
@@ -1018,6 +1266,11 @@ public sealed partial class VideoPlayerController : ObservableObject, IDisposabl
         public CamClip Clip { get; } = clip;
 
         public ClipMediaSource Source { get; set; }
+
+        /// <summary>
+        /// The furthest each player can be seeked and still land on one of its own frames (see <see cref="EndSeekMargin"/>).
+        /// </summary>
+        public IReadOnlyDictionary<ICameraPlayer, TimeSpan> SeekLimits { get; set; } = new Dictionary<ICameraPlayer, TimeSpan>();
 
         /// <summary>True once every camera is open and positioned; false while opening, after a failure, or once replaced.</summary>
         public bool IsOpen { get; set; }

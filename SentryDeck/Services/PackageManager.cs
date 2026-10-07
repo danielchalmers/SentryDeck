@@ -1,6 +1,7 @@
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using Serilog;
 
@@ -167,6 +168,40 @@ public static class PackageManager
         }
 
         return removedCount;
+    }
+
+    /// <summary>
+    /// Explains a failed FFmpeg download in words the user can act on, ending with how to install FFmpeg by hand.
+    /// The exception's own text names sockets and IP addresses, which tells nobody what to try next; the caller logs the exception itself for diagnosis.
+    /// </summary>
+    internal static string DescribeDownloadFailure(Exception exception)
+    {
+        var cause = exception switch
+        {
+            _ when IsNetworkFailure(exception) =>
+                "Sentry Deck couldn't download FFmpeg. Check that this PC is online and that no proxy or firewall blocks github.com, then try again.",
+            UnauthorizedAccessException =>
+                "Sentry Deck couldn't save FFmpeg in its own folder. Move Sentry Deck to a folder you can write to, then try again.",
+            IOException =>
+                "Sentry Deck couldn't save FFmpeg. Check that the drive has free space, then try again.",
+            _ => $"Sentry Deck couldn't install FFmpeg ({exception.Message}). Try again.",
+        };
+
+        return $"{cause}\n\nTo install it yourself, copy the contents of the bin folder of an FFmpeg {FFmpegReleaseBranch} shared build into {Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName)} and restart Sentry Deck.";
+    }
+
+    // A dropped connection can surface while the body streams to disk, as an IOException wrapping the socket error, so the whole chain is searched rather than only the outer type.
+    private static bool IsNetworkFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is HttpRequestException or HttpIOException or SocketException or TimeoutException or TaskCanceledException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

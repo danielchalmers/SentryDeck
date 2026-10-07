@@ -9,21 +9,22 @@ using System.Windows.Media.Imaging;
 namespace SentryDeck;
 
 /// <summary>
-/// Friendly event-reason label for a <see cref="CamEvent"/> (e.g. "Sentry", "Honk", "Saved").
+/// Friendly event-reason label for a <see cref="CamClip"/> or <see cref="CamEvent"/> (e.g. "Sentry", "Honk", "Saved").
+/// Bind the clip where there is one: a clip without event.json takes its label from its TeslaCam folder, which a bare event can't tell.
 /// </summary>
 public sealed class ReasonLabelConverter : MarkupExtension, IValueConverter
 {
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => ClipDisplay.ReasonLabel(value as CamEvent);
+        => value is CamClip clip ? ClipDisplay.ReasonLabel(clip) : ClipDisplay.ReasonLabel(value as CamEvent);
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
 
 /// <summary>
-/// The stable reason category key for a <see cref="CamEvent"/> (see <see cref="ClipDisplay.ReasonKey"/>).
+/// The stable reason category key for a <see cref="CamClip"/> or <see cref="CamEvent"/> (see <see cref="ClipDisplay.ReasonKey(CamClip)"/>).
 /// Reason-colored overlays bind this into DataTriggers that pick a theme brush via <c>DynamicResource</c>, so the color follows a live OS light/dark switch.
 /// (Resolving the brush in the converter instead returned a one-time snapshot that stayed on the old theme.)
 /// </summary>
@@ -32,7 +33,7 @@ public sealed class ReasonKeyConverter : MarkupExtension, IValueConverter
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => ClipDisplay.ReasonKey(value as CamEvent);
+        => value is CamClip clip ? ClipDisplay.ReasonKey(clip) : ClipDisplay.ReasonKey(value as CamEvent);
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
@@ -52,12 +53,11 @@ public sealed class FriendlyDateConverter : MarkupExtension, IValueConverter
         if (value is not DateTime dt)
             return string.Empty;
 
-        var c = CultureInfo.CurrentCulture;
         return (parameter as string)?.ToLowerInvariant() switch
         {
-            "date" => dt.ToString("ddd, MMM d", c),
-            "time" => dt.ToString("t", c),
-            _ => $"{dt.ToString("ddd, MMM d", c)} {dt.ToString("t", c)}",
+            "date" => ClipDisplay.RowDate(dt),
+            "time" => ClipDisplay.RowTime(dt),
+            _ => $"{ClipDisplay.RowDate(dt)} {ClipDisplay.RowTime(dt)}",
         };
     }
 
@@ -77,14 +77,7 @@ public sealed class DayGroupHeaderConverter : MarkupExtension, IValueConverter
         if (value is not DateTime dt)
             return string.Empty;
 
-        var date = dt.Date;
-        var today = DateTime.Today;
-        if (date == today)
-            return "Today";
-        if (date == today.AddDays(-1))
-            return "Yesterday";
-
-        return date.ToString("dddd, MMMM d, yyyy", CultureInfo.CurrentCulture);
+        return ClipDisplay.DayHeader(dt);
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -106,7 +99,7 @@ public sealed class DateOnlyConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Estimated clip duration as a human string, e.g. "~5 min" (uses the modeled <see cref="ClipTimeline.Duration"/> = chunk count × 60s).
+/// Estimated clip duration as a human string, e.g. "~5 min" (from <see cref="CamClip.EstimatedDuration"/>).
 /// </summary>
 public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
 {
@@ -117,10 +110,14 @@ public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
         if (value is not CamClip clip)
             return string.Empty;
 
-        var duration = new ClipTimeline(clip.Chunks).Duration;
-        var minutes = (int)Math.Round(duration.TotalMinutes);
-        if (minutes <= 0)
+        var duration = clip.EstimatedDuration;
+        if (duration <= TimeSpan.Zero)
             return "—";
+
+        // A clip of a few seconds has footage, so it must not round down to the dash that means there is none.
+        var minutes = (int)Math.Round(duration.TotalMinutes);
+        if (minutes == 0)
+            return "<1 min";
 
         return minutes < 60
             ? $"~{minutes} min"
@@ -132,8 +129,8 @@ public sealed class ClipDurationConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Loads a clip thumbnail if the file exists; returns null otherwise so a fallback can show.
-/// Pass ConverterParameter="fallback" to instead get a Visibility that is Visible when missing.
+/// Loads a clip thumbnail, or returns null when the file is missing or can't be decoded.
+/// The clip card shows its missing-thumbnail glyph whenever this image is null, so a corrupt or zero-byte thumb.png gets the glyph too instead of an empty tile.
 /// </summary>
 public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
 {
@@ -142,12 +139,7 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         var path = value as string;
-        var exists = !string.IsNullOrEmpty(path) && File.Exists(path);
-
-        if (string.Equals(parameter as string, "fallback", StringComparison.OrdinalIgnoreCase))
-            return exists ? Visibility.Collapsed : Visibility.Visible;
-
-        if (!exists)
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
             return null;
 
         try
@@ -176,14 +168,16 @@ public sealed class ThumbnailConverter : MarkupExtension, IValueConverter
 }
 
 /// <summary>
-/// Visibility.Visible when the event has usable coordinates for a map lookup.
+/// Visibility.Visible when the event names a city, for the clip card's location line.
+/// The line shows the city, so it follows the city rather than the coordinates: Tesla can record a city with blank or 0,0 coordinates, and coordinates without a city would leave a lone pin.
+/// Search matches the city too, so a clip found by its city always shows it.
 /// </summary>
-public sealed class MapAvailabilityConverter : MarkupExtension, IValueConverter
+public sealed class CityVisibilityConverter : MarkupExtension, IValueConverter
 {
     public override object ProvideValue(IServiceProvider serviceProvider) => this;
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        => ClipDisplay.HasLocation(value as CamEvent) ? Visibility.Visible : Visibility.Collapsed;
+        => string.IsNullOrWhiteSpace((value as CamEvent)?.City) ? Visibility.Collapsed : Visibility.Visible;
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();

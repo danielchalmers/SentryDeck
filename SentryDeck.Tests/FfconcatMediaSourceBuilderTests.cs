@@ -155,6 +155,23 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     }
 
     [Fact]
+    public void Build_ClipFolderRenamedToAVeryLongName_StillWritesEveryCamerasPlaylist()
+    {
+        // A folder renamed without a date keeps its whole name as the clip name, and one of a couple of hundred characters used to push the playlist file names past the 255-character limit, so the clip failed to open.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var longName = string.Concat(Enumerable.Repeat("Road trip along the coast ", 10));
+        var clip = new CamClip(clipFiles.Clip.FullPath, longName, clipFiles.Clip.Timestamp, clipFiles.Clip.Chunks, camEvent: null);
+
+        var mediaSource = Build(clip);
+
+        mediaSource.CameraPlaylistPaths.Keys.ShouldBe(CameraNames.All, ignoreOrder: true);
+        foreach (var (camera, playlistPath) in mediaSource.CameraPlaylistPaths)
+        {
+            File.ReadAllText(playlistPath).ShouldContain(clipFiles.GetFfconcatPath(0, camera));
+        }
+    }
+
+    [Fact]
     public void Build_TwoDifferentClipsWithTheSameName_WritePlaylistsToDifferentPaths()
     {
         // Clips are named from their folder timestamp, so a RecentClips/SavedClips pair -- or the same footage on two drives -- genuinely share a name.
@@ -364,6 +381,40 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
         frontContent.ShouldContain(clipFiles.GetFfconcatPath(2, CameraNames.Front));
     }
 
+    [Fact]
+    public void Build_TruncatedFrontWithAReadableNumberedCopy_PlaysTheCopy()
+    {
+        // A single-chunk clip used to fail with "No front camera footage found." while an intact front-2.mp4 sat beside the damaged original.
+        using var temp = new TempDirectory();
+        temp.Write("2025-04-11_14-34-07-front.mp4", TestMp4.BuildTruncated(keepBytes: 30));
+        var copyPath = temp.Write("2025-04-11_14-34-07-front-2.mp4", TestMp4.BuildWithDuration(TimeSpan.FromSeconds(60)));
+        var clip = CamClip.Map(temp.Path);
+
+        var mediaSource = Build(clip);
+
+        mediaSource.AutoExcludedChunkIndices.ShouldBeEmpty();
+        mediaSource.Duration.ShouldBe(TimeSpan.FromSeconds(60));
+        File.ReadAllText(mediaSource.CameraPlaylistPaths[CameraNames.Front]).ShouldContain(FfconcatMediaSourceBuilder.EscapeConcatPath(copyPath));
+    }
+
+    [Fact]
+    public void Build_SideCamerasEndingEarly_ReportWhereEachCamerasFootageEnds()
+    {
+        // A player seeked past the end of its own footage has no frame to land on, so each camera's end must be known, not just the front's.
+        // Tesla's side files often stop a few hundred milliseconds before the front file of the same minute, and an unreadable file truncates a camera outright.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.LeftRepeater), TestMp4.BuildWithDuration(TimeSpan.FromSeconds(59.4)));
+        File.WriteAllBytes(clipFiles.GetPath(1, CameraNames.Back), TestMp4.GarbageBytes);
+
+        var mediaSource = Build(clipFiles.Clip);
+
+        mediaSource.Duration.ShouldBe(TimeSpan.FromSeconds(120));
+        mediaSource.DurationOf(CameraNames.Front).ShouldBe(TimeSpan.FromSeconds(120));
+        mediaSource.DurationOf(CameraNames.LeftRepeater).ShouldBe(TimeSpan.FromSeconds(119.4));
+        mediaSource.DurationOf(CameraNames.Back).ShouldBe(TimeSpan.FromSeconds(60));
+        mediaSource.DurationOf(CameraNames.RightRepeater).ShouldBe(TimeSpan.FromSeconds(120));
+    }
+
     // --- Chunks whose probed durations differ from their nominal one-minute spacing ---
 
     [Fact]
@@ -520,12 +571,24 @@ public sealed class FfconcatMediaSourceBuilderTests : IDisposable
     }
 
     [Fact]
-    public void ToMediaTime_InstantAfterClipEnd_ReturnsNull()
+    public void ToMediaTime_EventStampedJustAfterClipEnd_MapsToTheEndOfTheFootage()
     {
         using var clipFiles = TestClipFiles.Create(chunkCount: 2);
         var mediaSource = Build(clipFiles.Clip);
 
-        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(61);
+        // Real saved clips put their event up to about 1.9 s past the last chunk's probed end, because Tesla stamps the save moment and both timestamps are truncated to whole seconds.
+        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(61.88);
+
+        mediaSource.ToMediaTime(instant).ShouldBe(mediaSource.Duration);
+    }
+
+    [Fact]
+    public void ToMediaTime_InstantFarPastClipEnd_ReturnsNull()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 2);
+        var mediaSource = Build(clipFiles.Clip);
+
+        var instant = clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(90);
 
         mediaSource.ToMediaTime(instant).ShouldBeNull();
     }

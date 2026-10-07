@@ -14,6 +14,10 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
     private static readonly string DefaultPlaylistDirectory =
         Path.Combine(Path.GetTempPath(), "SentryDeck", "playlists");
 
+    // A folder renamed without a date keeps its whole name as the clip name, and a long one would push the playlist file names past the 255-character limit, so the clip could not open.
+    // The name only helps someone reading the playlist folder or the log; the path hash is what keeps clips apart, so capping it costs nothing.
+    private const int MaxClipNameLengthInFileName = 64;
+
     /// <summary>
     /// Where the generated .ffconcat playlists are written.
     /// The app shares one directory and reuses each clip's file name across sessions, so the folder stays bounded; tests override it with a directory of their own because their fixture clips live under a fresh GUID root every run and would otherwise leave a permanent file behind for each one.
@@ -59,6 +63,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
         }
 
         var playlistPaths = new Dictionary<string, string>();
+        var cameraDurations = new Dictionary<string, TimeSpan>();
 
         // Distinct clips can share a display name; only the folder path is unique per clip, so it is hashed into the filename to keep two clips (built concurrently or not) from clobbering each other's playlists.
         // Must stay deterministic per clip: rebuilds overwrite in place.
@@ -111,6 +116,10 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
             var playlistPath = Path.Combine(PlaylistDirectory, $"{clipToken}-{camera}.ffconcat");
             WritePlaylist(playlistPath, entries);
             playlistPaths[camera] = playlistPath;
+
+            // Every entry but the last starts where the front says, so only the last file's own length decides where this camera's footage runs out.
+            var lastFileDuration = Mp4DurationReader.TryReadDuration(entries[^1].FilePath) ?? entries[^1].Duration;
+            cameraDurations[camera] = chunkStarts[entries.Count - 1] + lastFileDuration;
         }
 
         var duration = chunkStarts.Count == 0
@@ -122,13 +131,8 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
         // The clip's ORIGINAL start (even if that chunk was excluded), so ToMediaTime can tell an event inside excluded leading footage (snap to media time zero) from pre-clip clock skew.
         DateTime? clipStartTimestamp = clip.Chunks.Count > 0 ? clip.Chunks[0].Timestamp : null;
 
-        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp);
+        return new ClipMediaSource(duration, chunkStarts, playlistPaths, autoExcludedIndices, chunkTimestamps, chunkDurations, clipStartTimestamp, cameraDurations);
     }
-
-    /// <summary>
-    /// Tesla writes chunks of about a minute; a header claiming far more is corrupt, and trusting it would stretch the clip's timeline by hours of footage that isn't there.
-    /// </summary>
-    private static readonly TimeSpan MaxPlausibleChunkDuration = TimeSpan.FromMinutes(10);
 
     private static TimeSpan? ProbeFrontChunkDuration(CamChunk chunk)
     {
@@ -140,8 +144,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
             return null;
         }
 
-        var probed = Mp4DurationReader.TryReadDuration(frontFile.FullPath);
-        if (probed is { } duration && duration > TimeSpan.Zero && duration <= MaxPlausibleChunkDuration)
+        if (Mp4DurationReader.TryReadChunkDuration(frontFile.FullPath) is { } duration)
         {
             return duration;
         }
@@ -155,7 +158,7 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
 
     private static bool IsProbeable(string path)
     {
-        return Mp4DurationReader.TryReadDuration(path) is { } duration && duration > TimeSpan.Zero && duration <= MaxPlausibleChunkDuration;
+        return Mp4DurationReader.TryReadChunkDuration(path) is not null;
     }
 
     private static void WritePlaylist(string path, IReadOnlyList<(string FilePath, TimeSpan Duration)> entries)
@@ -186,6 +189,11 @@ public partial class FfconcatMediaSourceBuilder : IClipMediaSourceBuilder
     private static string SanitizeForFileName(string name)
     {
         var sanitized = InvalidFileNameCharsRegex().Replace(name ?? string.Empty, "_");
+        if (sanitized.Length > MaxClipNameLengthInFileName)
+        {
+            sanitized = sanitized[..MaxClipNameLengthInFileName];
+        }
+
         return string.IsNullOrEmpty(sanitized) ? "clip" : sanitized;
     }
 

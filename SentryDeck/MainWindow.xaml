@@ -41,7 +41,11 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
-                        <Grid VerticalAlignment="Center">
+                        <!--
+                            The transparent background makes the whole bar clickable, since the Track's page buttons below let the mouse through to the event marker.
+                        -->
+                        <Grid VerticalAlignment="Center"
+                              Background="Transparent">
                             <Border x:Name="SeekRail"
                                     Height="4"
                                     VerticalAlignment="Center"
@@ -63,16 +67,15 @@
                             </Border>
 
                             <!--
-                                Export selection: a translucent accent band over the marked in/out
-                                range, plus a taller tick at each set mark (each shows on its own,
-                                so a lone in-point is visible while placing the out-point). Same
-                                offset math as the other overlays; hidden while no marks are set.
+                                Export selection: a translucent band over the marked in/out range, plus a taller tick at each set mark (each shows on its own, so a lone in-point is visible while placing the out-point).
+                                Same offset math as the other overlays; hidden while no marks are set.
+                                The band is neutral rather than accent so it still shows over the played fill, which is where it sits after the usual mark, play, mark flow.
                             -->
-                            <Border Height="8"
+                            <Border Height="10"
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
-                                    Background="{DynamicResource AccentFillColorDefaultBrush}"
-                                    CornerRadius="2"
+                                    Background="{DynamicResource TextFillColorPrimaryBrush}"
+                                    CornerRadius="3"
                                     IsHitTestVisible="False"
                                     Opacity="0.3"
                                     Visibility="{Binding Data.Trim.HasSelection, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
@@ -139,9 +142,9 @@
                                 fraction × rail width; the ItemsControl matches the rail's width,
                                 so ticks stay aligned on resize. Empty list draws nothing.
                             -->
-                            <ItemsControl Focusable="False"
-                                          IsHitTestVisible="False"
-                                          ItemsSource="{Binding Data.Playback.ChunkBoundaries, Source={StaticResource VmProxy}}">
+                            <local:DecorativeItemsControl Focusable="False"
+                                                          IsHitTestVisible="False"
+                                                          ItemsSource="{Binding Data.Playback.ChunkBoundaries, Source={StaticResource VmProxy}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <Grid />
@@ -165,19 +168,16 @@
                                         </Rectangle>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            </local:DecorativeItemsControl>
 
                             <!--
-                                Gap ticks: where the clip's media time skips over a wall-clock gap
-                                (deleted/corrupt/excluded chunks, or a Sentry idle period). Same
-                                offset math as the chunk seams above but visually distinct: a
-                                dimmer, thinner mark so it doesn't compete with real chunk seams or
-                                the event marker. Empty list (no gaps, or media not opened yet)
-                                draws nothing.
+                                Gap ticks: where the clip's media time skips over a wall-clock gap (deleted/corrupt/excluded chunks, or a Sentry idle period).
+                                A gap always falls on a chunk seam, so its tick is taller, wider and brighter than the seam tick it covers; otherwise skipped real time would look like an ordinary seam.
+                                Like the event marker, it sits in a wider transparent border, shifted back by its extra half width, so its tooltip is easy to reach.
+                                Empty list (no gaps, or media not opened yet) draws nothing.
                             -->
-                            <ItemsControl Focusable="False"
-                                          IsHitTestVisible="False"
-                                          ItemsSource="{Binding Data.Playback.GapPositions, Source={StaticResource VmProxy}}">
+                            <local:DecorativeItemsControl Focusable="False"
+                                                          ItemsSource="{Binding Data.Playback.GapPositions, Source={StaticResource VmProxy}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <Grid />
@@ -185,57 +185,47 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Rectangle Width="1"
-                                                   Height="6"
-                                                   HorizontalAlignment="Left"
-                                                   VerticalAlignment="Center"
-                                                   Fill="{DynamicResource TextFillColorTertiaryBrush}"
-                                                   Opacity="0.6">
-                                            <Rectangle.Margin>
+                                        <Border Width="10"
+                                                Height="16"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Background="Transparent"
+                                                ToolTip="Gap in the footage: time skips ahead here">
+                                            <Border.RenderTransform>
+                                                <TranslateTransform X="-4" />
+                                            </Border.RenderTransform>
+                                            <Border.Margin>
                                                 <MultiBinding Converter="{local:SeekOffsetConverter}">
                                                     <Binding />
                                                     <Binding Path="ActualWidth"
                                                              RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
                                                 </MultiBinding>
-                                            </Rectangle.Margin>
-                                        </Rectangle>
+                                            </Border.Margin>
+                                            <Rectangle Width="2"
+                                                       Height="12"
+                                                       Fill="{DynamicResource TextFillColorPrimaryBrush}"
+                                                       RadiusX="1"
+                                                       RadiusY="1" />
+                                        </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            </local:DecorativeItemsControl>
 
-                            <!--  Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).  -->
-                            <Border Width="3"
+                            <!--
+                                Event marker: a reason-colored tick at the moment the incident happened (hover for details; jump via the button or E).
+                                The tick sits in a wider transparent border so the tooltip doesn't need pixel-exact aim.
+                                That border is shifted left by its extra half width, so the tick stays exactly where the offset puts it.
+                            -->
+                            <Border Width="11"
                                     Height="16"
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
-                                    CornerRadius="1.5"
-                                    IsHitTestVisible="False"
+                                    Background="Transparent"
                                     ToolTip="{Binding Data.Playback.EventMarkerTooltip, Source={StaticResource VmProxy}}"
                                     Visibility="{Binding Data.Playback.HasEventMarker, Converter={local:BoolToVisibilityConverter}, Source={StaticResource VmProxy}}">
-                                <Border.Style>
-                                    <!--  Reason color via DynamicResource (keyed by ReasonKey) so the marker re-colors on a live OS theme switch.  -->
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="sentry">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="honk">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="alert">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Data.Library.SelectedClip.Event, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
-                                                         Value="saved">
-                                                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
+                                <Border.RenderTransform>
+                                    <TranslateTransform X="-4" />
+                                </Border.RenderTransform>
                                 <Border.Margin>
                                     <MultiBinding Converter="{local:SeekOffsetConverter}">
                                         <Binding Path="Data.Playback.EventMarkerPosition"
@@ -244,13 +234,45 @@
                                                  Path="ActualWidth" />
                                     </MultiBinding>
                                 </Border.Margin>
+                                <Border Width="3"
+                                        CornerRadius="1.5">
+                                    <Border.Style>
+                                        <!--  Reason color via DynamicResource (keyed by ReasonKey) so the marker re-colors on a live OS theme switch.  -->
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="sentry">
+                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="honk">
+                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="alert">
+                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Data.Library.SelectedClip, Converter={local:ReasonKeyConverter}, Source={StaticResource VmProxy}}"
+                                                             Value="saved">
+                                                    <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                </Border>
                             </Border>
 
+                            <!--
+                                The page buttons never act here: IsMoveToPointEnabled turns every press off the thumb into a jump to that point before they see it.
+                                They let the mouse through so it can reach the event marker's tooltip underneath them.
+                            -->
                             <Track x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="Slider.DecreaseLarge"
                                                   Background="Transparent"
-                                                  Focusable="False">
+                                                  Focusable="False"
+                                                  IsHitTestVisible="False">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
                                                 <Border Background="Transparent" />
@@ -261,7 +283,8 @@
                                 <Track.IncreaseRepeatButton>
                                     <RepeatButton Command="Slider.IncreaseLarge"
                                                   Background="Transparent"
-                                                  Focusable="False">
+                                                  Focusable="False"
+                                                  IsHitTestVisible="False">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
                                                 <Border Background="Transparent" />
@@ -534,8 +557,11 @@
                 </MenuItem.Icon>
             </MenuItem>
             <Separator />
-            <!--  Moves the whole clip folder to the Windows Recycle Bin (recoverable) so the timeline can be tidied in place.  -->
-            <MenuItem Header="Delete to Recycle Bin"
+            <!--
+                Deletes the whole clip folder so the timeline can be tidied in place.
+                The header doesn't name the Recycle Bin because a drive that can't recycle the clip deletes it permanently; the confirmation says which one happens.
+            -->
+            <MenuItem Header="Delete clip…"
                       Command="{Binding PlacementTarget.Tag.Library.DeleteClipCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}">
                 <MenuItem.Icon>
@@ -564,11 +590,17 @@
     </Window.Triggers>
 
     <Grid>
-        <Grid Visibility="{Binding ShowMainContent, Converter={local:BoolToVisibilityConverter}}">
+        <Grid x:Name="MainContent"
+              Visibility="{Binding ShowMainContent, Converter={local:BoolToVisibilityConverter}}">
             <Grid.ColumnDefinitions>
+                <!--
+                    Sidebar.
+                    Its widest setting gives way so the splitter (8) and the player (856, its width with this default sidebar at the smallest window) always fit.
+                    The seek bar is the only part of the player controls that can shrink, so a narrower player squeezed it to nothing beside the fixed-width buttons.
+                -->
                 <ColumnDefinition Width="320"
                                   MinWidth="260"
-                                  MaxWidth="440" />
+                                  MaxWidth="{Binding ActualWidth, ElementName=MainContent, Converter={local:RemainingWidthConverter Maximum=440, Reserved=864}}" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
@@ -642,6 +674,7 @@
                          Grid.Row="1"
                          Margin="4,0"
                          Padding="0,0,6,0"
+                         AutomationProperties.Name="Clips"
                          Background="Transparent"
                          BorderThickness="0"
                          IsSynchronizedWithCurrentItem="False"
@@ -649,11 +682,18 @@
                          PreviewMouseLeftButtonUp="ClipListBox_PreviewMouseLeftButtonUp"
                          PreviewMouseRightButtonDown="ClipListBox_PreviewMouseRightButtonDown"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         SelectedItem="{Binding Library.SelectedClip, Mode=TwoWay}"
+                         SelectedItem="{Binding Library.ListSelection, Mode=TwoWay}"
                          VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                          VirtualizingPanel.VirtualizationMode="Recycling">
                     <ListBox.GroupStyle>
                         <GroupStyle>
+                            <!--  Screen readers name a day group by its raw date value ("12/16/2025 12:00:00 AM") and skip its header, so the group takes the header's wording as its name.  -->
+                            <GroupStyle.ContainerStyle>
+                                <Style TargetType="GroupItem"
+                                       BasedOn="{StaticResource {x:Type GroupItem}}">
+                                    <Setter Property="AutomationProperties.Name" Value="{Binding Name, Converter={local:DayGroupHeaderConverter}}" />
+                                </Style>
+                            </GroupStyle.ContainerStyle>
                             <GroupStyle.HeaderTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding Name, Converter={local:DayGroupHeaderConverter}}"
@@ -672,6 +712,17 @@
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="ContextMenu" Value="{StaticResource ClipContextMenu}" />
                             <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+                            <!--  Without a name, screen readers read a row as the clip's raw timestamp and nothing else; this reads what the card shows.  -->
+                            <Setter Property="AutomationProperties.Name">
+                                <Setter.Value>
+                                    <MultiBinding Converter="{local:ClipAutomationNameConverter}">
+                                        <Binding Path="Timestamp" />
+                                        <Binding Converter="{local:ReasonLabelConverter}" />
+                                        <Binding Path="Event.City" />
+                                        <Binding Converter="{local:ClipDurationConverter}" />
+                                    </MultiBinding>
+                                </Setter.Value>
+                            </Setter>
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
@@ -715,19 +766,19 @@
                                             <!--  Reason color via DynamicResource (keyed by ReasonKey) so the stripe re-colors on a live OS theme switch.  -->
                                             <Setter Property="Fill" Value="{DynamicResource TextFillColorTertiaryBrush}" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="sentry">
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorAttentionBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="honk">
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorCautionBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="alert">
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding Event, Converter={local:ReasonKeyConverter}}"
+                                                <DataTrigger Binding="{Binding Converter={local:ReasonKeyConverter}}"
                                                              Value="saved">
                                                     <Setter Property="Fill" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                                 </DataTrigger>
@@ -750,14 +801,27 @@
                                         ClipToBounds="True"
                                         CornerRadius="4">
                                     <Grid>
+                                        <!--  Follows the decoded image rather than the file's presence, so a corrupt or zero-byte thumb.png shows the glyph instead of an empty tile.  -->
                                         <TextBlock Text="&#xE714;"
                                                    HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"
                                                    FontSize="22"
-                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                                   Style="{StaticResource AppGlyph}"
-                                                   Visibility="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}, ConverterParameter=fallback}" />
-                                        <Image Source="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}}"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock"
+                                                       BasedOn="{StaticResource AppGlyph}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Source, ElementName=ThumbnailImage}"
+                                                                     Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Image x:Name="ThumbnailImage"
+                                               Source="{Binding ThumbnailPath, Converter={local:ThumbnailConverter}}"
                                                Stretch="UniformToFill" />
                                         <Border Margin="0,0,4,4"
                                                 Padding="4,1"
@@ -814,7 +878,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0"
-                                                   Text="{Binding Event, Converter={local:ReasonLabelConverter}}"
+                                                   Text="{Binding Converter={local:ReasonLabelConverter}}"
                                                    Style="{StaticResource ClipListSecondaryTextBlock}"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Grid.Column="1"
@@ -826,7 +890,7 @@
                                     <!--  Location: fixed-width pin column (clips the glyph's wide advance) + city with a small controlled gap.  -->
                                     <Grid Grid.Row="2"
                                           Margin="0,3,0,0"
-                                          Visibility="{Binding Event, Converter={local:MapAvailabilityConverter}}">
+                                          Visibility="{Binding Event, Converter={local:CityVisibilityConverter}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
@@ -843,7 +907,8 @@
                                                    Margin="5,0,0,0"
                                                    VerticalAlignment="Center"
                                                    Style="{StaticResource ClipListSecondaryTextBlock}"
-                                                   TextTrimming="CharacterEllipsis" />
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Event.City}" />
                                     </Grid>
                                 </Grid>
                             </Grid>
@@ -936,7 +1001,7 @@
                             <Button Command="{Binding ToggleAboutCommand}"
                                     AutomationProperties.Name="About and help"
                                     Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="About / Help">
+                                    ToolTip="About / Help (F1)">
                                 <TextBlock Text="&#xE946;"
                                            Style="{StaticResource AppGlyph}" />
                             </Button>
@@ -955,11 +1020,16 @@
                 </Border>
             </Grid>
 
-            <!--  Splitter  -->
+            <!--
+                Splitter.
+                Out of the tab order: the arrow keys that would move it seek the video instead, so as a tab stop it was an unnamed stop that did nothing.
+            -->
             <GridSplitter Grid.Column="1"
                           Width="8"
                           HorizontalAlignment="Stretch"
-                          Background="Transparent" />
+                          AutomationProperties.Name="Resize sidebar"
+                          Background="Transparent"
+                          IsTabStop="False" />
 
             <!--  Video Player Area (opaque: frames the native video surface)  -->
             <Grid Grid.Column="2"
@@ -980,13 +1050,14 @@
                     <Grid x:Name="FlyleafHostPool"
                           Visibility="Collapsed">
                         <!--  KeyBindings=None: shortcuts are app-wide (Window_PreviewKeyDown acts on all cameras);
-                              Flyleaf's per-surface key handling would pause/seek a single camera only.  -->
-                        <fl:FlyleafHost x:Name="FrontFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="BackFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="LeftFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="RightFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="LeftPillarFlyleafHost" KeyBindings="None" />
-                        <fl:FlyleafHost x:Name="RightPillarFlyleafHost" KeyBindings="None" />
+                              Flyleaf's per-surface key handling would pause/seek a single camera only.
+                              Not focusable, like the slots they move between: they only show video, so as tab stops they were invisible, unnamed stops between the sidebar and the player controls.  -->
+                        <fl:FlyleafHost x:Name="FrontFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="BackFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="LeftFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="RightFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="LeftPillarFlyleafHost" Focusable="False" KeyBindings="None" />
+                        <fl:FlyleafHost x:Name="RightPillarFlyleafHost" Focusable="False" KeyBindings="None" />
                     </Grid>
 
                     <!--  Video Player  -->
@@ -1000,6 +1071,7 @@
                         <!--
                             Focusable: keyboard focus is parked here after a camera-tile click so no control consumes keys ahead of the app-wide shortcuts.
                             Focusing the Window instead doesn't work because it's a focus scope, so WPF redirects to the last focused child (often a clip ListBoxItem, which swallows Space/arrows for list navigation).
+                            It is no tab stop, though: Tab would land on it as an invisible, unnamed stop that does nothing.
                         -->
                         <Border x:Name="VideoContainer"
                                 Grid.Row="0"
@@ -1008,7 +1080,8 @@
                                 BorderThickness="1"
                                 ClipToBounds="True"
                                 CornerRadius="6"
-                                Focusable="True">
+                                Focusable="True"
+                                KeyboardNavigation.IsTabStop="False">
                             <Grid>
                                 <Grid Visibility="{Binding Cameras.IsGridViewSelected, Converter={local:BoolToVisibilityConverter}}">
                                     <Grid.RowDefinitions>
@@ -1026,7 +1099,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridFrontHostSlot" />
+                                            <ContentControl x:Name="GridFrontHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1046,7 +1120,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridRearHostSlot" />
+                                            <ContentControl x:Name="GridRearHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1066,7 +1141,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridLeftHostSlot" />
+                                            <ContentControl x:Name="GridLeftHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1086,7 +1162,8 @@
                                             Background="Black"
                                             ClipToBounds="True">
                                         <Grid>
-                                            <ContentControl x:Name="GridRightHostSlot" />
+                                            <ContentControl x:Name="GridRightHostSlot"
+                                                            Focusable="False" />
                                             <Border Margin="10"
                                                     Padding="8,3"
                                                     HorizontalAlignment="Left"
@@ -1102,7 +1179,8 @@
                                 </Grid>
 
                                 <Grid Visibility="{Binding Cameras.IsSingleCameraViewSelected, Converter={local:BoolToVisibilityConverter}}">
-                                    <ContentControl x:Name="PrimaryCameraHostSlot" />
+                                    <ContentControl x:Name="PrimaryCameraHostSlot"
+                                                    Focusable="False" />
                                     <Border Margin="14"
                                             Padding="10,4"
                                             HorizontalAlignment="Left"
@@ -1127,7 +1205,9 @@
                                 CornerRadius="8">
                             <!--  One tile per view the current clip offers: the grid plus each recorded camera (four on HW3, six on HW4/AI4).
                                   Camera tiles carry a preview slot that registers itself with the code-behind (CameraTileSlot_Loaded), which re-parents each camera's Flyleaf host into it.  -->
-                            <ItemsControl ItemsSource="{Binding Cameras.CameraViewOptions}">
+                            <local:ControlGroupItemsControl AutomationProperties.Name="Camera views"
+                                                            Focusable="False"
+                                                            ItemsSource="{Binding Cameras.CameraViewOptions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <UniformGrid Rows="1" />
@@ -1135,13 +1215,13 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type local:CameraViewOption}">
-                                        <RadioButton Command="{Binding DataContext.Cameras.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                     CommandParameter="{Binding ViewId}"
-                                                     AutomationProperties.Name="{Binding AutomationName}"
-                                                     GroupName="CameraViewMode"
-                                                     IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                                     Style="{StaticResource CameraViewTileButton}"
-                                                     ToolTip="{Binding ToolTip}">
+                                        <local:CameraTileButton Command="{Binding DataContext.Cameras.SelectCameraViewCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding ViewId}"
+                                                                AutomationProperties.Name="{Binding AutomationName}"
+                                                                GroupName="CameraViewMode"
+                                                                IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                                Style="{StaticResource CameraViewTileButton}"
+                                                                ToolTip="{Binding ToolTip}">
                                             <Grid>
                                                 <Grid.RowDefinitions>
                                                     <RowDefinition Height="64" />
@@ -1164,7 +1244,8 @@
                                                         CornerRadius="4"
                                                         Visibility="{Binding IsCamera, Converter={local:BoolToVisibilityConverter}}">
                                                     <Grid>
-                                                        <ContentControl Loaded="CameraTileSlot_Loaded" />
+                                                        <ContentControl Focusable="False"
+                                                                        Loaded="CameraTileSlot_Loaded" />
                                                         <!--  Single-screen icon: this camera is the main view (cf. the 2x2 grid icon)  -->
                                                         <Border Margin="18"
                                                                 Background="{DynamicResource ControlFillColorSecondaryBrush}"
@@ -1179,10 +1260,10 @@
                                                            FontSize="12"
                                                            FontWeight="SemiBold" />
                                             </Grid>
-                                        </RadioButton>
+                                        </local:CameraTileButton>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            </local:ControlGroupItemsControl>
                         </Border>
                     </Grid>
 
@@ -1333,6 +1414,115 @@
 
                 <StackPanel Grid.Row="1">
                     <!--
+                        Export progress: FFmpeg can take a while on a slow drive, and nothing else in the window changes while it runs.
+                        Cancel stops FFmpeg and deletes the unfinished file.
+                    -->
+                    <Border Padding="16,8"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0"
+                            Visibility="{Binding Trim.IsExporting, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <ProgressBar Width="48"
+                                         Margin="0,0,12,0"
+                                         VerticalAlignment="Center"
+                                         AutomationProperties.Name="Exporting"
+                                         IsIndeterminate="True" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Trim.ExportProgressText}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap" />
+                            <Button Grid.Column="2"
+                                    Content="Cancel export"
+                                    Command="{Binding Trim.CancelExportCommand}"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <!--  Export confirmation: the Explorer window an export opens can land on another monitor, so the app says itself that the file was saved.  -->
+                    <Border Padding="16,8"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0"
+                            Visibility="{Binding Trim.HasSavedExport, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Text="&#xE73E;"
+                                       Margin="0,0,10,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                       Style="{StaticResource AppGlyph}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Trim.SavedExportText}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       ToolTip="{Binding Trim.SavedExportPath}" />
+                            <Button Grid.Column="2"
+                                    Content="Show in folder"
+                                    Command="{Binding Trim.ShowSavedExportCommand}"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                            <Button Grid.Column="3"
+                                    Content="Dismiss"
+                                    Command="{Binding Trim.DismissExportNoticeCommand}"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Dismiss export confirmation"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <!--
+                        Export notice: why the last export didn't happen.
+                        It lives here, not in the status overlay, because the overlay can't draw over the native video surface and would hide a clip that is still playing.
+                    -->
+                    <Border Padding="16,8"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0"
+                            Visibility="{Binding Trim.HasExportNotice, Converter={local:BoolToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Text="&#xE783;"
+                                       Margin="0,0,10,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                       Style="{StaticResource AppGlyph}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Trim.ExportNotice}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap" />
+                            <Button Grid.Column="2"
+                                    Content="Dismiss"
+                                    Command="{Binding Trim.DismissExportNoticeCommand}"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Dismiss export notice"
+                                    Style="{StaticResource DefaultButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <!--
                         Trim panel: appears above the player controls while cutting a range.
                         Deliberately wordy, with labeled steps plus a hint line that walks through start → end → export, so the feature needs no manual.
                         All state lives in the view-model (IsTrimming plus the selection marks); closing always discards the marks.
@@ -1401,13 +1591,16 @@
                                 </StackPanel>
                             </Button>
 
-                            <!--  Live guidance: which step is next, then the selected length.  -->
+                            <!--
+                                Live guidance: which step is next, then the selected length.
+                                It wraps rather than trims, because at common laptop widths a single line cut off the step's last words, the part that says what to do.
+                            -->
                             <TextBlock Grid.Column="3"
                                        Text="{Binding Trim.TrimHintText}"
                                        Margin="16,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       TextTrimming="CharacterEllipsis" />
+                                       TextWrapping="Wrap" />
 
                             <Button Grid.Column="4"
                                     Command="{Binding Trim.ExportSelectionCommand}"
@@ -1480,10 +1673,10 @@
                                     VerticalAlignment="Center"
                                     FontFamily="{DynamicResource SymbolThemeFontFamily}"
                                     FontSize="20"
-                                    AutomationProperties.Name="Play or pause"
+                                    AutomationProperties.Name="{Binding Playback.IsPlaying, Converter={local:BoolToTextConverter}, ConverterParameter='Pause|Play'}"
                                     IsEnabled="{Binding Playback.CanPlayPause}"
                                     Style="{StaticResource AccentButtonStyle}"
-                                    ToolTip="Play/Pause (Space)" />
+                                    ToolTip="{Binding Playback.IsPlaying, Converter={local:BoolToTextConverter}, ConverterParameter='Pause (Space)|Play (Space)'}" />
 
                             <Button Command="{Binding Playback.StepFrameForwardCommand}"
                                     Margin="0,0,10,0"
@@ -1548,23 +1741,30 @@
                                 </StackPanel>
                             </Button>
 
-                            <!--  Opens the trim panel (above this bar) for cutting a shareable MP4.  -->
-                            <Button Command="{Binding Trim.ToggleTrimmingCommand}"
-                                    Margin="6,0,0,0"
-                                    VerticalAlignment="Center"
-                                    AutomationProperties.Name="Trim clip"
-                                    Style="{StaticResource SubtleIconButton}"
-                                    ToolTip="Cut a section of this clip to share (I / O to mark)">
+                            <!--
+                                Opens the trim panel (above this bar) for cutting a shareable MP4.
+                                A toggle so screen readers can tell whether the panel is open; it keeps the flat button look, since the open panel already shows that on screen.
+                            -->
+                            <local:CommandToggleButton Command="{Binding Trim.ToggleTrimmingCommand}"
+                                                       Margin="6,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       AutomationProperties.Name="Trim clip"
+                                                       IsChecked="{Binding Trim.IsTrimming, Mode=OneWay}"
+                                                       Style="{StaticResource SubtleIconButton}"
+                                                       ToolTip="Cut a section of this clip to share (I / O to mark)">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE8C6;"
                                                Style="{StaticResource AppGlyphInButton}" />
                                     <TextBlock Text="Trim"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
-                            </Button>
+                            </local:CommandToggleButton>
                         </StackPanel>
 
-                        <!--  Scrubber (carries the event marker + chunk seams)  -->
+                        <!--
+                            Scrubber (carries the event marker + chunk seams).
+                            Its own value is a 0..1 fraction, so its item status carries the time for screen readers.
+                        -->
                         <Slider x:Name="SeekSlider"
                                 Grid.Column="2"
                                 Margin="16,0"
@@ -1573,17 +1773,33 @@
                                 IsEnabled="{Binding Playback.CanSeek}"
                                 Maximum="1"
                                 Minimum="0"
-                                PreviewMouseDown="SeekSlider_PreviewMouseDown"
-                                PreviewMouseUp="SeekSlider_PreviewMouseUp"
                                 Style="{StaticResource SeekSlider}"
                                 ValueChanged="SeekSlider_ValueChanged"
-                                Value="{Binding Playback.SeekPosition, Mode=TwoWay}" />
+                                Value="{Binding Playback.SeekPosition, Mode=TwoWay}">
+                            <AutomationProperties.ItemStatus>
+                                <MultiBinding StringFormat="{}{0} of {1}">
+                                    <Binding Path="Playback.PositionText" />
+                                    <Binding Path="Playback.DurationText" />
+                                </MultiBinding>
+                            </AutomationProperties.ItemStatus>
+                        </Slider>
 
-                        <!--  Time readout  -->
+                        <!--
+                            Time readout.
+                            Its minimum width fits the longest time the open clip can show, so the seek bar and its markers don't shift each time the position gains a digit (crossing 10:00), while a clip under 10 minutes doesn't give up seek bar width to digits it never shows.
+                            Right-aligned, so the duration stays put and only the position grows.
+                        -->
                         <TextBlock Grid.Column="3"
                                    VerticalAlignment="Center"
                                    FontFamily="Consolas"
-                                   FontSize="13">
+                                   FontSize="13"
+                                   TextAlignment="Right">
+                            <TextBlock.MinWidth>
+                                <MultiBinding Converter="{local:TimeReadoutWidthConverter}">
+                                    <Binding Path="Playback.DurationText" />
+                                    <Binding RelativeSource="{RelativeSource Self}" />
+                                </MultiBinding>
+                            </TextBlock.MinWidth>
                             <Run Text="{Binding Playback.PositionText, Mode=OneWay}"
                                  Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                             <Run Text=" / "
@@ -1608,7 +1824,7 @@
                             </Button>
                             <Button MinWidth="72"
                                     Command="{Binding Playback.ResetSpeedCommand}"
-                                    AutomationProperties.Name="Playback speed"
+                                    AutomationProperties.Name="{Binding Playback.PlaybackSpeedText, StringFormat='Playback speed {0}'}"
                                     Style="{StaticResource SubtleIconButton}"
                                     ToolTip="Playback speed — click to reset to 1x">
                                 <StackPanel Orientation="Horizontal">
@@ -1651,7 +1867,7 @@
                     <Button Command="{Binding ToggleAboutCommand}"
                             AutomationProperties.Name="Back to player"
                             Style="{StaticResource SubtleIconButton}"
-                            ToolTip="Back to player">
+                            ToolTip="Back to player (Esc)">
                         <TextBlock Text="&#xE72B;"
                                    Style="{StaticResource AppGlyph}" />
                     </Button>
@@ -1857,7 +2073,7 @@
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="1 – 7" Style="{StaticResource KeycapText}" />
                                     </Border>
-                                    <TextBlock Text="Switch camera view (one key per tile)" Style="{StaticResource AboutShortcutLabel}" />
+                                    <TextBlock Text="Switch camera view (one key per tile, also on the numpad)" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                                 <StackPanel Margin="0,0,0,8"
                                             Orientation="Horizontal">
@@ -1879,11 +2095,21 @@
                                     </Border>
                                     <TextBlock Text="Export the trimmed section as MP4" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel Margin="0,0,0,8"
+                                            Orientation="Horizontal">
                                     <Border Style="{StaticResource Keycap}">
                                         <TextBlock Text="Esc" Style="{StaticResource KeycapText}" />
                                     </Border>
                                     <TextBlock Text="Cancel the trim" Style="{StaticResource AboutShortcutLabel}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="F1" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <Border Style="{StaticResource Keycap}">
+                                        <TextBlock Text="Esc" Style="{StaticResource KeycapText}" />
+                                    </Border>
+                                    <TextBlock Text="Open / close this help page" Style="{StaticResource AboutShortcutLabel}" />
                                 </StackPanel>
                             </StackPanel>
 

@@ -164,6 +164,31 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
+    public void ControllerError_ClearedByARetry_HidesErrorOverlay()
+    {
+        // Pressing Play reopens a clip whose file was locked; once it opens, the old error must not cover the video that now plays.
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.ErrorMessage = "The front camera video can't be read because another program is using it.";
+
+        controller.ErrorMessage = null;
+
+        vm.Error.IsVisible.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ControllerError_ClearedWhileAnotherNoticeShows_KeepsThatNotice()
+    {
+        var vm = CreateViewModelWithController(out var controller, out _);
+        controller.ErrorMessage = "decode failed";
+        vm.Error.Show("Delete Failed", "Could not delete clip");
+
+        controller.ErrorMessage = null;
+
+        vm.Error.IsVisible.ShouldBeTrue();
+        vm.Error.Title.ShouldBe("Delete Failed");
+    }
+
+    [Fact]
     public void CanGoNextPrevious_ReflectControllerPlaylist()
     {
         var vm = CreateViewModelWithController(out var controller, out _);
@@ -200,6 +225,153 @@ public sealed partial class MainWindowViewModelTests
 
         // Opening an incident on the angle that triggered it is the whole point of the metadata.
         vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Back);
+    }
+
+    [Theory]
+    [InlineData(0)] // front, and also what a missing or unreadable field reads as
+    [InlineData(8)] // cabin camera, never written to USB
+    [InlineData(99)] // unknown id
+    public void SelectingAnEventClip_ThatNamesNoSideOrRearCamera_KeepsTheChosenView(int eventCamera)
+    {
+        var vm = CreateViewModelWithController(out _, out _);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraViewsViewModel.GridCameraView);
+
+        // As in SelectingAnEventClip_AutoFocusesTheTriggeringCamera, the clip is deliberately not in the controller's playlist, so the selection load runs inline on this thread.
+        vm.Library.SelectedClip = ClipWithCamerasAndEventCamera(eventCamera, SixCameras);
+
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraViewsViewModel.GridCameraView);
+    }
+
+    [Fact]
+    public void NextCommand_ToAClipWhoseEventReportsCameraZero_KeepsTheChosenView()
+    {
+        // Every Dashcam save (honk, launcher tap) reports camera 0, so following it snapped the grid back to Front on every clip change.
+        using var firstFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1);
+        var first = WithEventCamera(firstFiles.Clip, eventCamera: 0);
+        var second = WithEventCamera(secondFiles.Clip, eventCamera: 0);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([first, second]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = first;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraViewsViewModel.GridCameraView);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.CurrentClip.ShouldBe(second);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraViewsViewModel.GridCameraView);
+    }
+
+    [Fact]
+    public void NextCommand_FromAClipWithoutPillarsToOneWhosePillarTriggeredIt_OpensOnThatPillar()
+    {
+        // Next selects the new clip while the player still has the previous clip's media open, and those cameras must not stand in for the new clip's.
+        using var firstFiles = TestClipFiles.Create(
+            chunkCount: 1,
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1, cameras: SixCameras);
+        var second = WithEventCamera(secondFiles.Clip, eventCamera: 5);
+        var controller = new VideoPlayerController(
+            SixCameras.ToDictionary(camera => camera, ICameraPlayer (_) => new FakeCameraPlayer()),
+            CameraNames.Front,
+            _playlists.CreateBuilder());
+        controller.LoadClips([firstFiles.Clip, second]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = firstFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.CurrentClip.ShouldBe(second);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.LeftPillar);
+    }
+
+    [Fact]
+    public void NextCommand_ToAClipThatCantPlayTheWatchedCamera_DropsItsTileOnceTheClipOpens()
+    {
+        using var firstFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(
+            chunkCount: 2,
+            omitCamerasFromChunkZero: new HashSet<string> { CameraNames.Back },
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+        var controller = BuildFourCameraController(new FakeCameraPlayer());
+        controller.LoadClips([firstFiles.Clip, secondFiles.Clip]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = firstFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        vm.Cameras.SelectCameraViewCommand.Execute(CameraNames.Back);
+
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.CurrentClip.ShouldBe(secondFiles.Clip);
+        vm.Cameras.CameraViewOptions.ShouldNotContain(option => option.ViewId == CameraNames.Back);
+        vm.Cameras.SelectedCameraView.ShouldBe(CameraNames.Front);
+    }
+
+    [Fact]
+    public void OpeningAClip_WithACameraMissingFromItsFirstSegment_DropsThatCamerasTile()
+    {
+        // Playback lines every camera up from the clip's first segment, so a camera that only starts later is never played and its tile would stay black.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 2,
+            omitCamerasFromChunkZero: new HashSet<string> { CameraNames.Back },
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
+
+        vm.Cameras.CameraViewOptions.Select(option => option.ViewId).ShouldBe(
+            [
+                CameraViewsViewModel.GridCameraView,
+                CameraNames.Front,
+                CameraNames.LeftRepeater,
+                CameraNames.RightRepeater,
+            ]);
+    }
+
+    [Fact]
+    public void SelectingTheOpenClipAgain_StillLeavesOutTheCameraItCantPlay()
+    {
+        // Selecting a clip offers every camera it recorded; when the player already has it open, no new media opens to narrow that down again.
+        using var clipFiles = TestClipFiles.Create(
+            chunkCount: 2,
+            omitCamerasFromChunkZero: new HashSet<string> { CameraNames.Back },
+            cameras: [CameraNames.Front, CameraNames.Back, CameraNames.LeftRepeater, CameraNames.RightRepeater]);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out _);
+
+        vm.Library.SelectedClip = null;
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Cameras.CameraViewOptions.ShouldNotContain(option => option.ViewId == CameraNames.Back);
+    }
+
+    [Fact]
+    public void OpeningAClip_ThatPlaysEveryCameraItRecorded_DoesNotRebuildTheTiles()
+    {
+        // Each rebuild makes the view regenerate the strip and re-parent every video host, so the open must not redo what the selection already showed.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([clipFiles.Clip]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        var tileRebuilds = 0;
+        vm.Cameras.PropertyChanged += (_, e) => tileRebuilds += e.PropertyName == nameof(CameraViewsViewModel.CameraViewOptions) ? 1 : 0;
+
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsMediaOpen.ShouldBeTrue();
+        tileRebuilds.ShouldBe(1);
     }
 
     [Fact]
@@ -245,5 +417,205 @@ public sealed partial class MainWindowViewModelTests
         vm.Playback.NowPlayingClip.ShouldBe(second.Clip);
         controller.CurrentClip.ShouldBe(second.Clip);
         front.Count("open").ShouldBe(2);
+    }
+
+    [Fact]
+    public void SelectingTheLoadedClipAgain_AfterADeselectWhilePaused_EnablesTheTransportWithoutReopening()
+    {
+        // A search that hides the open clip deselects it but leaves it loaded, so clearing the search and clicking it again selects the clip the player already has.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+        var callsBefore = front.Calls.Count;
+
+        vm.Library.SelectedClip = null;
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Playback.IsLoading.ShouldBeFalse();
+        vm.Playback.CanPlayPause.ShouldBeTrue();
+        vm.Playback.CanSeek.ShouldBeTrue();
+
+        // The paused clip stays where the user left it instead of reopening or resuming.
+        front.Calls.Count.ShouldBe(callsBefore);
+        vm.Playback.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SelectingTheLoadedClipAgain_AfterAStop_ReopensIt()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        vm.Library.SelectedClip = null;
+        vm.Library.SelectedClip = clipFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Count("open").ShouldBe(2);
+        controller.IsPlaying.ShouldBeTrue();
+        vm.Playback.IsLoading.ShouldBeFalse();
+        vm.Playback.CanPlayPause.ShouldBeTrue();
+        vm.Playback.CanSeek.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void StopButton_WhilePaused_StaysEnabledUntilTheClipIsStopped()
+    {
+        // A paused clip still holds its files open, and Stop is how the user lets go of them without playing on first.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out _, out _);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+        vm.Playback.IsPlaying.ShouldBeFalse();
+        vm.Playback.CanStop.ShouldBeTrue();
+
+        var changed = new List<string>();
+        vm.Playback.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+
+        // Nothing else the button watches changes when a paused clip stops, so it only greys out if this is announced.
+        changed.ShouldContain(nameof(PlaybackViewModel.CanStop));
+        vm.Playback.CanStop.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void StopButton_AfterTheClipPlaysToTheEnd_StaysEnabled()
+    {
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+
+        front.RaiseEnded(TimeSpan.FromSeconds(60));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Playback.IsPlaying.ShouldBeFalse();
+        vm.Playback.CanStop.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void PlayAfterStop_PutsTheNowPlayingBadgeBack()
+    {
+        // Play after Stop reopens the clip the player still has, which is not a clip change, so nothing else would mark it as playing again.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out _);
+        RunPinnedToTestThread(() => vm.Playback.StopCommand.ExecuteAsync(null));
+        vm.Playback.NowPlayingClip.ShouldBeNull();
+
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        controller.IsPlaying.ShouldBeTrue();
+        vm.Playback.NowPlayingClip.ShouldBe(clipFiles.Clip);
+    }
+
+    [Fact]
+    public void FrameStepAndEventButtons_WhileTheirCommandRuns_StayEnabled()
+    {
+        // WPF disables a button while its command can't execute, and the disabled button loses keyboard focus for good, so pressing Enter on Previous frame left focus nowhere.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 3);
+        var clip = WithEventAt(clipFiles.Clip, clipFiles.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        var vm = CreateViewModelPlayingClip(clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+
+        // A resume held at the gate keeps the player busy, so every command below is still running when its button checks it.
+        front.PlayGate = new TaskCompletionSource();
+        var resume = controller.PlayAsync();
+        IAsyncRelayCommand[] commands =
+        [
+            vm.Playback.StepFrameBackwardCommand,
+            vm.Playback.StepFrameForwardCommand,
+            vm.Playback.JumpToEventCommand,
+        ];
+        var running = commands.Select(command => command.ExecuteAsync(null)).ToList();
+
+        running.ShouldAllBe(task => !task.IsCompleted);
+        commands.ShouldAllBe(command => command.CanExecute(null));
+
+        front.PlayGate.SetResult();
+        RunPinnedToTestThread(() => Task.WhenAll(running.Append(resume)));
+    }
+
+    [Fact]
+    public void SeekThumbHeldAcrossAClipChange_ReleasingIt_LeavesTheNewClipAtItsOwnStart()
+    {
+        // The thumb's position is a fraction of the clip it was grabbed on, so releasing it after Ctrl+Left jumped the new clip there and skipped its event lead-in.
+        using var firstFiles = TestClipFiles.Create(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1);
+        var second = WithEventAt(secondFiles.Clip, secondFiles.Clip.Chunks[0].Timestamp.AddSeconds(25));
+        var front = new FakeCameraPlayer();
+        var controller = BuildFourCameraController(front);
+        controller.LoadClips([firstFiles.Clip, second]);
+        var vm = new MainWindowViewModel(() => controller, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = firstFiles.Clip;
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        vm.Playback.BeginSeek();
+        vm.Playback.SeekPosition = 0.75;
+        vm.Playback.OnSeekSliderValueChanged();
+        RunPinnedToTestThread(() => vm.Playback.NextCommand.ExecuteAsync(null));
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+        var seeksBeforeRelease = front.Seeks.Count;
+
+        // The new clip opens 10 seconds before its event, and the thumb follows it while the mouse is still down.
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(15));
+        vm.Playback.SeekPosition.ShouldBe(0.25, 0.0001);
+
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Seeks.Count.ShouldBe(seeksBeforeRelease);
+        controller.Position.ShouldBe(TimeSpan.FromSeconds(15));
+        controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SeekThumbHeldWhileThePlaylistReloads_ReleasingIt_SeeksThereAndResumes()
+    {
+        // A reloaded playlist reports no current clip yet keeps the open clip, which the player holds paused until the release; dropping the gesture there would leave it paused while showing Pause.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+
+        vm.Playback.BeginSeek();
+        vm.Playback.SeekPosition = 0.5;
+        vm.Playback.SetPlaylist([clipFiles.Clip]);
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(30), true));
+        front.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SeekBarRelease_WithNoGestureBegun_StillSeeksToTheThumb()
+    {
+        // WPF's Slider can handle a press on the seek-bar rail before BeginSeek runs, so a rail click may reach the view-model only as a thumb move and a release, and only a clip change may cancel that release.
+        using var clipFiles = TestClipFiles.Create(chunkCount: 1);
+        var vm = CreateViewModelPlayingClip(clipFiles.Clip, out var controller, out var front);
+        RunPinnedToTestThread(() => vm.Playback.PlayPauseCommand.ExecuteAsync(null));
+
+        vm.Playback.SeekPosition = 0.5;
+        RunPinnedToTestThread(vm.Playback.EndSeekAsync);
+        RunPinnedToTestThread(controller.WhenIdleAsync);
+
+        front.Seeks[^1].ShouldBe((TimeSpan.FromSeconds(30), true));
+        vm.Playback.SeekPosition.ShouldBe(0.5, 0.0001);
+    }
+
+    // Selects the clip through the list and waits until the player has it open and playing.
+    // The view-model's handlers run inline on whichever thread the controller raises them, because the open finishes on a thread-pool continuation.
+    private MainWindowViewModel CreateViewModelPlayingClip(CamClip clip, out VideoPlayerController controller, out FakeCameraPlayer front)
+    {
+        front = new FakeCameraPlayer();
+        var built = BuildFourCameraController(front);
+        controller = built;
+        built.LoadClips([clip]);
+
+        var vm = new MainWindowViewModel(() => built, backgroundYield: () => Task.CompletedTask, uiInvoker: action => action());
+        vm.InitializePlayer();
+        vm.Library.SelectedClip = clip;
+        RunPinnedToTestThread(built.WhenIdleAsync);
+
+        built.IsPlaying.ShouldBeTrue();
+        return vm;
     }
 }

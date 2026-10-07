@@ -13,8 +13,15 @@ public sealed partial class VideoPlayerControllerTests
 {
     private static readonly TimeSpan ChunkDuration = FakeClipMediaSourceBuilder.ChunkDuration;
 
+    /// <summary>
+    /// How far before the end of its recorded duration a real Tesla file shows its last frame, at the worst measured on real footage: the file's final sample falls outside its edit list.
+    /// </summary>
+    private static readonly TimeSpan LastFrameCut = TimeSpan.FromMilliseconds(58);
+
     private sealed class Rig : IDisposable
     {
+        private readonly Dictionary<string, TimeSpan> _shortfalls = [];
+
         public Rig(
             int chunkCount = 3,
             FakeCameraPlayer front = null,
@@ -63,6 +70,26 @@ public sealed partial class VideoPlayerControllerTests
             Controller.LoadClips(clips.Length == 0 ? [Clip] : clips);
             Controller.Playlist.MoveTo(0);
             await Controller.WhenIdleAsync();
+        }
+
+        /// <summary>
+        /// Ends <paramref name="camera"/>'s footage <paramref name="shortfall"/> before the clip's, like a Tesla side file that stops before the front file of the same minute.
+        /// </summary>
+        public void ShortenCamera(string camera, TimeSpan shortfall)
+        {
+            FakeBuilder.ShortenCamera(camera, shortfall);
+            _shortfalls[camera] = shortfall;
+        }
+
+        /// <summary>
+        /// Puts every camera's last frame where a real Tesla file has it, <see cref="LastFrameCut"/> before the end of its footage, so seeking a camera past it wedges the fake the way it wedges Flyleaf.
+        /// </summary>
+        public void PlaceLastFrames(TimeSpan footageEnd)
+        {
+            foreach (var (camera, player) in Players)
+            {
+                player.LastFrame = footageEnd - _shortfalls.GetValueOrDefault(camera) - LastFrameCut;
+            }
         }
 
         public void Dispose()
@@ -165,7 +192,7 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task SelectingClip_WhenAllFilesAreTruncated_ReportsNoFootageRatherThanEncryption()
+    public async Task SelectingClip_WhenAllFilesAreTruncated_ReportsDamagedFileRatherThanEncryption()
     {
         // Same all-unreadable shape, but the files still carry MP4 headers (truncated writes): that's ordinary corruption and must NOT be blamed on encryption.
         using var playlists = new TestPlaylistDirectory();
@@ -178,7 +205,59 @@ public sealed partial class VideoPlayerControllerTests
 
         await rig.OpenAsync();
 
-        rig.Controller.ErrorMessage.ShouldBe("No front camera footage found.");
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be read. The file may be damaged or incomplete.");
+        rig.Controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenFrontFileIsEmpty_ReportsDamagedFile()
+    {
+        // The file is right there in the folder, so "no footage found" would send the user hunting for footage they can already see.
+        using var playlists = new TestPlaylistDirectory();
+        using var rig = new Rig(chunkCount: 1, builder: playlists.CreateBuilder());
+        File.WriteAllBytes(rig.Files.GetPath(0, CameraNames.Front), []);
+
+        await rig.OpenAsync();
+
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be read. The file may be damaged or incomplete.");
+        rig.Controller.IsPlaying.ShouldBeFalse();
+        rig.All.ShouldAllBe(player => player.OpenedPaths.Count == 0);
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenFrontFileIsLocked_SaysAnotherProgramHasItAndPlaysOnceReleased()
+    {
+        // A lock is temporary, unlike damage: the user needs to know the clip will play once the other program lets go.
+        using var playlists = new TestPlaylistDirectory();
+        using var rig = new Rig(chunkCount: 1, builder: playlists.CreateBuilder());
+
+        using (new FileStream(rig.Files.GetPath(0, CameraNames.Front), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await rig.OpenAsync();
+        }
+
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be read because another program is using it. Close that program, then press Play to try again.");
+        rig.Controller.IsPlaying.ShouldBeFalse();
+
+        await rig.Controller.PlayAsync();
+        await rig.Controller.WhenIdleAsync();
+
+        rig.Controller.ErrorMessage.ShouldBeNull();
+        rig.Controller.IsPlaying.ShouldBeTrue();
+        rig.Front.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WhenClipFolderWasMovedAway_SaysTheFootageCantBeFound()
+    {
+        // The list still shows a clip whose folder was moved or deleted after the scan; only a rescan brings the list back in step with the disk.
+        using var playlists = new TestPlaylistDirectory();
+        using var rig = new Rig(chunkCount: 2, builder: playlists.CreateBuilder());
+        Directory.Delete(rig.Files.RootPath, recursive: true);
+
+        await rig.OpenAsync();
+
+        rig.Controller.ErrorMessage.ShouldBe("The front camera video can't be found. The clip may have been moved or deleted; rescan the folder to update the list.");
         rig.Controller.IsPlaying.ShouldBeFalse();
     }
 
@@ -239,6 +318,23 @@ public sealed partial class VideoPlayerControllerTests
         rig.All.ShouldAllBe(player => player.Seeks.Count == 0);
         rig.Controller.Position.ShouldBe(TimeSpan.Zero);
         rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task SelectingClip_WithEventPastWhereASideCamerasFootageEnds_StartsThatCameraOnItsLastFrame()
+    {
+        // The event sits 55 s into the second chunk, so the clip opens at 1:45, but the left camera's footage stops at 1:30.
+        using var rig = new Rig(chunkCount: 2);
+        rig.ShortenCamera(CameraNames.LeftRepeater, TimeSpan.FromSeconds(30));
+        rig.PlaceLastFrames(ChunkDuration * 2);
+        var clip = WithEvent(rig.Clip, rig.Clip.Chunks[1].Timestamp.AddSeconds(55));
+
+        await rig.OpenAsync(clip);
+
+        rig.Front.Seeks.ShouldHaveSingleItem().Position.ShouldBe(TimeSpan.FromSeconds(105));
+        rig.Left.Seeks.ShouldHaveSingleItem().Position.ShouldBe(TimeSpan.FromSeconds(90) - VideoPlayerController.EndSeekMargin);
+        rig.All.ShouldAllBe(player => !player.IsWedged && player.IsPlaying);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(105));
     }
 
     [Fact]
@@ -304,6 +400,51 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task PauseAsync_AfterFastPlayback_LinesEveryCameraUpOnTheFront()
+    {
+        // At 16x each camera drops the frames it can't decode in time and restarts its own clock, so the cameras drift apart while playing.
+        // Each one's reported time also trails the frame it shows, so even a camera that looks aligned (right) and the front itself have to be reseeked for the still frame to match the readout.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        rig.Controller.PlaybackSpeed = 16;
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        rig.Back.RaisePositionChanged(TimeSpan.FromSeconds(29.2));
+        rig.Left.RaisePositionChanged(TimeSpan.FromSeconds(31.4));
+        rig.Right.RaisePositionChanged(TimeSpan.FromSeconds(30.01));
+
+        await rig.Controller.PauseAsync();
+
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(2).ShouldBe(["pause", "seek:30"], camera);
+            player.IsPlaying.ShouldBeFalse(camera);
+        }
+
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(30));
+        rig.Controller.IsPlaying.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task PauseAsync_AtNormalSpeed_RealignsOnlyACameraThatIsOutOfStep()
+    {
+        // At real time each camera's time matches its picture, so only one that has really drifted (here, left behind by an earlier fast stretch) moves, and the front stays on the frame the user paused on.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        rig.Back.RaisePositionChanged(TimeSpan.FromSeconds(28.9));
+        rig.Left.RaisePositionChanged(TimeSpan.FromSeconds(30.03));
+        rig.Right.RaisePositionChanged(TimeSpan.FromSeconds(29.98));
+
+        await rig.Controller.PauseAsync();
+
+        rig.Back.Seeks.ShouldHaveSingleItem().Position.ShouldBe(TimeSpan.FromSeconds(30));
+        rig.Front.Seeks.ShouldBeEmpty();
+        rig.Left.Seeks.ShouldBeEmpty();
+        rig.Right.Seeks.ShouldBeEmpty();
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
     public async Task PlayAsync_OnPausedClip_ResumesEveryCameraWithoutReopening()
     {
         using var rig = new Rig();
@@ -340,6 +481,28 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task PlayAsync_WhenTheFrontIsPastWhereASideCamerasFootageEnded_RealignsThatCameraOnlyAsFarAsItsLastFrame()
+    {
+        // The left camera ran out of footage a second before the front and ended there while the front played on.
+        // Lining it up with the front on resume must not ask it for a moment it has no frame for.
+        using var rig = new Rig(chunkCount: 1);
+        var leftEnd = ChunkDuration - TimeSpan.FromSeconds(1);
+        rig.ShortenCamera(CameraNames.LeftRepeater, TimeSpan.FromSeconds(1));
+        rig.PlaceLastFrames(ChunkDuration);
+        await rig.OpenAsync();
+        rig.Left.RaiseEnded(at: leftEnd - LastFrameCut);
+        rig.Front.RaisePositionChanged(ChunkDuration - TimeSpan.FromSeconds(0.5));
+        await rig.Controller.PauseAsync();
+
+        await rig.Controller.PlayAsync();
+
+        rig.Left.IsWedged.ShouldBeFalse();
+        rig.Left.Seeks.ShouldHaveSingleItem().Position.ShouldBe(leftEnd - VideoPlayerController.EndSeekMargin);
+        rig.Front.IsPlaying.ShouldBeTrue();
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task PlayAsync_AfterStop_ReopensTheClip()
     {
         using var rig = new Rig();
@@ -370,6 +533,61 @@ public sealed partial class VideoPlayerControllerTests
 
         rig.Front.OpenedPaths.Count.ShouldBe(1);
         rig.FakeBuilder.BuildCount.ShouldBe(1);
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ReopenAsync_AfterStop_OpensEveryCameraAtThePositionPaused()
+    {
+        // The event maps to media time 90s, so a plain open would start at 80s.
+        using var rig = new Rig(chunkCount: 3);
+        var clip = WithEvent(rig.Clip, rig.Clip.Chunks[1].Timestamp.AddSeconds(30));
+        await rig.OpenAsync(clip);
+        await rig.Controller.StopAsync();
+        var playsBeforeReopen = rig.Front.Count("play");
+
+        await rig.Controller.ReopenAsync(clip, TimeSpan.FromSeconds(125), play: false);
+
+        // A delete that didn't happen reopens the clip this way, and jumping back to the event would lose the user's place.
+        rig.All.ShouldAllBe(player => player.IsOpen && player.Position == TimeSpan.FromSeconds(125));
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(125));
+        rig.Controller.IsMediaOpen.ShouldBeTrue();
+        rig.Controller.IsPlaying.ShouldBeFalse();
+        rig.Front.Count("play").ShouldBe(playsBeforeReopen);
+    }
+
+    [Fact]
+    public async Task ReopenAsync_AfterAnotherClipOpened_LeavesThatClipPlaying()
+    {
+        using var rig = new Rig(chunkCount: 1);
+        using var secondFiles = TestClipFiles.Create(chunkCount: 1);
+        await rig.OpenAsync(rig.Clip, secondFiles.Clip);
+        await rig.Controller.StopAsync();
+        await rig.Controller.NextAsync();
+        await rig.Controller.WhenIdleAsync();
+
+        await rig.Controller.ReopenAsync(rig.Clip, TimeSpan.FromSeconds(30), play: false);
+        await rig.Controller.WhenIdleAsync();
+
+        // The user moved on while the stopped clip waited, so a late reopen must not take the player back.
+        rig.Controller.CurrentClip.ShouldBe(secondFiles.Clip);
+        rig.Front.OpenedPaths[^1].ShouldStartWith(secondFiles.RootPath);
+        rig.Controller.IsPlaying.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ReopenAsync_AfterTheSameClipWasPlayedAgain_LeavesItPlaying()
+    {
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.StopAsync();
+        await rig.Controller.PlayAsync();
+
+        await rig.Controller.ReopenAsync(rig.Clip, TimeSpan.FromSeconds(30), play: false);
+        await rig.Controller.WhenIdleAsync();
+
+        // The shell's delete dialog doesn't block the app, so the user can press Play before it closes, and a late reopen would pause what they just started.
+        rig.Front.OpenedPaths.Count.ShouldBe(2);
         rig.Controller.IsPlaying.ShouldBeTrue();
     }
 
@@ -444,7 +662,7 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
-    public async Task SeekAsync_BeyondDuration_ClampsToDuration()
+    public async Task SeekAsync_BeyondDuration_StopsJustShortOfTheEnd()
     {
         using var rig = new Rig(chunkCount: 3);
         await rig.OpenAsync();
@@ -452,8 +670,58 @@ public sealed partial class VideoPlayerControllerTests
 
         await rig.Controller.SeekAsync(TimeSpan.FromMinutes(10));
 
-        rig.Front.Seeks[^1].Position.ShouldBe(ChunkDuration * 3);
-        rig.Controller.Position.ShouldBe(ChunkDuration * 3);
+        rig.Front.Seeks[^1].Position.ShouldBe((ChunkDuration * 3) - VideoPlayerController.EndSeekMargin);
+        rig.Controller.Position.ShouldBe((ChunkDuration * 3) - VideoPlayerController.EndSeekMargin);
+    }
+
+    [Theory]
+    [InlineData("seek")]
+    [InlineData("seek by")]
+    [InlineData("scrub release")]
+    public async Task SeekingToTheEnd_ThenPlaying_ReplaysWithoutSeekingAnyCameraPastItsLastFrame(string route)
+    {
+        // An accurate seek past a stream's last frame leaves Flyleaf no frame to show and its decoder parked for good, so that camera froze on every clip until a restart.
+        // The left camera's file stops 600 ms before the front's, as Tesla side files often do, so each camera has to stop at its own last frame rather than the front's.
+        using var rig = new Rig(chunkCount: 2);
+        var end = ChunkDuration * 2;
+        var leftShortfall = TimeSpan.FromMilliseconds(600);
+        rig.ShortenCamera(CameraNames.LeftRepeater, leftShortfall);
+        rig.PlaceLastFrames(end);
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+
+        switch (route)
+        {
+            case "seek":
+                await rig.Controller.SeekAsync(end);
+                break;
+            case "seek by":
+                await rig.Controller.SeekAsync(end - TimeSpan.FromSeconds(2));
+                await rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5));
+                break;
+            case "scrub release":
+                await rig.Controller.BeginScrubAsync();
+                await rig.Controller.ScrubSeekAsync(end);
+                await rig.Controller.EndScrubAsync(end);
+                break;
+        }
+
+        rig.All.ShouldAllBe(player => !player.IsWedged);
+        rig.Front.Seeks[^1].Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Back.Seeks[^1].Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+        rig.Left.Seeks[^1].Position.ShouldBe(end - leftShortfall - VideoPlayerController.EndSeekMargin);
+        rig.Controller.Position.ShouldBe(end - VideoPlayerController.EndSeekMargin);
+
+        await rig.Controller.PlayAsync();
+
+        // Still close enough to the end that play replays the clip from the top.
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(2).ShouldBe(["seek:0", "play"], camera);
+            player.IsPlaying.ShouldBeTrue(camera);
+        }
+
+        rig.Controller.Position.ShouldBe(TimeSpan.Zero);
     }
 
     [Fact]
@@ -499,6 +767,43 @@ public sealed partial class VideoPlayerControllerTests
         rig.Front.Seeks.Count.ShouldBe(2);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SeekByAsync_RepeatsArrivingWhileEachSeekRuns_MoveFiveSecondsPerPress(bool playing)
+    {
+        // A held arrow key repeats faster than a seek lands, so each repeat arrives while the seek before it is still running.
+        // The readout only moves once every camera has landed, so measuring those repeats from it lost about a third of a held key's steps.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        await rig.Controller.SeekAsync(TimeSpan.FromSeconds(20));
+        if (playing)
+        {
+            await rig.Controller.PlayAsync();
+        }
+
+        const int presses = 6;
+        var pressed = 1;
+        var lastPress = new TaskCompletionSource<Task>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Front.SeekCallback = () =>
+        {
+            var press = rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5));
+            if (++pressed == presses)
+            {
+                rig.Front.SeekCallback = null;
+                lastPress.SetResult(press);
+            }
+        };
+
+        await rig.Controller.SeekByAsync(TimeSpan.FromSeconds(5));
+        await await lastPress.Task;
+
+        rig.Front.Seeks.Select(seek => seek.Position.TotalSeconds).ShouldBe([20, 25, 30, 35, 40, 45, 50]);
+        rig.Controller.Position.ShouldBe(TimeSpan.FromSeconds(50));
+        rig.Controller.IsPlaying.ShouldBe(playing);
+    }
+
     [Fact]
     public async Task SeekByAsync_PastEitherEnd_ClampsToTheClip()
     {
@@ -510,7 +815,7 @@ public sealed partial class VideoPlayerControllerTests
         rig.Controller.Position.ShouldBe(TimeSpan.Zero);
 
         await rig.Controller.SeekByAsync(TimeSpan.FromMinutes(5));
-        rig.Controller.Position.ShouldBe(ChunkDuration);
+        rig.Controller.Position.ShouldBe(ChunkDuration - VideoPlayerController.EndSeekMargin);
     }
 
     [Fact]
@@ -598,6 +903,28 @@ public sealed partial class VideoPlayerControllerTests
     }
 
     [Fact]
+    public async Task StepFrameAsync_WhilePlayingFast_LinesTheCamerasUpBeforeStepping()
+    {
+        // Stepping on from wherever 16x left each camera kept the side cameras several frames off the front, and the next step didn't fix it.
+        using var rig = new Rig();
+        await rig.OpenAsync();
+        rig.Controller.PlaybackSpeed = 16;
+        rig.Front.RaisePositionChanged(TimeSpan.FromSeconds(30));
+        rig.Back.RaisePositionChanged(TimeSpan.FromSeconds(30.2));
+
+        await rig.Controller.StepFrameAsync(forward: true);
+
+        var stepped = TimeSpan.FromSeconds(30) + FakeCameraPlayer.FrameDuration;
+        foreach (var (camera, player) in rig.Players)
+        {
+            player.Calls.TakeLast(3).ShouldBe(["pause", "seek:30", "step:forward"], camera);
+            player.Position.ShouldBe(stepped, camera);
+        }
+
+        rig.Controller.Position.ShouldBe(stepped);
+    }
+
+    [Fact]
     public async Task StepFrameAsync_Backward_SideCamerasFollowTheFrontsNewFrame()
     {
         using var rig = new Rig();
@@ -617,6 +944,26 @@ public sealed partial class VideoPlayerControllerTests
         }
 
         rig.Controller.Position.ShouldBe(anchor);
+    }
+
+    [Fact]
+    public async Task StepFrameAsync_PastWhereASideCamerasFootageEnds_LeavesThatCameraOnItsLastFrame()
+    {
+        // Past the end of its own footage a camera only has its last frame to show, so it follows the front there and then stays put instead of being reseeked on every step.
+        using var rig = new Rig(chunkCount: 1);
+        var leftLimit = ChunkDuration - TimeSpan.FromSeconds(1) - VideoPlayerController.EndSeekMargin;
+        rig.ShortenCamera(CameraNames.LeftRepeater, TimeSpan.FromSeconds(1));
+        rig.PlaceLastFrames(ChunkDuration);
+        await rig.OpenAsync();
+        await rig.Controller.PauseAsync();
+        await rig.Controller.SeekAsync(ChunkDuration - TimeSpan.FromSeconds(0.5));
+
+        await rig.Controller.StepFrameAsync(forward: false);
+        await rig.Controller.StepFrameAsync(forward: true);
+
+        rig.Left.IsWedged.ShouldBeFalse();
+        rig.Left.Seeks.ShouldAllBe(seek => seek.Position == leftLimit);
+        rig.Left.Calls[^1].ShouldBe("step:forward");
     }
 
     [Fact]

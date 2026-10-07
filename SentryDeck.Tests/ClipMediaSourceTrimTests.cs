@@ -164,6 +164,22 @@ public sealed class ClipMediaSourceTrimTests
     }
 
     [Fact]
+    public void ToMediaTime_ExactlyTheGapThresholdAfterClipEnd_ReturnsDuration()
+    {
+        // An instant this close to the end is the ordinary clock skew between event.json and the footage, so the event still belongs at the last frame.
+        ThreeChunkSource().ToMediaTime(FirstTimestamp.AddMinutes(3) + ClipMediaSource.GapThreshold).ShouldBe(TimeSpan.FromSeconds(180));
+    }
+
+    [Fact]
+    public void ToMediaTime_JustOverTheGapThresholdAfterClipEnd_ReturnsNull()
+    {
+        // Any later is footage that was never saved, so pinning it to the last frame would claim a moment the clip doesn't show.
+        var instant = FirstTimestamp.AddMinutes(3) + ClipMediaSource.GapThreshold + TimeSpan.FromTicks(1);
+
+        ThreeChunkSource().ToMediaTime(instant).ShouldBeNull();
+    }
+
+    [Fact]
     public void GapPositions_GapExactlyAtThreshold_IsNotAGap()
     {
         // Exactly the threshold is the ordinary skew between a chunk's nominal timestamp and the previous chunk's probed end, so it must not litter the timeline with a marker.

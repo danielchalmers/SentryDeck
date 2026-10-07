@@ -10,7 +10,19 @@ namespace SentryDeck;
 /// </summary>
 public sealed partial class AboutViewModel : ObservableObject
 {
-    private readonly UpdateService _updateService = new();
+    private readonly UpdateService _updateService;
+
+    public AboutViewModel()
+        : this(new UpdateService())
+    {
+    }
+
+    /// <param name="updateService">Where the latest release is read from.
+    /// Overridable for tests.</param>
+    public AboutViewModel(UpdateService updateService)
+    {
+        _updateService = updateService;
+    }
 
     public Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
 
@@ -30,13 +42,27 @@ public sealed partial class AboutViewModel : ObservableObject
 
     public string ReleasesPageUrl => UpdateService.ReleasesPageUrl;
 
+    // Only a check that got an answer may say "up to date".
+    // A user told that while offline or rate-limited trusts it and never looks for the release that fixes their problem.
     public string UpdateStatusTitle => IsUpdateAvailable
         ? "Update available"
-        : "You're up to date";
+        : UpdateCheckState switch
+        {
+            UpdateCheckState.NotChecked => "Updates not checked",
+            UpdateCheckState.Checking => "Checking for updates…",
+            UpdateCheckState.Failed => "Couldn't check for updates",
+            _ => "You're up to date",
+        };
 
     public string UpdateStatusDetails => IsUpdateAvailable
         ? $"Version {LatestVersionText} is available."
-        : "No newer release was found.";
+        : UpdateCheckState switch
+        {
+            UpdateCheckState.NotChecked => "This build doesn't check for updates.",
+            UpdateCheckState.Checking => "Looking for a newer release on GitHub.",
+            UpdateCheckState.Failed => "The latest release couldn't be read from GitHub.",
+            _ => "No newer release was found.",
+        };
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateBadge))]
@@ -50,11 +76,23 @@ public sealed partial class AboutViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
     private UpdateRelease _latestRelease;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusTitle))]
+    [NotifyPropertyChangedFor(nameof(UpdateStatusDetails))]
+    private UpdateCheckState _updateCheckState;
+
     public async Task CheckForUpdatesAsync()
     {
+        UpdateCheckState = UpdateCheckState.Checking;
+
         var result = await _updateService.CheckForUpdateAsync(CurrentVersion);
         LatestRelease = result.LatestRelease;
         IsUpdateAvailable = result.IsUpdateAvailable;
+
+        // The service reports every failure (offline, rate-limited, an unreadable reply) as no release at all.
+        UpdateCheckState = result.LatestRelease is null
+            ? UpdateCheckState.Failed
+            : UpdateCheckState.Checked;
 
         Log.Information(
             "Checked for updates. CurrentVersion={CurrentVersion}; LatestVersion={LatestVersion}; IsUpdateAvailable={IsUpdateAvailable}",
@@ -63,14 +101,16 @@ public sealed partial class AboutViewModel : ObservableObject
             IsUpdateAvailable);
     }
 
-    private static string FormatVersion(Version version)
+    internal static string FormatVersion(Version version)
     {
         if (version is null)
         {
             return "Unknown";
         }
 
-        if (version.Revision >= 0)
+        // A three-part <Version> still builds a four-part assembly version ending in 0.
+        // Showing that 0 makes the About page disagree with the release tag and release notes the user compares it against.
+        if (version.Revision > 0)
         {
             return version.ToString(4);
         }
@@ -79,4 +119,21 @@ public sealed partial class AboutViewModel : ObservableObject
             ? version.ToString(3)
             : version.ToString(2);
     }
+}
+
+/// <summary>
+/// How far the update check got, so the About page can tell "no newer release" apart from "no answer".
+/// </summary>
+public enum UpdateCheckState
+{
+    /// <summary>No check has started; debug builds skip it.</summary>
+    NotChecked,
+
+    Checking,
+
+    /// <summary>GitHub gave no usable answer, so whether a newer release is out is unknown.</summary>
+    Failed,
+
+    /// <summary>The latest release was read, and <see cref="AboutViewModel.IsUpdateAvailable"/> says whether it is newer.</summary>
+    Checked,
 }

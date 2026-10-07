@@ -130,19 +130,39 @@
         ============================================================
     -->
 
-    <!--  Icon-only, flat until hover. 32x32 minimum hit target.  -->
+    <!--
+        Icon-only, flat until hover.
+        The minimum size keeps a 32x32 hit target.
+        Disabled, it stays flat: the theme's disabled fill and outline would make it look more pressable than when enabled.
+        The theme dims only plain-text content, and these buttons hold their own TextBlocks, which take the button's Foreground, so the trigger dims that instead.
+        It styles toggle buttons too, which keep this look whether or not they are checked.
+    -->
     <Style x:Key="SubtleIconButton"
-           TargetType="Button"
+           TargetType="ButtonBase"
            BasedOn="{StaticResource DefaultButtonStyle}">
+        <Style.Resources>
+            <SolidColorBrush x:Key="ButtonBackgroundDisabled"
+                             Color="Transparent" />
+            <SolidColorBrush x:Key="ButtonBorderBrushDisabled"
+                             Color="Transparent" />
+        </Style.Resources>
         <Setter Property="Background" Value="{DynamicResource SubtleFillColorTransparentBrush}" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="MinWidth" Value="32" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="Padding" Value="6" />
         <Setter Property="Cursor" Value="Hand" />
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
-    <!--  Default button + a 0.96 press-scale micro-interaction.  -->
+    <!--
+        Default button + a 0.96 press-scale micro-interaction.
+        Like SubtleIconButton, it dims its own TextBlock content when disabled, which the theme leaves at full strength.
+    -->
     <Style x:Key="PressScaleButton"
            TargetType="Button"
            BasedOn="{StaticResource DefaultButtonStyle}">
@@ -154,6 +174,9 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+            </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Trigger.EnterActions>
                     <BeginStoryboard>

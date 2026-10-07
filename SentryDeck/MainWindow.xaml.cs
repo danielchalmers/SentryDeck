@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using FlyleafLib.Controls.WPF;
@@ -12,7 +15,7 @@ namespace SentryDeck;
 
 /// <summary>
 /// Main WPF window.
-/// Owns only view concerns: window lifecycle, Flyleaf host layout, the seek slider input plumbing, and search-box focus.
+/// Owns only view concerns: window lifecycle, Flyleaf host layout, the seek slider input plumbing, keeping the selected clip in view, and search-box focus.
 /// All state, commands, and orchestration live in <see cref="MainWindowViewModel"/>.
 /// </summary>
 public partial class MainWindow : Window
@@ -26,6 +29,7 @@ public partial class MainWindow : Window
 
     private bool _isClosing;
     private bool _isReadyToClose;
+    private bool _areCameraHostsInWindow;
 
     public MainWindow()
     {
@@ -41,8 +45,11 @@ public partial class MainWindow : Window
             [CameraNames.RightPillar] = RightPillarFlyleafHost,
         };
 
-        _viewModel = new MainWindowViewModel(
-            () => VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]));
+        // A host that has loaded logs through Flyleaf's engine when the window closes, and that engine only starts once FFmpeg is installed, so without FFmpeg every host threw on close.
+        // The hosts therefore join the window only when the player that drives them is created (see CreatePlayerController).
+        FlyleafHostPool.Children.Clear();
+
+        _viewModel = new MainWindowViewModel(CreatePlayerController);
         _viewModel.SearchBoxFocusRequested += OnSearchBoxFocusRequested;
         _viewModel.Cameras.PropertyChanged += CamerasOnPropertyChanged;
 
@@ -56,6 +63,22 @@ public partial class MainWindow : Window
         }
 
         UpdateCameraHostLayout();
+
+        HookSeekGesture(SeekSlider, _viewModel.Playback.BeginSeek, _viewModel.Playback.EndSeekAsync);
+        KeepSelectionInView(ClipListBox);
+        HighlightRowWhenDeselectIsTurnedDown(ClipListBox);
+        _viewModel.Library.ResultsReplaced += (_, _) => ShowNewResults(ClipListBox);
+        HookSearchEscape(SearchBox, _viewModel.Library.ClearFilterCommand, LeaveSearchBox);
+        NameSearchClearButton(SearchBox);
+    }
+
+    // Only called once Flyleaf has started.
+    private VideoPlayerController CreatePlayerController()
+    {
+        _areCameraHostsInWindow = true;
+        UpdateCameraHostLayout();
+
+        return VideoPlayerController.Create([.. _cameraHosts.Select(pair => (pair.Key, pair.Value))]);
     }
 
     private async void Window_ContentRendered(object sender, EventArgs e)
@@ -65,7 +88,8 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object sender, CancelEventArgs e)
     {
-        if (_isReadyToClose)
+        // A window whose constructor failed has nothing to stop, and the app closes it while shutting down because of that failure.
+        if (_isReadyToClose || _viewModel is null)
         {
             return;
         }
@@ -77,17 +101,34 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Closing stops a running export, so the file the user is waiting for is lost unless they choose to stay.
+        if (_viewModel.Trim.IsExporting && !ConfirmCloseDuringExport())
+        {
+            return;
+        }
+
         _isClosing = true;
         IsEnabled = false;
 
         // Let WPF finish this Closing callback before requesting the real close.
-        _ = Dispatcher.InvokeAsync(CloseAfterShutdown);
+        _ = Dispatcher.InvokeAsync(CloseAfterShutdownAsync);
     }
 
-    private void CloseAfterShutdown()
+    private bool ConfirmCloseDuringExport() =>
+        MessageBox.Show(
+            this,
+            "An export is still being saved. Close Sentry Deck anyway?\n\nThe export will be canceled and its unfinished file deleted.",
+            "Export in progress",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
+
+    private async Task CloseAfterShutdownAsync()
     {
         try
         {
+            // FFmpeg runs as its own process, so it would outlive the app and leave its temporary script behind.
+            await _viewModel.Trim.CancelExportAsync();
             _viewModel.Shutdown();
         }
         catch (Exception ex)
@@ -160,18 +201,129 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Keyboard.Focus(VideoContainer)));
     }
 
-    private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// Starts a seek gesture on every press of the seek bar and ends it on the release.
+    /// </summary>
+    /// <remarks>
+    /// The handlers see handled events too because a press on the rail never reaches an ordinary handler: with IsMoveToPointEnabled, Slider's own class handler jumps the thumb to the press and marks it handled first.
+    /// Missing that press left the gesture unstarted, so while playing the position sync put the thumb back before the release seek read it, and the click was ignored.
+    /// Only the thumb captures the mouse by itself, so the bar captures it for a press anywhere else: a press released outside the bar must still end the gesture, or playback would stay held paused.
+    /// </remarks>
+    internal static void HookSeekGesture(Slider slider, Action beginSeek, Func<Task> endSeekAsync)
     {
-        _viewModel.Playback.BeginSeek();
+        slider.AddHandler(
+            PreviewMouseDownEvent,
+            new MouseButtonEventHandler((_, _) =>
+            {
+                beginSeek();
+
+                if (slider.Template?.FindName("PART_Track", slider) is not Track { Thumb.IsMouseOver: true })
+                {
+                    slider.CaptureMouse();
+                }
+            }),
+            handledEventsToo: true);
+
+        slider.AddHandler(
+            PreviewMouseUpEvent,
+            new MouseButtonEventHandler(async (_, _) =>
+            {
+                slider.ReleaseMouseCapture();
+                await endSeekAsync();
+            }),
+            handledEventsToo: true);
     }
 
-    private async void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// Scrolls the list to every newly selected clip, including the ones Next and Previous select without a click on the row.
+    /// </summary>
+    /// <remarks>
+    /// WPF only brings a row into view when the user picks it in the list itself, so a clip opened any other way was selected far off-screen and nothing on screen showed which clip was playing.
+    /// The scroll waits for the list's next layout because after a search or a rescan the selected row's container may not exist yet.
+    /// While the keyboard is in the list it moves to the new row too, or the arrow keys would carry on from the previous clip's row.
+    /// </remarks>
+    internal static void KeepSelectionInView(ListBox list)
     {
-        await _viewModel.Playback.EndSeekAsync();
+        list.SelectionChanged += (_, _) =>
+            list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                if (list.SelectedItem is not { } item)
+                {
+                    return;
+                }
+
+                list.ScrollIntoView(item);
+
+                if (list.IsKeyboardFocusWithin && list.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem row)
+                {
+                    row.Focus();
+                }
+            });
+    }
+
+    /// <summary>
+    /// Highlights a row again when the view-model turns down its deselect, as it does for the open clip's row.
+    /// </summary>
+    /// <remarks>
+    /// WPF unhighlights the row first and only then hears, through the selection binding, that the view-model kept it, so the list ends up pointing at a row that shows as unselected.
+    /// Selecting it again has to wait until the list has finished its own selection change.
+    /// </remarks>
+    internal static void HighlightRowWhenDeselectIsTurnedDown(ListBox list)
+    {
+        list.SelectionChanged += (_, _) =>
+            list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                if (list.SelectedIndex < 0
+                    && list.SelectedItem is { } kept
+                    && list.ItemContainerGenerator.ContainerFromItem(kept) is ListBoxItem { IsSelected: false } row)
+                {
+                    row.IsSelected = true;
+                }
+            });
+    }
+
+    /// <summary>
+    /// Shows the start of a new search's results, or of a newly loaded library: the selected clip's row when there is one, otherwise the top of the list.
+    /// </summary>
+    /// <remarks>
+    /// The list kept the scroll offset it had before, which lands on unrelated rows of the new results, so neither the playing clip's row nor the best matches were on screen.
+    /// After picking another folder, its newest clip and that day's header sat above the view.
+    /// A search that keeps the selected clip doesn't change the selection, and a newly picked folder opens with nothing selected, so <see cref="KeepSelectionInView"/> scrolls for neither.
+    /// The scroll waits for the list's next layout, which builds the rows of the new results.
+    /// </remarks>
+    internal static void ShowNewResults(ListBox list)
+    {
+        list.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            if (list.SelectedItem is { } item)
+            {
+                list.ScrollIntoView(item);
+            }
+            else
+            {
+                FindScrollViewer(list)?.ScrollToTop();
+            }
+        });
+    }
+
+    // The list's own ScrollViewer comes before any inside its rows, because the rows are laid out within it.
+    private static ScrollViewer FindScrollViewer(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if ((child as ScrollViewer ?? FindScrollViewer(child)) is { } scrollViewer)
+            {
+                return scrollViewer;
+            }
+        }
+
+        return null;
     }
 
     // Fires for both thumb-drag and click-then-drag (WPF raises ValueChanged on every Value mutation, whether from dragging the Thumb or from IsMoveToPointEnabled's click-to-position), and also for the one-off value jump a plain click makes.
-    // PreviewMouseDown has already called BeginSeek by the time this fires, so even a plain click issues one keyframe scrub seek here, which is harmless since the accurate mouse-up seek runs behind the same serialized lock and lands last.
+    // A drag has already called BeginSeek by the time this fires, so its every move scrub-seeks here.
+    // A press on the rail jumps the value before the gesture starts, so it issues no scrub seek: the release seek lands on it directly.
     private void SeekSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         _viewModel.Playback.OnSeekSliderValueChanged();
@@ -191,6 +343,62 @@ public partial class MainWindow : Window
     {
         SearchBox.Focus();
         SearchBox.SelectAll();
+    }
+
+    /// <summary>
+    /// Gives Escape in the search box its usual meaning: it clears the query, and on an empty box it leaves the box.
+    /// </summary>
+    /// <remarks>
+    /// Every other key is text while the box has focus, so without this a keyboard user who pressed Ctrl+F had no way back to the playback shortcuts short of Tab or the mouse, and Space typed into the query instead of playing.
+    /// </remarks>
+    internal static void HookSearchEscape(TextBox searchBox, ICommand clearFilter, Action leaveSearch)
+    {
+        searchBox.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape)
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(searchBox.Text))
+            {
+                leaveSearch();
+            }
+            else
+            {
+                clearFilter.Execute(null);
+            }
+
+            e.Handled = true;
+        };
+    }
+
+    /// <summary>
+    /// Names the clear button that WPF's Fluent theme builds into the search box.
+    /// </summary>
+    /// <remarks>
+    /// The theme ships the button without a name, so screen readers announced it only as "button".
+    /// It only appears while the box has keyboard focus, so naming it then also covers a template the theme swapped in after the window loaded.
+    /// </remarks>
+    internal static void NameSearchClearButton(TextBox searchBox)
+    {
+        searchBox.GotKeyboardFocus += (_, _) =>
+        {
+            if (searchBox.Template?.FindName("DeleteButton", searchBox) is Button clearButton)
+            {
+                AutomationProperties.SetName(clearButton, "Clear search");
+                clearButton.ToolTip = "Clear search (Esc)";
+            }
+        };
+    }
+
+    // The player is where the shortcuts work; with no clip open it isn't shown, so the clip list is the next best place for the keyboard.
+    private void LeaveSearchBox()
+    {
+        if (!VideoContainer.Focus())
+        {
+            ClipListBox.Focus();
+        }
     }
 
     // The FlyleafHost creates its native Surface window when it loads (and reuses it across reparenting), so subscribe once it exists. handledEventsToo ensures we still see the click if Flyleaf marks it handled, and the HashSet guards against re-subscribing when Loaded fires again on a reparent.
@@ -230,7 +438,7 @@ public partial class MainWindow : Window
 
     private void UpdateCameraHostLayout()
     {
-        if (PrimaryCameraHostSlot is null)
+        if (PrimaryCameraHostSlot is null || !_areCameraHostsInWindow)
             return;
 
         var placed = new HashSet<FlyleafHost>();
