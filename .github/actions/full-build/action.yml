@@ -63,16 +63,16 @@ runs:
 
     # Installed here rather than up front so build, format, and test failures short-circuit ahead of the tool install.
     # setup-dotnet keeps ~/.dotnet/tools on PATH for the whole job.
-    - name: Install WiX v6
+    - name: Install WiX v7
       shell: bash
       run: |
-        dotnet tool install --global wix --version 6.0.*
+        dotnet tool install --global wix --version 7.0.*
 
     - name: Create MSI Installers
       shell: bash
       run: |
         for arch in ${{ inputs.archs }}; do
-          wix build Package.wxs -arch $arch -d Version=${{ inputs.version }} -d Arch=$arch -o "publish/SentryDeck-${{ inputs.version }}-$arch.msi"
+          wix build Package.wxs -arch $arch -acceptEula wix7 -o "publish/SentryDeck-${{ inputs.version }}-$arch.msi"
         done
 
     - uses: actions/upload-artifact@v7
