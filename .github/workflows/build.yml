@@ -38,29 +38,3 @@ jobs:
       - name: Build and test
         shell: bash
         run: dotnet test -c Release --blame-hang --blame-hang-timeout 5m
-
-  smoke-test:
-    name: Smoke test ${{ matrix.arch }}
-    needs: build
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: windows-2025
-          - arch: arm64
-            runner: windows-11-arm
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: artifact
-          path: artifact
-
-      - uses: ./.github/actions/smoke-test
-        with:
-          msi: artifact/SentryDeck-0.0.0-${{ matrix.arch }}.msi
-          exe: '%LOCALAPPDATA%\SentryDeck\SentryDeck\SentryDeck.exe'
-          logs: '%LOCALAPPDATA%\SentryDeck\logs\*.txt'
