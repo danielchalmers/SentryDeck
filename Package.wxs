@@ -11,8 +11,7 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/danielchalmers/SentryDeck/issues" />
     <!-- Skips the System Restore point, which can hold a double-click install at "Please wait" for most of a minute and protects nothing in a per-user app folder. -->
     <Property Id="MSIFASTINSTALL" Value="1" />
-    <!-- The default schedule removes the old version before installing the new one. -->
-    <!-- An earlier schedule leaves an orphaned copy behind when a per-user upgrade rolls back. -->
+    <!-- The default schedule removes the old version before installing the new one. An earlier schedule leaves an orphaned copy behind when a per-user upgrade rolls back. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="!(loc.WixDowngradePreventedMessage)" />
     <MediaTemplate EmbedCab="yes" />
@@ -24,24 +23,20 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- The single-file publish has nothing else to install. -->
     <File Id="SentryDeck.exe" Source="publish/$(sys.BUILDARCH)/SentryDeck.exe" />
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Component>
-        <!-- Targets the folder path rather than [#SentryDeck.exe], which ICE69 flags because the exe is in another component. -->
         <Shortcut Name="Sentry Deck"
                   Target="[INSTALLFOLDER]SentryDeck.exe"
                   WorkingDirectory="INSTALLFOLDER" />
-        <!-- A per-user shortcut needs a registry key path. -->
         <RegistryValue Root="HKCU"
                        Key="Software\Daniel Chalmers\SentryDeck"
                        Name="StartMenuShortcut"
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
-        <!-- No wildcard RemoveFile here: every upgrade uninstalls the old version first, so it would delete FFmpeg and anything else the app keeps next to the exe. -->
-        <!-- Each folder is removed only once empty, so settings, logs, and FFmpeg keep theirs. -->
+        <!-- No wildcard RemoveFile here: every upgrade uninstalls the old version first, so it would delete anything the app keeps next to the exe. -->
         <RemoveFolder Directory="INSTALLFOLDER" On="uninstall" />
         <RemoveFolder Directory="SentryDeckRoot" On="uninstall" />
       </Component>
