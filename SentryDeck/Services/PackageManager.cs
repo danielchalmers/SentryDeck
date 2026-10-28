@@ -187,7 +187,10 @@ public static class PackageManager
             _ => $"Sentry Deck couldn't install FFmpeg ({exception.Message}). Try again.",
         };
 
-        return $"{cause}\n\nTo install it yourself, copy the contents of the bin folder of an FFmpeg {FFmpegReleaseBranch} shared build into {Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName)} and restart Sentry Deck.";
+        // Named the way the builds are on the download page, since FindFFmpegDirectory ignores one for the other architecture.
+        var platform = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "winarm64" : "win64";
+
+        return $"{cause}\n\nTo install it yourself, copy the contents of the bin folder of an FFmpeg {FFmpegReleaseBranch} {platform} shared build into {Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName)} and restart Sentry Deck.";
     }
 
     // A dropped connection can surface while the body streams to disk, as an IOException wrapping the socket error, so the whole chain is searched rather than only the outer type.
@@ -205,17 +208,50 @@ public static class PackageManager
     }
 
     /// <summary>
-    /// Returns the installed FFmpeg bin directory, or null when it is missing.
+    /// Returns the installed FFmpeg bin directory, or null when it is missing or built for another architecture.
     /// </summary>
+    /// <remarks>
+    /// Arm64 Windows also runs the x64 build, and both builds install to the same folder, so moving from one to the other leaves FFmpeg for the wrong architecture next to the exe.
+    /// Its libraries can't load into this process, and once Flyleaf has failed to start, starting it again in the same process reports success without loading FFmpeg, so playback stayed broken even after the download replaced it.
+    /// Counting it as missing sends it down the first-run path instead, where the download comes before Flyleaf ever starts.
+    /// </remarks>
     public static string FindFFmpegDirectory()
     {
         var binPath = Path.Combine(FFmpegInstallRoot, FFmpegBinFolderName);
+        var exePath = Path.Combine(binPath, "ffmpeg.exe");
 
-        if (File.Exists(Path.Combine(binPath, "ffmpeg.exe")))
+        if (!File.Exists(exePath))
         {
-            return binPath;
+            return null;
         }
 
-        return null;
+        if (!IsBuiltFor(exePath, RuntimeInformation.ProcessArchitecture))
+        {
+            Log.Warning("Ignoring FFmpeg built for another architecture. Directory={Directory}; ProcessArchitecture={ProcessArchitecture}", binPath, RuntimeInformation.ProcessArchitecture);
+            return null;
+        }
+
+        return binPath;
+    }
+
+    /// <summary>
+    /// Whether the executable at <paramref name="path"/> is built for <paramref name="architecture"/>, going by the machine type in its PE header.
+    /// An unreadable or truncated file counts as not built for it.
+    /// </summary>
+    internal static bool IsBuiltFor(string path, Architecture architecture)
+    {
+        try
+        {
+            using var reader = new BinaryReader(File.OpenRead(path));
+            reader.BaseStream.Position = 0x3C;
+            reader.BaseStream.Position = reader.ReadUInt32() + 4L;
+            var machine = reader.ReadUInt16();
+
+            return (architecture, machine) is (Architecture.X64, 0x8664) or (Architecture.Arm64, 0xAA64);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 }
