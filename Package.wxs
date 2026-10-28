@@ -1,68 +1,60 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Sentry Deck"
            Manufacturer="Daniel Chalmers"
-           Version="$(var.Version)"
+           Version="!(bind.FileVersion.SentryDeck.exe)"
            UpgradeCode="98E07D4B-45EB-45A6-90A5-2A68E772F2E7"
            Scope="perUser">
     <Property Id="ARPNOMODIFY" Value="1" />
+    <Icon Id="SentryDeck.ico" SourceFile="SentryDeck.ico" />
+    <Property Id="ARPPRODUCTICON" Value="SentryDeck.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/danielchalmers/SentryDeck" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/danielchalmers/SentryDeck/issues" />
     <!-- Skips the System Restore point, which can hold a double-click install at "Please wait" for most of a minute and protects nothing in a per-user app folder. -->
     <Property Id="MSIFASTINSTALL" Value="1" />
+    <!-- The default schedule removes the old version before installing the new one. -->
+    <!-- An earlier schedule leaves an orphaned copy behind when a per-user upgrade rolls back. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"
-                  DowngradeErrorMessage="A newer version of Sentry Deck is already installed." />
+                  DowngradeErrorMessage="!(loc.WixDowngradePreventedMessage)" />
     <MediaTemplate EmbedCab="yes" />
 
-    <CustomAction Id="LaunchApp"
-                  Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]SentryDeck.exe&quot;"
-                  Execute="immediate"
-                  Impersonate="yes"
-                  Return="asyncNoWait" />
-
-    <InstallExecuteSequence>
-      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed" />
-    </InstallExecuteSequence>
-
-    <Feature Id="Main" Title="SentryDeck" Level="1">
-      <ComponentGroupRef Id="ProductComponents" />
-    </Feature>
-  </Package>
-
-  <Fragment>
+    <!-- Not WiX's default INSTALLFOLDER under Programs: FFmpeg is downloaded next to the exe, so moving the app would download it again and leave the old copy behind. -->
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="SentryDeckRoot" Name="SentryDeck">
         <Directory Id="INSTALLFOLDER" Name="SentryDeck" />
       </Directory>
     </StandardDirectory>
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ProgramMenuSentryDeck" Name="Sentry Deck" />
-    </StandardDirectory>
-  </Fragment>
 
-  <Fragment>
-    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
-      <Component Id="MainExecutable" Guid="*">
-        <File Id="SentryDeckExe" Source="publish/$(var.Arch)/SentryDeck.exe" KeyPath="yes" />
-        <!-- No wildcard RemoveFile here: every upgrade uninstalls the old version first, so it would delete anything the app keeps next to the exe. -->
-        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
-      </Component>
-      <Component Id="StartMenuShortcut" Guid="*">
-        <Shortcut Id="SentryDeckShortcut"
-                  Name="Sentry Deck"
-                  Description="Sentry Deck"
-                  Directory="ProgramMenuSentryDeck"
+    <!-- The single-file publish has nothing else to install. -->
+    <File Id="SentryDeck.exe" Source="publish/$(sys.BUILDARCH)/SentryDeck.exe" />
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component>
+        <!-- Targets the folder path rather than [#SentryDeck.exe], which ICE69 flags because the exe is in another component. -->
+        <Shortcut Name="Sentry Deck"
                   Target="[INSTALLFOLDER]SentryDeck.exe"
                   WorkingDirectory="INSTALLFOLDER" />
-        <RemoveFolder Id="RemoveStartMenuFolder" Directory="ProgramMenuSentryDeck" On="uninstall" />
+        <!-- A per-user shortcut needs a registry key path. -->
         <RegistryValue Root="HKCU"
-                       Key="Software\\Daniel Chalmers\\SentryDeck"
+                       Key="Software\Daniel Chalmers\SentryDeck"
                        Name="StartMenuShortcut"
                        Type="integer"
                        Value="1"
                        KeyPath="yes" />
+        <!-- No wildcard RemoveFile here: every upgrade uninstalls the old version first, so it would delete FFmpeg and anything else the app keeps next to the exe. -->
+        <!-- Each folder is removed only once empty, so settings, logs, and FFmpeg keep theirs. -->
+        <RemoveFolder Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Directory="SentryDeckRoot" On="uninstall" />
       </Component>
-      <Files Include="publish/$(var.Arch)/**">
-        <Exclude Files="publish/$(var.Arch)/SentryDeck.exe" />
-      </Files>
-    </ComponentGroup>
-  </Fragment>
+    </StandardDirectory>
+
+    <!-- Started through Explorer so the app gets the user's environment instead of the Windows Installer service's. -->
+    <CustomAction Id="LaunchApp"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[WindowsFolder]explorer.exe&quot; &quot;[#SentryDeck.exe]&quot;"
+                  Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+  </Package>
 </Wix>
