@@ -2,6 +2,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 
 namespace SentryDeck.Tests;
 
@@ -178,5 +179,41 @@ public sealed class PackageManagerTests : IDisposable
 
         File.Exists(stalePath).ShouldBeFalse();
         File.Exists(Path.Combine(DestinationBinPath, "ffmpeg.exe")).ShouldBeTrue();
+    }
+
+    // Just enough of a PE file for its machine type: the DOS header's pointer at 0x3C, then the "PE\0\0" signature and the machine field.
+    private string WriteExecutable(ushort machine)
+    {
+        var bytes = new byte[0x80];
+        bytes[0] = (byte)'M';
+        bytes[1] = (byte)'Z';
+        BitConverter.GetBytes(0x40).CopyTo(bytes, 0x3C);
+        "PE\0\0"u8.CopyTo(bytes.AsSpan(0x40));
+        BitConverter.GetBytes(machine).CopyTo(bytes, 0x44);
+
+        var path = Path.Combine(_root, $"{Guid.NewGuid():N}.exe");
+        File.WriteAllBytes(path, bytes);
+        return path;
+    }
+
+    [Theory]
+    [InlineData(0x8664, Architecture.X64, true)]
+    [InlineData(0x8664, Architecture.Arm64, false)]
+    [InlineData(0xAA64, Architecture.Arm64, true)]
+    [InlineData(0xAA64, Architecture.X64, false)]
+    public void IsBuiltFor_ComparesThePEMachineTypeWithTheArchitecture(int machine, Architecture architecture, bool expected)
+    {
+        // An Arm64 process can't load x64 FFmpeg, nor an x64 process Arm64 FFmpeg, so either mismatch has to count as missing.
+        PackageManager.IsBuiltFor(WriteExecutable((ushort)machine), architecture).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void IsBuiltFor_TruncatedFile_IsNotBuiltForAnything()
+    {
+        // A download cut short leaves a file that can't be read as far as its header, which is as unusable as a missing one.
+        var path = Path.Combine(_root, "ffmpeg.exe");
+        File.WriteAllText(path, "MZ");
+
+        PackageManager.IsBuiltFor(path, RuntimeInformation.ProcessArchitecture).ShouldBeFalse();
     }
 }
