@@ -2275,7 +2275,7 @@
                                         <TextBlock Style="{StaticResource ProjectTitleTextBlock}">
                                             <Hyperlink NavigateUri="https://github.com/danielchalmers/JournalApp"
                                                        RequestNavigate="Hyperlink_RequestNavigate">
-                                                Good Diary
+                                                Journal App
                                             </Hyperlink>
                                         </TextBlock>
                                         <TextBlock Text="Track your daily activities and moods on Android."
