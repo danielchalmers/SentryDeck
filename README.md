@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/release/danielchalmers/SentryDeck?include_prereleases&style=flat-square)](https://github.com/danielchalmers/SentryDeck/releases)
 [![License](https://img.shields.io/github/license/danielchalmers/SentryDeck?style=flat-square)](LICENSE)
 
-Review Tesla dashcam and Sentry Mode footage on Windows.
+Sentry Deck is a free, open-source TeslaCam viewer for Windows. Plug in the car's USB drive and review dashcam and Sentry Mode clips from every camera on one timeline, then trim and export the part you need.
 
 ![Sentry Deck](https://github.com/user-attachments/assets/270b6923-7f15-4337-b1d4-99a4c3f362b5)
 
@@ -23,3 +23,5 @@ Review Tesla dashcam and Sentry Mode footage on Windows.
 3. On first launch it offers to download FFmpeg (~80 MB) if it isn't already present.
 
 Requires Windows 10 or 11.
+
+Sentry Deck is an independent project and is not affiliated with Tesla.
